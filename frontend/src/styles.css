@@ -163,7 +163,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 /* Flat controls inside the sort pill — no inner chips, so it carries the
    same visual weight as the Filters pill beside it. */
 .sort-float { display: flex; align-items: center; font-size: 0.9rem; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.25rem 0.5rem 0.25rem 0.35rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
-.sort-float select { background: transparent; border: 0; border-radius: 999px; font-size: 0.9rem; padding: 0.3rem 0.2rem 0.3rem 0.5rem; }
+.sort-float select { background: transparent; border: 0; border-radius: 999px; font-size: 0.9rem; padding: 0.3rem 0.2rem 0.3rem 0.5rem; cursor: pointer; }
 .sort-dir { background: transparent; border: 0; border-radius: 999px; color: inherit; padding: 0.3rem 0.4rem; font-size: 0.8rem; line-height: 1; opacity: 0.75; }
 .sort-dir:hover { opacity: 1; }
 

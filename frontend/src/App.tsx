@@ -722,7 +722,11 @@ function FilterPanel({
 
   return (
     <>
-      <div className="filter-backdrop" onClick={onClose} />
+      {/* Overlays dismiss on mousedown, not click: Chrome freezes the OS
+          cursor when a click unmounts the element under it, which reads as
+          "hover is broken" until the next click. Closing on mousedown lets
+          the cursor recompute at mouseup. */}
+      <div className="filter-backdrop" onMouseDown={onClose} />
       <div className="filter-panel" role="dialog" aria-label="Filters">
         <header className="filter-header">
           <span className="filter-title">Filters</span>
@@ -843,7 +847,7 @@ function FilterPanel({
 
       {umaOpen && (
         <>
-          <div className="uma-popout-backdrop" onClick={() => setUmaOpen(false)} />
+          <div className="uma-popout-backdrop" onMouseDown={() => setUmaOpen(false)} />
           <div className="uma-popout" role="dialog" aria-label="Choose umas">
             <input
               className="uma-search"
@@ -942,13 +946,14 @@ function VeteranModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
           <span className="modal-id" title={title}>
@@ -987,7 +992,7 @@ function VeteranModal({
                       already stops propagation, so this never closes it */}
                   <span
                     className="mark-popup-backdrop"
-                    onClick={() => setMarkOpen(false)}
+                    onMouseDown={() => setMarkOpen(false)}
                   />
                   <span className="mark-popup" role="dialog" aria-label="Choose mark">
                     {/* 4×4: the deselect tile leads, then the 15 marks. */}

@@ -41,12 +41,21 @@ const APT_GROUPS: [group: string, apts: [label: string, key: keyof Veteran][]][]
   ],
 ];
 
-// Stat value → grade letter, verified against in-game veteran screens
-// (1200→SS+, 1110→SS, 612→B, 488→C). 50-wide up to D+, 100-wide C..A+,
-// 50-wide S..SS, then SS+ open-ended: current Global shows SS+ even past
-// 1200 (the uncapped stats); JP's U-ladder can slot in here when Global
-// starts displaying it.
+// Stat value → grade letter. G..SS+ verified against in-game veteran
+// screens (1200→SS+, 1110→SS, 612→B, 488→C): 50-wide up to D+, 100-wide
+// C..A+, 50-wide S..SS+, with SS+ ending at exactly 1200. Above that the
+// uncap ladder runs in 100-wide bands from UG at 1201 (owner-confirmed);
+// the UF..US boundaries follow the same +100 rhythm per the JP uncap
+// convention — re-verify against the game as stats climb past 1300.
 const STAT_GRADES: [min: number, label: string][] = [
+  [1901, "US"],
+  [1801, "UA"],
+  [1701, "UB"],
+  [1601, "UC"],
+  [1501, "UD"],
+  [1401, "UE"],
+  [1301, "UF"],
+  [1201, "UG"],
   [1150, "SS+"],
   [1100, "SS"],
   [1050, "S+"],
@@ -577,6 +586,19 @@ function VeteranModal({
                     onClick={() => setMarkOpen(false)}
                   />
                   <span className="mark-popup" role="dialog" aria-label="Choose mark">
+                    {/* 4×4: the deselect tile leads, then the 15 marks. */}
+                    <button
+                      className={currentMark ? "mark-toggle mark-clear" : "mark-toggle mark-clear active"}
+                      title="No mark"
+                      aria-label="No mark"
+                      onClick={() =>
+                        void (currentMark ? pickMark(currentMark) : setMarkOpen(false))
+                      }
+                    >
+                      <span className="mark-none" aria-hidden="true">
+                        ✕
+                      </span>
+                    </button>
                     {MARK_IDS.map((id) => (
                       <button
                         key={id}

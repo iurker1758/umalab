@@ -111,7 +111,8 @@ button:disabled { opacity: 0.6; cursor: default; }
 .modal-mark .mark-icon { width: 26px; height: 26px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
 .modal-mark-empty { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px dashed #4a5462; border-radius: 7px; background: rgba(16, 20, 24, 0.85); color: #9aa1ab; font-size: 1rem; }
 .mark-popup-backdrop { position: fixed; inset: 0; z-index: 19; }
-.mark-popup { position: absolute; top: 24px; left: -6px; z-index: 20; display: grid; grid-template-columns: repeat(5, auto); gap: 0.3rem; background: #161c23; border: 1px solid #2a3340; border-radius: 10px; padding: 0.5rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); }
+.mark-popup { position: absolute; top: 24px; left: -6px; z-index: 20; display: grid; grid-template-columns: repeat(4, auto); gap: 0.3rem; background: #161c23; border: 1px solid #2a3340; border-radius: 10px; padding: 0.5rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); }
+.mark-none { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px dashed #4a5462; border-radius: 6px; color: #9aa1ab; font-size: 0.8rem; }
 .mark-popup .mark-toggle { opacity: 0.9; }
 .mark-popup .mark-toggle:hover, .mark-popup .mark-toggle.active { opacity: 1; }
 

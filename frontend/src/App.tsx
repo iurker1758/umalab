@@ -48,8 +48,15 @@ const COLUMNS: [label: string, key: SortKey][] = [
 // the <MarkIcon> fallback renders the mark number instead.
 const MARK_IDS = Array.from({ length: 15 }, (_, i) => `mark_${String(i + 1).padStart(2, "0")}`);
 
+// One 404 per mark id is enough — remember which ids lack art so later
+// MarkIcon mounts go straight to the numbered fallback instead of re-firing
+// the same requests on every row expansion. Per-id, not a single flag: the
+// extraction script can leave a partial set (sprites missing from the atlas
+// are skipped with a warning), and one absent PNG must not suppress the rest.
+const missingMarkArt = new Set<string>();
+
 function MarkIcon({ id }: { id: string }) {
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState(missingMarkArt.has(id));
   const label = `Mark ${Number(id.slice(-2))}`;
   return failed ? (
     <span className="mark-fallback" title={label}>
@@ -61,7 +68,10 @@ function MarkIcon({ id }: { id: string }) {
       src={`/icons/marks/${id}.png`}
       alt={label}
       title={label}
-      onError={() => setFailed(true)}
+      onError={() => {
+        missingMarkArt.add(id);
+        setFailed(true);
+      }}
     />
   );
 }
@@ -90,17 +100,31 @@ function LineageSlot({ member, label }: { member: LineageMember; label: string }
   );
 }
 
-function TagEditor({ v, onChanged }: { v: Veteran; onChanged: () => Promise<void> }) {
+function TagEditor({
+  v,
+  onChanged,
+  onError,
+}: {
+  v: Veteran;
+  onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
   // Single-select: a veteran carries at most one mark. Clicking another mark
   // moves the selection (the backend replaces), clicking the active one clears.
   const current = v.tags[0];
   const pick = async (id: string) => {
-    if (id === current) {
-      await api.removeTag(v.trained_chara_id, id);
-    } else {
-      await api.addTag(v.trained_chara_id, id);
+    let failure: string | null = null;
+    try {
+      if (id === current) {
+        await api.removeTag(v.trained_chara_id, id);
+      } else {
+        await api.addTag(v.trained_chara_id, id);
+      }
+    } catch (e) {
+      failure = `Mark update failed: ${e instanceof Error ? e.message : String(e)}`;
     }
-    await onChanged();
+    await onChanged(); // refresh even after a failure — it corrects stale state
+    if (failure) onError(failure);
   };
 
   return (
@@ -119,7 +143,15 @@ function TagEditor({ v, onChanged }: { v: Veteran; onChanged: () => Promise<void
   );
 }
 
-function VeteranDetail({ v, onChanged }: { v: Veteran; onChanged: () => Promise<void> }) {
+function VeteranDetail({
+  v,
+  onChanged,
+  onError,
+}: {
+  v: Veteran;
+  onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
   const parents = v.lineage.filter((m) => m.relation === "parent");
   const grandparentsOf = (parent: LineageMember) =>
     v.lineage.filter(
@@ -130,7 +162,7 @@ function VeteranDetail({ v, onChanged }: { v: Veteran; onChanged: () => Promise<
 
   return (
     <div className="detail">
-      <TagEditor v={v} onChanged={onChanged} />
+      <TagEditor v={v} onChanged={onChanged} onError={onError} />
       <div className="apt-grid">
         {APTITUDES.map(([label, key]) => (
           <span key={key} className="apt">
@@ -170,6 +202,11 @@ export default function App() {
       const [vets, imp] = await Promise.all([api.veterans(), api.latestImport()]);
       setVeterans(vets);
       setLatest(imp);
+      // A filter whose mark lost its last carrier is cleared, not masked —
+      // masking would let it silently reactivate when the mark returns.
+      setTagFilter((prev) =>
+        prev && !vets.some((v) => v.tags.includes(prev)) ? "" : prev
+      );
       setError(null);
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
@@ -210,13 +247,13 @@ export default function App() {
     () => [...new Set(veterans.flatMap((v) => v.tags))].sort(),
     [veterans]
   );
-  // A stale filter (its last carrier untagged or gone) must not strand the
-  // roster on an empty view with no visible control.
-  const effectiveFilter = usedMarks.includes(tagFilter) ? tagFilter : "";
 
   const sorted = useMemo(() => {
-    const rows = effectiveFilter
-      ? veterans.filter((v) => v.tags.includes(effectiveFilter))
+    // The expanded veteran is pinned into the view even if a mark change just
+    // dropped it out of the active filter — re-categorizing mid-edit must not
+    // yank the panel away. Collapsing it lets the filter apply normally.
+    const rows = tagFilter
+      ? veterans.filter((v) => v.tags.includes(tagFilter) || v.id === expandedId)
       : [...veterans];
     rows.sort((a, b) => {
       const av = a[sortKey];
@@ -228,7 +265,7 @@ export default function App() {
       return sortAsc ? cmp : -cmp;
     });
     return rows;
-  }, [veterans, sortKey, sortAsc, effectiveFilter]);
+  }, [veterans, sortKey, sortAsc, tagFilter, expandedId]);
 
   return (
     <div className="app">
@@ -250,9 +287,9 @@ export default function App() {
               {usedMarks.map((id) => (
                 <button
                   key={id}
-                  className={effectiveFilter === id ? "mark-toggle active" : "mark-toggle"}
-                  title={effectiveFilter === id ? "Show all" : "Filter by mark"}
-                  onClick={() => setTagFilter(effectiveFilter === id ? "" : id)}
+                  className={tagFilter === id ? "mark-toggle active" : "mark-toggle"}
+                  title={tagFilter === id ? "Show all" : "Filter by mark"}
+                  onClick={() => setTagFilter(tagFilter === id ? "" : id)}
                 >
                   <MarkIcon id={id} />
                 </button>
@@ -297,6 +334,7 @@ export default function App() {
                 expanded={expandedId === v.id}
                 onToggle={() => setExpandedId(expandedId === v.id ? null : v.id)}
                 onChanged={refresh}
+                onError={setError}
               />
             ))}
           </tbody>
@@ -311,11 +349,13 @@ function VeteranRow({
   expanded,
   onToggle,
   onChanged,
+  onError,
 }: {
   v: Veteran;
   expanded: boolean;
   onToggle: () => void;
   onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
 }) {
   return (
     <>
@@ -348,7 +388,7 @@ function VeteranRow({
       {expanded && (
         <tr className="detail-row">
           <td colSpan={COLUMNS.length + 2}>
-            <VeteranDetail v={v} onChanged={onChanged} />
+            <VeteranDetail v={v} onChanged={onChanged} onError={onError} />
           </td>
         </tr>
       )}

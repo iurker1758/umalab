@@ -208,10 +208,13 @@ async def remove_tag(
     tag: str,
     session: AsyncSession = Depends(get_session),
 ):
+    """Clear the veteran's mark. Under the one-mark model the path's {tag} is
+    advisory only — a stale client naming the old mark must still clear the
+    current one, so we delete whatever the veteran carries.
+    """
+    del tag
     row = await session.scalar(
-        select(VeteranTag).where(
-            VeteranTag.trained_chara_id == trained_chara_id, VeteranTag.tag == tag
-        )
+        select(VeteranTag).where(VeteranTag.trained_chara_id == trained_chara_id)
     )
     if row:
         await session.delete(row)

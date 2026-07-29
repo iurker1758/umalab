@@ -72,8 +72,11 @@ BUNDLE_BASE_KEY = bytes([0x53, 0x2B, 0x46, 0x31, 0xE4, 0xA7, 0xB9, 0x47, 0x3E, 0
 BUNDLE_HEADER_SIZE = 256
 
 
-def default_game_dir() -> Path:
-    return Path(os.environ["USERPROFILE"]) / "AppData" / "LocalLow" / "Cygames" / "Umamusume"
+def default_game_dir() -> Path | None:
+    profile = os.environ.get("USERPROFILE")
+    if profile is None:
+        return None  # non-Windows — --game-dir is required
+    return Path(profile) / "AppData" / "LocalLow" / "Cygames" / "Umamusume"
 
 
 def open_meta(meta_path: Path) -> apsw.Connection:
@@ -105,12 +108,15 @@ def main() -> None:
     parser.add_argument(
         "--game-dir",
         type=Path,
-        default=default_game_dir(),
+        default=None,
         help="Uma Musume data dir with `meta` and `dat/` (default: the Global LocalLow dir)",
     )
     args = parser.parse_args()
+    game_dir: Path | None = args.game_dir or default_game_dir()
+    if game_dir is None:
+        raise SystemExit("no default game dir on this OS — pass --game-dir")
 
-    meta_path = args.game_dir / "meta"
+    meta_path = game_dir / "meta"
     if not meta_path.exists():
         raise SystemExit(
             f"meta not found at {meta_path} — is the Global client installed? "
@@ -122,7 +128,7 @@ def main() -> None:
     if row is None:
         raise SystemExit(f"{ATLAS_NAME} not present in meta — game update may have moved it")
     bundle_hash, row_key = row
-    bundle_path = args.game_dir / "dat" / bundle_hash[:2] / bundle_hash
+    bundle_path = game_dir / "dat" / bundle_hash[:2] / bundle_hash
     if not bundle_path.exists():
         raise SystemExit(
             f"bundle {bundle_path} not on disk — open the game once so it downloads "

@@ -201,11 +201,16 @@ Keep adding entries as the build evolves. This file is the interview.
   clone has neither icons nor index, so the UI must always tolerate a
   missing index or missing keys and fall back to a placeholder. The
   favorite-mark icons exist only inside the client's UI asset bundles — on
-  no CDN or fan site — so `scripts/extract_fav_icons.py` pulls them from
-  your own installed Global client (meta-DB and bundle decryption adapted
-  from Vali-98/umamusu-utils, MIT; credited in README) into
-  `icons/marks/`, same posture: read-only against the game, local only.
-  A fresh clone runs the scripts once (documented in README/CLAUDE.md).
+  no CDN or fan site — so an extraction tool pulls them from your own
+  installed Global client (meta-DB and bundle decryption adapted from
+  Vali-98/umamusu-utils, MIT; credited in README) into `icons/marks/`,
+  same posture: read-only against the game, local only. That tool is kept
+  **outside the repo**: it embeds the client's decryption keys, and
+  publishing those in a public repo is a bigger exposure than the art this
+  entry already refuses to commit. It was briefly committed as
+  `backend/scripts/extract_fav_icons.py`; removed and scrubbed from history
+  2026-07-29. A fresh clone runs the icon scripts once (documented in
+  README/CLAUDE.md).
 - **Rejected:** hotlinking uma.moe/GameTora — their asset paths are
   deploy artifacts that can move silently, uma.moe sends no CORS header,
   and it spends their bandwidth per page load; committing the images —

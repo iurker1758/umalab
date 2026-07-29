@@ -1,8 +1,9 @@
 # UmaLab
 
 UmaLab is a web app for Uma Musume: Pretty Derby (Global) breeding projects.
-It ingests your full veteran roster straight from the game — via UmaExtractor
-dumps (a community memory-reader tool) — and makes it browsable: stats,
+It ingests your full veteran roster straight from the game — via
+[UmaExtractor](https://github.com/xancia/UmaExtractor) dumps — and makes it
+browsable: stats,
 aptitudes, and every inheritance factor (spark) across the full
 parent/grandparent lineage, decoded to human-readable names.
 
@@ -69,6 +70,21 @@ Run the tests: `cd backend && pytest`
 Reference data (`backend/app/data/`) is committed; regenerate it when the game
 adds characters: `python scripts/build_reference_data.py` (needs a
 [uma.moe](https://uma.moe) API key in `backend/.env` as `UMA_MOE_API_KEY`).
+
+## Credits
+
+UmaLab is an unofficial fan tool. Uma Musume: Pretty Derby and all its
+characters and game data are the property of Cygames, Inc.
+
+- [uma.moe](https://uma.moe) ([github.com/uma-moe](https://github.com/uma-moe)) —
+  the bundled reference data (character roster, the factor name/type table)
+  is generated from their resources API, and their open-source stack
+  documented the factor-id encoding this app decodes.
+- [xancia/UmaExtractor](https://github.com/xancia/UmaExtractor) (a fork of
+  [rockisch/umadump](https://github.com/rockisch/umadump)) — the veteran-dump
+  tool whose `data.json` format UmaLab imports.
+- [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — the inspiration
+  for the planned inheritance-blueprint designer.
 
 ## How this was built
 

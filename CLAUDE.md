@@ -26,8 +26,9 @@ Backend (from `backend/`, venv in `.venv/`):
 - Migrations: `alembic upgrade head` · new: `alembic revision --autogenerate -m "..."`
 - Test: `pytest` · Lint: `ruff check .` · Types: `pyright` (strict; run with the
   venv active so it resolves site-packages)
-- Reference data: `python scripts/build_reference_data.py --api-key-file <path>`
-  (uma.moe key; Jason keeps one at `../../uma/uma_api_key.txt` — never commit it)
+- Reference data: `python scripts/build_reference_data.py` (uma.moe key from
+  `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it; the old
+  tkinter app keeps its own copy at `../../uma/uma_api_key.txt`)
 
 Frontend (from `frontend/`):
 

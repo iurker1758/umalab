@@ -67,8 +67,8 @@ npm run dev   # proxies /api to the backend
 Run the tests: `cd backend && pytest`
 
 Reference data (`backend/app/data/`) is committed; regenerate it when the game
-adds characters: `python scripts/build_reference_data.py --api-key-file <path>`
-(needs a [uma.moe](https://uma.moe) API key).
+adds characters: `python scripts/build_reference_data.py` (needs a
+[uma.moe](https://uma.moe) API key in `backend/.env` as `UMA_MOE_API_KEY`).
 
 ## How this was built
 

@@ -14,8 +14,9 @@ Both outputs are committed; rerun this manually when the game updates
 (DECISIONS.md #6).
 
 Usage:
-    python scripts/build_reference_data.py --api-key-file <path>
-    # or set UMA_MOE_API_KEY
+    python scripts/build_reference_data.py
+    # key comes from UMA_MOE_API_KEY in backend/.env (or the env var,
+    # or --api-key-file <path>)
 
 Needs a uma.moe API key (sent as X-API-Key; anonymous requests get 403).
 """
@@ -49,12 +50,22 @@ def fetch_json(url: str, api_key: str) -> Any:
 
 
 def load_api_key(args: argparse.Namespace) -> str:
+    """Key sources, highest precedence first: --api-key-file, the
+    UMA_MOE_API_KEY env var, then backend/.env (the usual home)."""
     if args.api_key_file:
         return Path(args.api_key_file).read_text(encoding="utf-8").strip()
     key = os.environ.get("UMA_MOE_API_KEY", "").strip()
-    if not key:
-        sys.exit("No API key: pass --api-key-file or set UMA_MOE_API_KEY")
-    return key
+    if key:
+        return key
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() == "UMA_MOE_API_KEY":
+                key = value.strip().strip("'\"")
+                if key:
+                    return key
+    sys.exit("No API key: set UMA_MOE_API_KEY in backend/.env or pass --api-key-file")
 
 
 def main() -> None:

@@ -179,6 +179,62 @@ function LineageSlot({ member, label }: { member: LineageMember; label: string }
   );
 }
 
+function LineageIcon({ icon, name }: { icon: string | undefined; name: string }) {
+  const [failed, setFailed] = useState(false);
+  return icon && !failed ? (
+    <img
+      className="lineage-icon"
+      src={`/icons/chara/${icon}`}
+      alt=""
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    <span className="lineage-icon lineage-icon-fallback" aria-hidden="true">
+      {name.charAt(0)}
+    </span>
+  );
+}
+
+function ParentSection({
+  parent,
+  grandparents,
+  label,
+  icon,
+}: {
+  parent: LineageMember;
+  grandparents: LineageMember[];
+  label: string;
+  icon: string | undefined;
+}) {
+  // Grandparent sparks are noise for the usual "what does this parent pass
+  // on" glance — they stay collapsed until the parent row is clicked.
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="detail-section">
+      <button
+        className="lineage-parent"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        disabled={grandparents.length === 0}
+      >
+        <LineageIcon icon={icon} name={parent.name} />
+        <span className="lineage-title">
+          <span className="lineage-label">{label}</span> {parent.name}
+          {parent.outfit && parent.outfit !== "Original" ? ` (${parent.outfit})` : ""}
+        </span>
+        {grandparents.length > 0 && (
+          <span className="lineage-caret">{open ? "▾" : "▸"}</span>
+        )}
+      </button>
+      <FactorChips factors={parent.factors} />
+      {open &&
+        grandparents.map((gp, j) => (
+          <LineageSlot key={gp.position_id} member={gp} label={`Grandparent ${j + 1}`} />
+        ))}
+    </div>
+  );
+}
+
 function TagEditor({
   v,
   onChanged,
@@ -224,10 +280,12 @@ function TagEditor({
 
 function VeteranDetail({
   v,
+  iconIndex,
   onChanged,
   onError,
 }: {
   v: Veteran;
+  iconIndex: Record<string, string>;
   onChanged: () => Promise<void>;
   onError: (msg: string) => void;
 }) {
@@ -254,12 +312,13 @@ function VeteranDetail({
         <FactorChips factors={v.factors} />
       </div>
       {parents.map((parent, i) => (
-        <div key={parent.position_id} className="detail-section">
-          <LineageSlot member={parent} label={`Parent ${i + 1}`} />
-          {grandparentsOf(parent).map((gp, j) => (
-            <LineageSlot key={gp.position_id} member={gp} label={`Grandparent ${i + 1}.${j + 1}`} />
-          ))}
-        </div>
+        <ParentSection
+          key={parent.position_id}
+          parent={parent}
+          grandparents={grandparentsOf(parent)}
+          label={`Parent ${i + 1}`}
+          icon={iconIndex[String(parent.card_id)]}
+        />
       ))}
     </div>
   );
@@ -344,11 +403,13 @@ function VeteranCard({
 
 function VeteranModal({
   v,
+  iconIndex,
   onClose,
   onChanged,
   onError,
 }: {
   v: Veteran;
+  iconIndex: Record<string, string>;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onError: (msg: string) => void;
@@ -380,23 +441,39 @@ function VeteranModal({
     ["Trained", v.register_time.slice(0, 10)],
   ];
 
+  const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
+  const icon = iconIndex[String(v.card_id)];
+  const tier = rankTier(v.rank_score);
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label={v.name}
+        aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>
-            {v.name}
-            {v.outfit && v.outfit !== "Original" ? (
-              <span className="outfit"> {v.outfit}</span>
-            ) : null}
-            <span className="rarity"> ★{v.rarity}</span>
-          </h2>
+          {/* Icon + rank badge stand in for the name (kept in the tooltip). */}
+          <span className="modal-id" title={title}>
+            <span className="card-art modal-art">
+              {icon ? (
+                <img src={`/icons/chara/${icon}`} alt={title} />
+              ) : (
+                <span className="card-fallback" aria-hidden="true">
+                  {v.name.charAt(0)}
+                </span>
+              )}
+              <span
+                className={`card-rank rank-${tier[0].toLowerCase()}`}
+                title={`Rank ${tier} (${v.rank_score.toLocaleString()})`}
+              >
+                {tier}
+              </span>
+            </span>
+            <span className="rarity">★{v.rarity}</span>
+          </span>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -409,7 +486,7 @@ function VeteranModal({
             </span>
           ))}
         </div>
-        <VeteranDetail v={v} onChanged={onChanged} onError={onError} />
+        <VeteranDetail v={v} iconIndex={iconIndex} onChanged={onChanged} onError={onError} />
       </div>
     </div>
   );
@@ -585,6 +662,7 @@ export default function App() {
       {selected && (
         <VeteranModal
           v={selected}
+          iconIndex={iconIndex}
           onClose={() => setSelectedId(null)}
           onChanged={refresh}
           onError={setError}

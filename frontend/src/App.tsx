@@ -41,12 +41,11 @@ const APT_GROUPS: [group: string, apts: [label: string, key: keyof Veteran][]][]
   ],
 ];
 
-// Stat value → grade letter. G..SS+ verified against in-game veteran
-// screens (1200→SS+, 1110→SS, 612→B, 488→C): 50-wide up to D+, 100-wide
-// C..A+, 50-wide S..SS+, with SS+ ending at exactly 1200. Above that the
-// uncap ladder runs in 100-wide bands from UG at 1201 (owner-confirmed);
-// the UF..US boundaries follow the same +100 rhythm per the JP uncap
-// convention — re-verify against the game as stats climb past 1300.
+// Stat value → grade letter, verified against in-game veteran screens
+// (1200→SS+, 1110→SS, 612→B, 488→C): 50-wide up to D+, 100-wide C..A+,
+// 50-wide S..SS+, with SS+ ending at exactly 1200. Above that the uncap
+// ladder runs in 100-wide bands from UG at 1201 — anchors confirmed
+// in-game at 1201→UG, 1317→UF, 1613→UC.
 const STAT_GRADES: [min: number, label: string][] = [
   [1901, "US"],
   [1801, "UA"],

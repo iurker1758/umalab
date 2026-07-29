@@ -59,6 +59,7 @@ export interface Veteran {
   factors: Factor[];
   skills: Skill[];
   lineage: LineageMember[];
+  tags: string[];
 }
 
 export interface ImportInfo {
@@ -89,4 +90,16 @@ export const api = {
     body.append("file", file);
     return fetch("/api/imports", { method: "POST", body }).then((r) => json<ImportInfo>(r));
   },
+  addTag: (trainedCharaId: number, tag: string) =>
+    fetch(`/api/veterans/${trainedCharaId}/tags`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+    }).then((r) => json<{ trained_chara_id: number; tag: string }>(r)),
+  removeTag: (trainedCharaId: number, tag: string) =>
+    fetch(`/api/veterans/${trainedCharaId}/tags/${encodeURIComponent(tag)}`, {
+      method: "DELETE",
+    }).then((r) => {
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    }),
 };

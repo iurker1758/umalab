@@ -39,3 +39,12 @@ button:disabled { opacity: 0.6; cursor: default; }
 .chip.unique { background: #275034; }
 .chip.race { background: #5a4a1e; }
 .chip.scenario { background: #46345c; }
+.chip.tag { background: #1e5a55; }
+.chip-x { background: none; border: 0; color: inherit; padding: 0 0 0 0.35rem; font-size: 0.9rem; cursor: pointer; opacity: 0.7; }
+.chip-x:hover { opacity: 1; }
+
+.tag-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.tag-editor input { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-radius: 8px; padding: 0.35rem 0.6rem; }
+.tag-editor button { padding: 0.35rem 0.8rem; font-size: 0.9rem; }
+
+select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.95rem; }

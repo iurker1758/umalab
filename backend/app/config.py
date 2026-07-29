@@ -14,5 +14,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost/umalab"
 
+    # Used only by scripts/build_reference_data.py (which reads .env itself,
+    # stdlib-only); declared here so pydantic-settings accepts the .env entry.
+    uma_moe_api_key: str = ""
+
 
 settings = Settings()

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, String, func
+from sqlalchemy import ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,3 +65,17 @@ class Veteran(Base):
     factors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     skills: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     lineage: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+
+
+class VeteranTag(Base):
+    """A user-assigned organizational tag (the game's own tags aren't in the
+    extractor dump). Keyed by trained_chara_id — NOT veterans.id — so tags
+    survive full-replace imports (DECISIONS.md #9). Rows whose veteran is
+    gone from the current snapshot are simply never displayed.
+    """
+    __tablename__ = "veteran_tags"
+    __table_args__ = (UniqueConstraint("trained_chara_id", "tag", name="uq_veteran_tag"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trained_chara_id: Mapped[int]
+    tag: Mapped[str] = mapped_column(String(40))

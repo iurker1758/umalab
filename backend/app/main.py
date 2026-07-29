@@ -9,13 +9,14 @@ import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import ingest, reference
 from .database import get_session
-from .models import Import, Veteran
+from .models import Import, Veteran, VeteranTag
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # ~100 veterans ≈ 1.7 MB; 25 MB is generous headroom
 
@@ -89,6 +90,7 @@ class VeteranOut(BaseModel):
     factors: list[FactorOut]
     skills: list[SkillOut]
     lineage: list[LineageMemberOut]
+    tags: list[str] = []  # filled from veteran_tags, not a Veteran column
     model_config = {"from_attributes": True}
 
 
@@ -98,6 +100,10 @@ class ImportOut(BaseModel):
     veteran_count: int
     filename: str
     model_config = {"from_attributes": True}
+
+
+class TagIn(BaseModel):
+    tag: str = Field(min_length=1, max_length=40)
 
 
 # ---------- imports ----------
@@ -144,4 +150,59 @@ async def list_veterans(session: AsyncSession = Depends(get_session)):
     rows = await session.scalars(
         select(Veteran).order_by(Veteran.rank_score.desc(), Veteran.id)
     )
-    return list(rows)
+    tag_map: dict[int, list[str]] = {}
+    tag_rows = await session.execute(
+        select(VeteranTag.trained_chara_id, VeteranTag.tag).order_by(VeteranTag.tag)
+    )
+    for trained_chara_id, tag in tag_rows:
+        tag_map.setdefault(trained_chara_id, []).append(tag)
+
+    out: list[VeteranOut] = []
+    for veteran in rows:
+        item = VeteranOut.model_validate(veteran)
+        item.tags = tag_map.get(veteran.trained_chara_id, [])
+        out.append(item)
+    return out
+
+
+# ---------- tags ----------
+
+@app.post("/api/veterans/{trained_chara_id}/tags", status_code=201)
+async def add_tag(
+    trained_chara_id: int,
+    body: TagIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Idempotent: tagging the same veteran with the same tag twice succeeds."""
+    tag = body.tag.strip()
+    if not tag:
+        raise HTTPException(400, "tag is blank")
+    known = await session.scalar(
+        select(Veteran.id).where(Veteran.trained_chara_id == trained_chara_id)
+    )
+    if known is None:
+        raise HTTPException(404, "no veteran with that trained_chara_id in the roster")
+    stmt = (
+        pg_insert(VeteranTag)
+        .values(trained_chara_id=trained_chara_id, tag=tag)
+        .on_conflict_do_nothing(constraint="uq_veteran_tag")
+    )
+    await session.execute(stmt)
+    await session.commit()
+    return {"trained_chara_id": trained_chara_id, "tag": tag}
+
+
+@app.delete("/api/veterans/{trained_chara_id}/tags/{tag}", status_code=204)
+async def remove_tag(
+    trained_chara_id: int,
+    tag: str,
+    session: AsyncSession = Depends(get_session),
+):
+    row = await session.scalar(
+        select(VeteranTag).where(
+            VeteranTag.trained_chara_id == trained_chara_id, VeteranTag.tag == tag
+        )
+    )
+    if row:
+        await session.delete(row)
+        await session.commit()

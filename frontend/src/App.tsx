@@ -67,7 +67,72 @@ function LineageSlot({ member, label }: { member: LineageMember; label: string }
   );
 }
 
-function VeteranDetail({ v }: { v: Veteran }) {
+function TagEditor({
+  v,
+  allTags,
+  onChanged,
+}: {
+  v: Veteran;
+  allTags: string[];
+  onChanged: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
+
+  const add = async () => {
+    const tag = draft.trim();
+    if (!tag) return;
+    await api.addTag(v.trained_chara_id, tag);
+    setDraft("");
+    await onChanged();
+  };
+
+  const remove = async (tag: string) => {
+    await api.removeTag(v.trained_chara_id, tag);
+    await onChanged();
+  };
+
+  return (
+    <div className="tag-editor">
+      <span className="chips">
+        {v.tags.map((tag) => (
+          <span key={tag} className="chip tag">
+            {tag}
+            <button className="chip-x" title="Remove tag" onClick={() => void remove(tag)}>
+              ×
+            </button>
+          </span>
+        ))}
+      </span>
+      <input
+        list="all-tags"
+        value={draft}
+        placeholder="Add tag"
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void add();
+        }}
+      />
+      <datalist id="all-tags">
+        {allTags.map((tag) => (
+          <option key={tag} value={tag} />
+        ))}
+      </datalist>
+      <button onClick={() => void add()} disabled={!draft.trim()}>
+        Add
+      </button>
+    </div>
+  );
+}
+
+function VeteranDetail({
+  v,
+  allTags,
+  onChanged,
+}: {
+  v: Veteran;
+  allTags: string[];
+  onChanged: () => Promise<void>;
+}) {
   const parents = v.lineage.filter((m) => m.relation === "parent");
   const grandparentsOf = (parent: LineageMember) =>
     v.lineage.filter(
@@ -78,6 +143,7 @@ function VeteranDetail({ v }: { v: Veteran }) {
 
   return (
     <div className="detail">
+      <TagEditor v={v} allTags={allTags} onChanged={onChanged} />
       <div className="apt-grid">
         {APTITUDES.map(([label, key]) => (
           <span key={key} className="apt">
@@ -109,6 +175,7 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>("rank_score");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [tagFilter, setTagFilter] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -152,8 +219,15 @@ export default function App() {
     }
   };
 
+  const allTags = useMemo(
+    () => [...new Set(veterans.flatMap((v) => v.tags))].sort(),
+    [veterans]
+  );
+
   const sorted = useMemo(() => {
-    const rows = [...veterans];
+    const rows = tagFilter
+      ? veterans.filter((v) => v.tags.includes(tagFilter))
+      : [...veterans];
     rows.sort((a, b) => {
       const av = a[sortKey];
       const bv = b[sortKey];
@@ -164,7 +238,7 @@ export default function App() {
       return sortAsc ? cmp : -cmp;
     });
     return rows;
-  }, [veterans, sortKey, sortAsc]);
+  }, [veterans, sortKey, sortAsc, tagFilter]);
 
   return (
     <div className="app">
@@ -181,6 +255,16 @@ export default function App() {
             hidden
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
+          {allTags.length > 0 && (
+            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+              <option value="">All tags</option>
+              {allTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          )}
           {latest && (
             <span className="import-info">
               {latest.veteran_count} veterans · imported{" "}
@@ -208,6 +292,7 @@ export default function App() {
                 </th>
               ))}
               <th>Apt</th>
+              <th>Tags</th>
             </tr>
           </thead>
           <tbody>
@@ -217,6 +302,8 @@ export default function App() {
                 v={v}
                 expanded={expandedId === v.id}
                 onToggle={() => setExpandedId(expandedId === v.id ? null : v.id)}
+                allTags={allTags}
+                onChanged={refresh}
               />
             ))}
           </tbody>
@@ -230,10 +317,14 @@ function VeteranRow({
   v,
   expanded,
   onToggle,
+  allTags,
+  onChanged,
 }: {
   v: Veteran;
   expanded: boolean;
   onToggle: () => void;
+  allTags: string[];
+  onChanged: () => Promise<void>;
 }) {
   return (
     <>
@@ -255,11 +346,20 @@ function VeteranRow({
         <td className="apt-cell">
           T{apt(v.proper_ground_turf)} D{apt(v.proper_ground_dirt)}
         </td>
+        <td>
+          <span className="chips">
+            {v.tags.map((tag) => (
+              <span key={tag} className="chip tag">
+                {tag}
+              </span>
+            ))}
+          </span>
+        </td>
       </tr>
       {expanded && (
         <tr className="detail-row">
-          <td colSpan={COLUMNS.length + 1}>
-            <VeteranDetail v={v} />
+          <td colSpan={COLUMNS.length + 2}>
+            <VeteranDetail v={v} allTags={allTags} onChanged={onChanged} />
           </td>
         </tr>
       )}

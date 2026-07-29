@@ -141,3 +141,24 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** uma.moe dropping the artifact — the empirical
   approach returns as the fallback, now checkable against this table's
   snapshot.
+
+## 9. Tags: app-side, keyed by trained_chara_id
+
+- **Requirements:** organize veterans with user-defined tags (the in-game
+  tag/favorite marks don't appear anywhere in the extractor dump — every
+  candidate field is either constant or something else, e.g. `is_locked` is
+  just the 0/1 padlock); tags must survive imports.
+- **Choice:** a `veteran_tags` table — `(trained_chara_id, tag)` unique,
+  free-text tag names, edited in the web UI. Keyed by the game's
+  `trained_chara_id` rather than the local `veterans.id` FK precisely so
+  full-replace imports (#3) can't touch them. Tags whose veteran is absent
+  from the current snapshot simply don't display; they're not pruned, so a
+  re-import that brings the uma back (e.g. re-uploading an older file)
+  restores its tags.
+- **Rejected:** mirroring the in-game tags — not exported, so there's nothing
+  to mirror; surfacing `is_locked` instead — it's a different, single-bit
+  concept and wasn't what the organizational need was; tag colors/ordering —
+  free-text names cover the need until proven otherwise.
+- **Would change my mind:** a future extractor version exporting the game's
+  tag assignments — then an import-time sync (game tags → app tags) becomes
+  the obvious bridge.

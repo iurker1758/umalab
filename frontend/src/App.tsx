@@ -224,10 +224,12 @@ const PINK_SPARK_GROUPS: [group: string, chips: [label: string, name: string][]]
 
 type StarMode = "all" | "2plus" | "3";
 type SparkFilter = { names: string[]; stars: StarMode; legacy: boolean };
+// Skill sparks carry their star mode and legacy toggle per selected skill.
+type WhiteFilter = { name: string; stars: StarMode; legacy: boolean };
 type Filters = {
   blue: SparkFilter;
   pink: SparkFilter;
-  whites: SparkFilter;
+  whites: WhiteFilter[];
   // Every veteran has a unique spark, so "all" means the section is inactive.
   unique: { stars: StarMode; legacy: boolean };
   marks: string[];
@@ -237,7 +239,7 @@ type Filters = {
 const defaultFilters: Filters = {
   blue: { names: [], stars: "all", legacy: false },
   pink: { names: [], stars: "all", legacy: false },
-  whites: { names: [], stars: "all", legacy: false },
+  whites: [],
   unique: { stars: "all", legacy: false },
   marks: [],
   cards: [],
@@ -264,8 +266,13 @@ function loadFilters(): Filters {
         return {
           ...defaultFilters,
           ...p,
-          // Added after the first release of this shape — tolerate its absence.
-          whites: Array.isArray(p.whites?.names) ? p.whites : defaultFilters.whites,
+          // Newer than the base shape and reshaped once — keep only entries
+          // matching the current per-skill form.
+          whites: Array.isArray(p.whites)
+            ? p.whites.filter(
+                (w) => typeof w?.name === "string" && STAR_MODES.includes(w?.stars)
+              )
+            : defaultFilters.whites,
         };
       }
     }
@@ -281,7 +288,7 @@ const starOk = (star: number, mode: StarMode) =>
 const countFilters = (f: Filters) =>
   f.blue.names.length +
   f.pink.names.length +
-  f.whites.names.length +
+  f.whites.length +
   (f.unique.stars !== "all" ? 1 : 0) +
   f.marks.length +
   f.cards.length;
@@ -309,12 +316,11 @@ function matchesFilters(v: Veteran, f: Filters): boolean {
     return false;
   }
   if (
-    f.whites.names.length > 0 &&
-    !pool(f.whites.legacy).some(
-      (fa) =>
-        fa.kind === "white" &&
-        f.whites.names.includes(fa.name) &&
-        starOk(fa.star, f.whites.stars)
+    f.whites.length > 0 &&
+    !f.whites.some((w) =>
+      pool(w.legacy).some(
+        (fa) => fa.kind === "white" && fa.name === w.name && starOk(fa.star, w.stars)
+      )
     )
   ) {
     return false;
@@ -772,7 +778,14 @@ function FilterPanel({
   const toggleWhite = (name: string) =>
     onChange({
       ...filters,
-      whites: { ...filters.whites, names: toggleIn(filters.whites.names, name) },
+      whites: filters.whites.some((w) => w.name === name)
+        ? filters.whites.filter((w) => w.name !== name)
+        : [...filters.whites, { name, stars: "all" as const, legacy: false }],
+    });
+  const updateWhite = (name: string, patch: Partial<WhiteFilter>) =>
+    onChange({
+      ...filters,
+      whites: filters.whites.map((w) => (w.name === name ? { ...w, ...patch } : w)),
     });
 
   const query = umaQuery.trim().toLowerCase();
@@ -804,7 +817,7 @@ function FilterPanel({
             disabled={countFilters(filters) === 0}
             onClick={() => onChange(defaultFilters)}
           >
-            Clear all
+            Reset filters
           </button>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
@@ -853,45 +866,6 @@ function FilterPanel({
         />
 
         <div className="filter-section">
-          <div className="filter-heading">Skill sparks</div>
-          <div className="filter-chips">
-            <button
-              className="fchip"
-              onClick={() => {
-                setSparkQuery("");
-                setSparkOpen(true);
-              }}
-            >
-              Choose sparks…
-            </button>
-            {filters.whites.names.map((n) => (
-              <button
-                key={n}
-                className="fchip white active"
-                title="Remove"
-                onClick={() => toggleWhite(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          <StarModeRow
-            stars={filters.whites.stars}
-            legacy={filters.whites.legacy}
-            ariaLabel="Skill spark star level"
-            onStars={(stars) =>
-              onChange({ ...filters, whites: { ...filters.whites, stars } })
-            }
-            onLegacy={() =>
-              onChange({
-                ...filters,
-                whites: { ...filters.whites, legacy: !filters.whites.legacy },
-              })
-            }
-          />
-        </div>
-
-        <div className="filter-section">
           <div className="filter-heading">Unique spark</div>
           <StarModeRow
             stars={filters.unique.stars}
@@ -907,6 +881,47 @@ function FilterPanel({
               })
             }
           />
+        </div>
+
+        <div className="filter-section">
+          <div className="filter-heading">Skill sparks</div>
+          <div className="filter-chips">
+            <button
+              className="fchip"
+              onClick={() => {
+                setSparkQuery("");
+                setSparkOpen(true);
+              }}
+            >
+              Choose sparks…
+            </button>
+            {filters.whites.length > 0 && (
+              <button
+                className="fchip"
+                onClick={() => onChange({ ...filters, whites: [] })}
+              >
+                Reset sparks
+              </button>
+            )}
+          </div>
+          {filters.whites.map((w) => (
+            <div key={w.name} className="white-row">
+              <button
+                className="fchip white active"
+                title="Remove"
+                onClick={() => toggleWhite(w.name)}
+              >
+                {w.name} ✕
+              </button>
+              <StarModeRow
+                stars={w.stars}
+                legacy={w.legacy}
+                ariaLabel={`${w.name} star level`}
+                onStars={(stars) => updateWhite(w.name, { stars })}
+                onLegacy={() => updateWhite(w.name, { legacy: !w.legacy })}
+              />
+            </div>
+          ))}
         </div>
 
         <div className="filter-section">
@@ -980,7 +995,7 @@ function FilterPanel({
               {queriedSparks.map((n) => (
                 <button
                   key={n}
-                  className={`fchip white${filters.whites.names.includes(n) ? " active" : ""}`}
+                  className={`fchip white${filters.whites.some((w) => w.name === n) ? " active" : ""}`}
                   onClick={() => toggleWhite(n)}
                 >
                   {n}

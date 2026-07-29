@@ -226,7 +226,14 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Choice:** a responsive card grid (`auto-fill, minmax(120px, 1fr)`) —
   the in-game character icon, the score beneath it (today `rank_score`;
   the slot is generic and swaps to the hunted-spark score in the scoring
-  milestone), one mark badge overlaid. Cards are **icon-only** — no name;
+  milestone), the mark badge top-left and a rank-tier badge top-right,
+  mirroring the game's own veteran list (tier derived from `rank_score`
+  via the community breakpoint sheet by u/TokuHer0 — G 0 … SS+ 19,200 …
+  US 63,400 — since the dump's `rank` field is a raw id, not the
+  displayed tier). Under the **Sparks sort**, the score line swaps to
+  the game-style own-spark strip: labeled star triplets for the blue,
+  pink, and (when present) unique spark — e.g. `WIT · MED · UNIQ`.
+  Cards are **icon-only** — no name;
   a tooltip and the modal header carry it, same as the game's own veteran
   list. Everything else (stats, aptitudes, mark editing, sparks, lineage)
   moved into a click-open modal that reuses the table era's detail

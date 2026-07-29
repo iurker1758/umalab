@@ -17,9 +17,30 @@ button:disabled { opacity: 0.6; cursor: default; }
 .card-art { position: relative; width: 96px; height: 96px; }
 .card-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .card-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 50%; background: #232b34; font-size: 2.2rem; font-weight: 600; opacity: 0.8; }
-.card-badge { position: absolute; top: -5px; right: -5px; background: #101418; border: 1px solid #2a3340; border-radius: 7px; padding: 2px; line-height: 0; }
+.card-badge { position: absolute; top: -5px; left: -5px; background: #101418; border: 1px solid #2a3340; border-radius: 7px; padding: 2px; line-height: 0; }
 .card-badge .mark-icon { width: 20px; height: 20px; }
+.card-rank { position: absolute; top: -5px; right: -5px; border-radius: 7px; padding: 2px 5px; font-size: 0.68rem; font-weight: 700; color: #fff; line-height: 1.2; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45); }
+.rank-u { background: #7b68c9; }
+.rank-s { background: #c9992a; }
+.rank-a { background: #d95b36; }
+.rank-b { background: #d9569c; }
+.rank-c { background: #55a047; }
+.rank-d { background: #3f7fd4; }
+.rank-e { background: #a94fd0; }
+.rank-f { background: #7a5fd0; }
+.rank-g { background: #7d848e; }
 .card-score { font-variant-numeric: tabular-nums; font-size: 0.95rem; opacity: 0.9; }
+.spark-strip { display: flex; gap: 3px; justify-content: center; }
+.spark-group { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.spark-label { font-size: 0.55rem; font-weight: 700; color: #fff; border-radius: 3px; padding: 0.5px 4px; letter-spacing: 0.02em; }
+.spark-group.blue .spark-label { background: #2f7fd6; }
+.spark-group.pink .spark-label { background: #e0569c; }
+.spark-group.unique .spark-label { background: #5da53f; }
+.spark-stars { line-height: 1; }
+.star { font-size: 0.6rem; color: #2a3340; }
+.spark-group.blue .star.filled { color: #4da3ff; }
+.spark-group.pink .star.filled { color: #ff7fb8; }
+.spark-group.unique .star.filled { color: #7ecb52; }
 .outfit { font-weight: 400; opacity: 0.7; font-size: 0.85rem; }
 .rarity { font-weight: 400; opacity: 0.6; font-size: 0.85rem; }
 

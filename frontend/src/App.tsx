@@ -46,6 +46,62 @@ const blueSparkRank = (v: Veteran): number => {
   return stat === -1 ? -1 : stat * 3 + (blue.star - 1);
 };
 
+// Rating → rank-tier breakpoints, from the community ratings sheet
+// (u/TokuHer0). First row whose minimum the score clears wins.
+const RANK_TIERS: [min: number, label: string][] = [
+  [63400, "US"],
+  [55200, "UA"],
+  [47600, "UB"],
+  [40700, "UC"],
+  [34400, "UD"],
+  [28800, "UE"],
+  [23900, "UF"],
+  [19600, "UG"],
+  [19200, "SS+"],
+  [17500, "SS"],
+  [15900, "S+"],
+  [14500, "S"],
+  [12100, "A+"],
+  [10000, "A"],
+  [8200, "B+"],
+  [6500, "B"],
+  [4900, "C+"],
+  [3500, "C"],
+  [2900, "D+"],
+  [2300, "D"],
+  [1800, "E+"],
+  [1300, "E"],
+  [900, "F+"],
+  [600, "F"],
+  [300, "G+"],
+  [0, "G"],
+];
+const rankTier = (score: number): string =>
+  RANK_TIERS.find(([min]) => score >= min)?.[1] ?? "G";
+
+// Card-strip labels for the own-spark display, matching the game's veteran
+// list (WIT · MED · UNIQ …). Unmapped names (stale reference data) degrade
+// to a five-letter uppercase clip instead of hiding the spark.
+const SPARK_ABBR: Record<string, string> = {
+  Speed: "SPD",
+  Stamina: "STA",
+  Power: "POW",
+  Guts: "GUTS",
+  Wit: "WIT",
+  Turf: "TURF",
+  Dirt: "DIRT",
+  Sprint: "SPRINT",
+  Mile: "MILE",
+  Medium: "MED",
+  Long: "LONG",
+  "Front Runner": "FRONT",
+  "Pace Chaser": "PACE",
+  "Late Surger": "LATE",
+  "End Closer": "END",
+};
+const sparkAbbr = (name: string) =>
+  SPARK_ABBR[name] ?? name.slice(0, 5).toUpperCase();
+
 type SortPref = { key: SortKey; asc: boolean };
 const SORT_STORE = "umalab.sort";
 const defaultSort: SortPref = { key: "register_time", asc: false };
@@ -208,17 +264,44 @@ function VeteranDetail({
   );
 }
 
+function SparkStrip({ v }: { v: Veteran }) {
+  // One group per own blue/pink/unique spark, in that order — a veteran
+  // without a unique simply shows two groups, like the game's list.
+  const groups = (["blue", "pink", "unique"] as const)
+    .map((kind) => v.factors.find((f) => f.kind === kind))
+    .filter((f): f is Factor => f !== undefined);
+  return (
+    <span className="spark-strip">
+      {groups.map((f) => (
+        <span key={f.factor_id} className={`spark-group ${f.kind}`} title={`${f.name} ★${f.star}`}>
+          <span className="spark-label">{f.kind === "unique" ? "UNIQ" : sparkAbbr(f.name)}</span>
+          <span className="spark-stars">
+            {[1, 2, 3].map((i) => (
+              <span key={i} className={i <= f.star ? "star filled" : "star"}>
+                ★
+              </span>
+            ))}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function VeteranCard({
   v,
   icon,
+  showSparks,
   onOpen,
 }: {
   v: Veteran;
   icon: string | undefined;
+  showSparks: boolean;
   onOpen: () => void;
 }) {
   const [artFailed, setArtFailed] = useState(false);
   const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
+  const tier = rankTier(v.rank_score);
   return (
     <button className="card" title={title} aria-label={title} onClick={onOpen}>
       <span className="card-art">
@@ -242,8 +325,18 @@ function VeteranCard({
             <MarkIcon id={v.tags[0]} />
           </span>
         )}
+        <span
+          className={`card-rank rank-${tier[0].toLowerCase()}`}
+          title={`Rank ${tier} (${v.rank_score.toLocaleString()})`}
+        >
+          {tier}
+        </span>
       </span>
-      <span className="card-score">{v.rank_score.toLocaleString()}</span>
+      {showSparks ? (
+        <SparkStrip v={v} />
+      ) : (
+        <span className="card-score">{v.rank_score.toLocaleString()}</span>
+      )}
     </button>
   );
 }
@@ -505,6 +598,7 @@ export default function App() {
               key={v.id}
               v={v}
               icon={iconIndex[String(v.card_id)]}
+              showSparks={sort.key === "blue_spark"}
               onOpen={() => setSelectedId(v.id)}
             />
           ))}

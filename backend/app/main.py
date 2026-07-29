@@ -120,8 +120,12 @@ class VeteranOut(BaseModel):
 
     @model_validator(mode="after")
     def _enrich(self) -> VeteranOut:
+        # The whole card identity refreshes together — updating only part of
+        # it would pair a new epithet with a stale name after a rename.
         card = reference.CARDS.get(self.card_id)
         if card is not None:
+            self.name = card["name"]
+            self.outfit = card["outfit"]
             self.title = card["title"]
         return self
 

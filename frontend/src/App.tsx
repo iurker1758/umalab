@@ -285,6 +285,10 @@ function loadFilters(): Filters {
 const starOk = (star: number, mode: StarMode) =>
   mode === "all" ? true : mode === "2plus" ? star >= 2 : star === 3;
 
+// The factor kinds the Common Sparks filter covers.
+const isCommonKind = (kind: string) =>
+  kind === "white" || kind === "race" || kind === "scenario";
+
 const countFilters = (f: Filters) =>
   f.blue.names.length +
   f.pink.names.length +
@@ -315,16 +319,14 @@ function matchesFilters(v: Veteran, f: Filters): boolean {
   ) {
     return false;
   }
-  // Common sparks (white + race) AND together — a breeding shortlist wants
-  // veterans that carry EVERY hunted spark, unlike the OR chips elsewhere.
+  // Common sparks (white + race + scenario) AND together — a breeding
+  // shortlist wants veterans that carry EVERY hunted spark, unlike the OR
+  // chips elsewhere.
   if (
     f.whites.length > 0 &&
     !f.whites.every((w) =>
       pool(w.legacy).some(
-        (fa) =>
-          (fa.kind === "white" || fa.kind === "race") &&
-          fa.name === w.name &&
-          starOk(fa.star, w.stars)
+        (fa) => isCommonKind(fa.kind) && fa.name === w.name && starOk(fa.star, w.stars)
       )
     )
   ) {
@@ -399,7 +401,7 @@ function FactorChips({ factors }: { factors: Factor[] }) {
   return (
     <span className="chips">
       {factors.map((f) => (
-        <span key={f.factor_id} className={`chip ${f.kind}`} title={`${f.kind} factor`}>
+        <span key={f.factor_id} className={`chip ${f.kind}`}>
           {f.name} ★{f.star}
         </span>
       ))}
@@ -1307,15 +1309,14 @@ export default function App() {
     );
   }, [veterans]);
 
-  // Every common-spark (white skill + race) name present anywhere in the
-  // roster (own + lineage) — the searchable vocabulary for the filter.
+  // Every common-spark (white skill / race / scenario) name present anywhere
+  // in the roster (own + lineage) — the searchable vocabulary for the filter.
   const commonSparkNames = useMemo(() => {
     const names = new Set<string>();
-    const want = (k: string) => k === "white" || k === "race";
     for (const v of veterans) {
-      for (const f of v.factors) if (want(f.kind)) names.add(f.name);
+      for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
       for (const m of v.lineage) {
-        for (const f of m.factors) if (want(f.kind)) names.add(f.name);
+        for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
       }
     }
     return [...names].sort((a, b) => a.localeCompare(b));

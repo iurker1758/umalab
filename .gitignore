@@ -17,3 +17,5 @@ dev-dist/
 .vscode/
 # secrets — the uma.moe API key must never land in the repo
 uma_api_key.txt
+# game art (Cygames') — fetched locally by scripts, never committed
+frontend/public/icons/

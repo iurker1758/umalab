@@ -227,6 +227,7 @@ type SparkFilter = { names: string[]; stars: StarMode; legacy: boolean };
 type Filters = {
   blue: SparkFilter;
   pink: SparkFilter;
+  whites: SparkFilter;
   // Every veteran has a unique spark, so "all" means the section is inactive.
   unique: { stars: StarMode; legacy: boolean };
   marks: string[];
@@ -236,6 +237,7 @@ type Filters = {
 const defaultFilters: Filters = {
   blue: { names: [], stars: "all", legacy: false },
   pink: { names: [], stars: "all", legacy: false },
+  whites: { names: [], stars: "all", legacy: false },
   unique: { stars: "all", legacy: false },
   marks: [],
   cards: [],
@@ -259,7 +261,12 @@ function loadFilters(): Filters {
         Array.isArray(p.marks) &&
         Array.isArray(p.cards)
       ) {
-        return { ...defaultFilters, ...p };
+        return {
+          ...defaultFilters,
+          ...p,
+          // Added after the first release of this shape — tolerate its absence.
+          whites: Array.isArray(p.whites?.names) ? p.whites : defaultFilters.whites,
+        };
       }
     }
   } catch {
@@ -274,6 +281,7 @@ const starOk = (star: number, mode: StarMode) =>
 const countFilters = (f: Filters) =>
   f.blue.names.length +
   f.pink.names.length +
+  f.whites.names.length +
   (f.unique.stars !== "all" ? 1 : 0) +
   f.marks.length +
   f.cards.length;
@@ -296,6 +304,17 @@ function matchesFilters(v: Veteran, f: Filters): boolean {
     !pool(f.pink.legacy).some(
       (fa) =>
         fa.kind === "pink" && f.pink.names.includes(fa.name) && starOk(fa.star, f.pink.stars)
+    )
+  ) {
+    return false;
+  }
+  if (
+    f.whites.names.length > 0 &&
+    !pool(f.whites.legacy).some(
+      (fa) =>
+        fa.kind === "white" &&
+        f.whites.names.includes(fa.name) &&
+        starOk(fa.star, f.whites.stars)
     )
   ) {
     return false;
@@ -592,6 +611,45 @@ function VeteranCard({
   );
 }
 
+function StarModeRow({
+  stars,
+  legacy,
+  ariaLabel,
+  onStars,
+  onLegacy,
+}: {
+  stars: StarMode;
+  legacy: boolean;
+  ariaLabel: string;
+  onStars: (m: StarMode) => void;
+  onLegacy: () => void;
+}) {
+  return (
+    <div className="filter-opts">
+      <span className="seg-group" role="radiogroup" aria-label={ariaLabel}>
+        {STAR_MODES.map((m) => (
+          <button
+            key={m}
+            className={stars === m ? "seg active" : "seg"}
+            aria-pressed={stars === m}
+            onClick={() => onStars(m)}
+          >
+            {starModeLabel(m)}
+          </button>
+        ))}
+      </span>
+      <button
+        className={legacy ? "legacy-toggle active" : "legacy-toggle"}
+        title="Also match sparks carried by parents and grandparents"
+        aria-pressed={legacy}
+        onClick={onLegacy}
+      >
+        Legacy sparks
+      </button>
+    </div>
+  );
+}
+
 function SparkSection({
   title,
   groups,
@@ -629,28 +687,13 @@ function SparkSection({
           ))}
         </div>
       ))}
-      <div className="filter-opts">
-        <span className="seg-group" role="radiogroup" aria-label={`${title} star level`}>
-          {STAR_MODES.map((m) => (
-            <button
-              key={m}
-              className={value.stars === m ? "seg active" : "seg"}
-              aria-pressed={value.stars === m}
-              onClick={() => onChange({ ...value, stars: m })}
-            >
-              {starModeLabel(m)}
-            </button>
-          ))}
-        </span>
-        <button
-          className={value.legacy ? "legacy-toggle active" : "legacy-toggle"}
-          title="Also match sparks carried by parents and grandparents"
-          aria-pressed={value.legacy}
-          onClick={() => onChange({ ...value, legacy: !value.legacy })}
-        >
-          Legacy sparks
-        </button>
-      </div>
+      <StarModeRow
+        stars={value.stars}
+        legacy={value.legacy}
+        ariaLabel={`${title} star level`}
+        onStars={(stars) => onChange({ ...value, stars })}
+        onLegacy={() => onChange({ ...value, legacy: !value.legacy })}
+      />
     </div>
   );
 }
@@ -686,36 +729,51 @@ function UmaCardChip({
 function FilterPanel({
   filters,
   cards,
+  whiteNames,
   iconIndex,
+  matchCount,
+  total,
   onChange,
   onClose,
 }: {
   filters: Filters;
   cards: Veteran[];
+  whiteNames: string[];
   iconIndex: Record<string, string>;
+  matchCount: number;
+  total: number;
   onChange: (next: Filters) => void;
   onClose: () => void;
 }) {
   const [umaOpen, setUmaOpen] = useState(false);
   const [umaQuery, setUmaQuery] = useState("");
+  const [sparkOpen, setSparkOpen] = useState(false);
+  const [sparkQuery, setSparkQuery] = useState("");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (umaOpen) {
         setUmaOpen(false);
+      } else if (sparkOpen) {
+        setSparkOpen(false);
       } else {
         onClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, umaOpen]);
+  }, [onClose, umaOpen, sparkOpen]);
 
   const toggleIn = <T,>(list: T[], value: T): T[] =>
     list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
   const toggleCard = (id: number) =>
     onChange({ ...filters, cards: toggleIn(filters.cards, id) });
+  const toggleWhite = (name: string) =>
+    onChange({
+      ...filters,
+      whites: { ...filters.whites, names: toggleIn(filters.whites.names, name) },
+    });
 
   const query = umaQuery.trim().toLowerCase();
   const queried = query
@@ -723,6 +781,10 @@ function FilterPanel({
         `${c.name} ${c.outfit}`.toLowerCase().includes(query)
       )
     : cards;
+  const sq = sparkQuery.trim().toLowerCase();
+  const queriedSparks = sq
+    ? whiteNames.filter((n) => n.toLowerCase().includes(sq))
+    : whiteNames;
 
   return (
     <>
@@ -734,6 +796,9 @@ function FilterPanel({
       <div className="filter-panel" role="dialog" aria-label="Filters">
         <header className="filter-header">
           <span className="filter-title">Filters</span>
+          <span className="filter-match">
+            {matchCount} of {total} match
+          </span>
           <button
             className="filter-clear"
             disabled={countFilters(filters) === 0}
@@ -788,36 +853,60 @@ function FilterPanel({
         />
 
         <div className="filter-section">
-          <div className="filter-heading">Unique spark</div>
-          <div className="filter-opts">
-            <span className="seg-group" role="radiogroup" aria-label="Unique spark star level">
-              {STAR_MODES.map((m) => (
-                <button
-                  key={m}
-                  className={filters.unique.stars === m ? "seg active" : "seg"}
-                  aria-pressed={filters.unique.stars === m}
-                  onClick={() =>
-                    onChange({ ...filters, unique: { ...filters.unique, stars: m } })
-                  }
-                >
-                  {starModeLabel(m)}
-                </button>
-              ))}
-            </span>
+          <div className="filter-heading">Skill sparks</div>
+          <div className="filter-chips">
             <button
-              className={filters.unique.legacy ? "legacy-toggle active" : "legacy-toggle"}
-              title="Also match unique sparks carried by parents and grandparents"
-              aria-pressed={filters.unique.legacy}
-              onClick={() =>
-                onChange({
-                  ...filters,
-                  unique: { ...filters.unique, legacy: !filters.unique.legacy },
-                })
-              }
+              className="fchip"
+              onClick={() => {
+                setSparkQuery("");
+                setSparkOpen(true);
+              }}
             >
-              Legacy sparks
+              Choose sparks…
             </button>
+            {filters.whites.names.map((n) => (
+              <button
+                key={n}
+                className="fchip white active"
+                title="Remove"
+                onClick={() => toggleWhite(n)}
+              >
+                {n}
+              </button>
+            ))}
           </div>
+          <StarModeRow
+            stars={filters.whites.stars}
+            legacy={filters.whites.legacy}
+            ariaLabel="Skill spark star level"
+            onStars={(stars) =>
+              onChange({ ...filters, whites: { ...filters.whites, stars } })
+            }
+            onLegacy={() =>
+              onChange({
+                ...filters,
+                whites: { ...filters.whites, legacy: !filters.whites.legacy },
+              })
+            }
+          />
+        </div>
+
+        <div className="filter-section">
+          <div className="filter-heading">Unique spark</div>
+          <StarModeRow
+            stars={filters.unique.stars}
+            legacy={filters.unique.legacy}
+            ariaLabel="Unique spark star level"
+            onStars={(stars) =>
+              onChange({ ...filters, unique: { ...filters.unique, stars } })
+            }
+            onLegacy={() =>
+              onChange({
+                ...filters,
+                unique: { ...filters.unique, legacy: !filters.unique.legacy },
+              })
+            }
+          />
         </div>
 
         <div className="filter-section">
@@ -870,6 +959,34 @@ function FilterPanel({
                 />
               ))}
               {queried.length === 0 && <span className="empty">No umas match.</span>}
+            </div>
+          </div>
+        </>
+      )}
+
+      {sparkOpen && (
+        <>
+          <div className="uma-popout-backdrop" onMouseDown={() => setSparkOpen(false)} />
+          <div className="uma-popout" role="dialog" aria-label="Choose skill sparks">
+            <input
+              className="uma-search"
+              type="search"
+              placeholder="Search skills…"
+              value={sparkQuery}
+              autoFocus
+              onChange={(e) => setSparkQuery(e.target.value)}
+            />
+            <div className="filter-chips">
+              {queriedSparks.map((n) => (
+                <button
+                  key={n}
+                  className={`fchip white${filters.whites.names.includes(n) ? " active" : ""}`}
+                  onClick={() => toggleWhite(n)}
+                >
+                  {n}
+                </button>
+              ))}
+              {queriedSparks.length === 0 && <span className="empty">No sparks match.</span>}
             </div>
           </div>
         </>
@@ -1170,6 +1287,19 @@ export default function App() {
     );
   }, [veterans]);
 
+  // Every white-spark name present anywhere in the roster (own + lineage) —
+  // the searchable vocabulary for the Skill sparks filter.
+  const whiteSparkNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const v of veterans) {
+      for (const f of v.factors) if (f.kind === "white") names.add(f.name);
+      for (const m of v.lineage) {
+        for (const f of m.factors) if (f.kind === "white") names.add(f.name);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [veterans]);
+
   const sorted = useMemo(() => {
     const cards = veterans.filter((v) => matchesFilters(v, filters));
     const val = (v: Veteran) =>
@@ -1278,7 +1408,10 @@ export default function App() {
         <FilterPanel
           filters={filters}
           cards={rosterCards}
+          whiteNames={whiteSparkNames}
           iconIndex={iconIndex}
+          matchCount={sorted.length}
+          total={veterans.length}
           onChange={applyFilters}
           onClose={() => setFilterOpen(false)}
         />

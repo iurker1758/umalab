@@ -7,9 +7,9 @@ from app.ingest import IngestError, decode_factor, derive_chara_id, parse_dump, 
 from app.reference import Card, FactorInfo
 
 CARDS: dict[int, Card] = {
-    101701: {"chara_id": 1017, "name": "Symboli Rudolf", "outfit": "Original"},
-    103201: {"chara_id": 1032, "name": "Agnes Tachyon", "outfit": "Original"},
-    100101: {"chara_id": 1001, "name": "Special Week", "outfit": "Original"},
+    101701: {"chara_id": 1017, "name": "Symboli Rudolf", "outfit": "Original", "title": ""},
+    103201: {"chara_id": 1032, "name": "Agnes Tachyon", "outfit": "Original", "title": ""},
+    100101: {"chara_id": 1001, "name": "Special Week", "outfit": "Original", "title": ""},
 }
 
 FACTORS: dict[int, FactorInfo] = {

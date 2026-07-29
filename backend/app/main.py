@@ -9,7 +9,7 @@ import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +59,21 @@ class LineageMemberOut(BaseModel):
 class SkillOut(BaseModel):
     skill_id: int
     level: int
+    # Presentation-only enrichment from the bundled skills reference — the DB
+    # keeps skills raw (DECISIONS.md #5, #12), so refreshed reference data
+    # shows up without a re-import. None/defaults when the id is unknown.
+    name: str | None = None
+    rarity: int | None = None
+    unique: bool = False
+
+    @model_validator(mode="after")
+    def _enrich(self) -> SkillOut:
+        info = reference.SKILLS.get(self.skill_id)
+        if info is not None:
+            self.name = info["name"]
+            self.rarity = info["rarity"]
+            self.unique = info["unique"]
+        return self
 
 
 class VeteranOut(BaseModel):
@@ -97,7 +112,22 @@ class VeteranOut(BaseModel):
     # a veteran carries at most one mark — widening back to multiple is then
     # an app-level change, not an API break.
     tags: list[str] = []
+    # Card epithet ("[Special Dreamer]"), read-time enrichment like skill
+    # names (DECISIONS.md #12) — not stored, so a cards.json refresh applies
+    # without a re-import. Empty when the card is unknown to the reference.
+    title: str = ""
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _enrich(self) -> VeteranOut:
+        # The whole card identity refreshes together — updating only part of
+        # it would pair a new epithet with a stale name after a rename.
+        card = reference.CARDS.get(self.card_id)
+        if card is not None:
+            self.name = card["name"]
+            self.outfit = card["outfit"]
+            self.title = card["title"]
+        return self
 
 
 class ImportOut(BaseModel):

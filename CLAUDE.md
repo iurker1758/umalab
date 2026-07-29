@@ -32,6 +32,11 @@ Backend (from `backend/`, venv in `.venv/`):
 - Character icons: `python scripts/fetch_icons.py` (no key) →
   `frontend/public/icons/` — gitignored game art, fetched per clone/update,
   never committed (DECISIONS.md #10)
+- Favorite-mark icons (tag badges): `uv run scripts/extract_fav_icons.py`
+  (PEP-723 inline deps, not in pyproject; excluded from pyright) — extracts
+  from the installed Global client's asset bundles into `icons/marks/`;
+  needs the game on the machine. Tag ids live in `app/data/tag_icons.json`
+  (committed) and must stay in sync with `MARK_IDS` in `frontend/src/App.tsx`
 
 Frontend (from `frontend/`):
 

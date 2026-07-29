@@ -71,9 +71,13 @@ Reference data (`backend/app/data/`) is committed; regenerate it when the game
 adds characters: `python scripts/build_reference_data.py` (needs a
 [uma.moe](https://uma.moe) API key in `backend/.env` as `UMA_MOE_API_KEY`).
 
-Character icons are **not** committed (they're game art — DECISIONS.md
-entry 10); fetch them once per clone or game update:
-`python scripts/fetch_icons.py` (no key needed).
+Game art is **not** committed (DECISIONS.md entry 10); fetch it once per
+clone or game update:
+
+- Character icons: `python scripts/fetch_icons.py` (no key needed).
+- Favorite-mark icons (tag badges): `uv run scripts/extract_fav_icons.py` —
+  extracts them from your own installed Uma Musume (Global) client, the only
+  place they exist. Without them the UI falls back to numbered badges.
 
 ## Credits
 
@@ -87,6 +91,10 @@ characters and game data are the property of Cygames, Inc.
 - [xancia/UmaExtractor](https://github.com/xancia/UmaExtractor) (a fork of
   [rockisch/umadump](https://github.com/rockisch/umadump)) — the veteran-dump
   tool whose `data.json` format UmaLab imports.
+- [Vali-98/umamusu-utils](https://github.com/Vali-98/umamusu-utils) (MIT) —
+  the meta-DB key derivation and asset-bundle decryption scheme that
+  `scripts/extract_fav_icons.py` adapts to read the favorite-mark icons from
+  a local game client.
 - [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — the inspiration
   for the planned inheritance-blueprint designer.
 

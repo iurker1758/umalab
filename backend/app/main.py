@@ -20,6 +20,9 @@ from .models import Import, Veteran, VeteranTag
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # ~100 veterans ≈ 1.7 MB; 25 MB is generous headroom
 
+# Tags are a fixed set of favorite-mark icon ids, not free text (DECISIONS.md #9).
+VALID_TAGS = frozenset(reference.TAG_ICONS)
+
 app = FastAPI(title="UmaLab")
 
 app.add_middleware(
@@ -175,8 +178,8 @@ async def add_tag(
 ):
     """Idempotent: tagging the same veteran with the same tag twice succeeds."""
     tag = body.tag.strip()
-    if not tag:
-        raise HTTPException(400, "tag is blank")
+    if tag not in VALID_TAGS:
+        raise HTTPException(400, f"unknown tag id {tag!r} — tags are fixed mark ids")
     known = await session.scalar(
         select(Veteran.id).where(Veteran.trained_chara_id == trained_chara_id)
     )

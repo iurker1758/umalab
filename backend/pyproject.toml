@@ -54,6 +54,9 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.File"]
 
 [tool.pyright]
 include = ["app", "tests", "scripts"]
+# extract_fav_icons.py is a PEP-723 one-time tool whose deps (apsw, UnityPy)
+# deliberately aren't in this venv — pyright can't resolve them here.
+exclude = ["scripts/extract_fav_icons.py"]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 

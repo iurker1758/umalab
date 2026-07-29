@@ -18,30 +18,52 @@ const APTITUDES: [label: string, key: keyof Veteran][] = [
   ["End", "proper_running_style_oikomi"],
 ];
 
-type SortKey =
-  | "rank_score"
-  | "speed"
-  | "stamina"
-  | "power"
-  | "guts"
-  | "wiz"
-  | "fans"
-  | "wins"
-  | "register_time";
+type SortKey = "rank_score" | "blue_spark" | "register_time" | "name";
 
-// Every sort is descending — "best first" for numbers, newest first for the
-// trained date. Ascending earns nothing on a grid you scan, not read.
 const SORTS: [label: string, key: SortKey][] = [
-  ["Score", "rank_score"],
-  ["Speed", "speed"],
-  ["Stamina", "stamina"],
-  ["Power", "power"],
-  ["Guts", "guts"],
-  ["Wit", "wiz"],
-  ["Fans", "fans"],
-  ["Wins", "wins"],
-  ["Newest", "register_time"],
+  ["Rating", "rank_score"],
+  ["Sparks", "blue_spark"],
+  ["Date Acquired", "register_time"],
+  ["Name", "name"],
 ];
+
+// Direction a key starts in when picked; the ▲/▼ toggle flips it from there.
+const DEFAULT_ASC: Record<SortKey, boolean> = {
+  rank_score: false, // best first
+  blue_spark: true, // 1★ Speed → 3★ Wit
+  register_time: false, // newest first
+  name: true,
+};
+
+// "Sparks" orders by the veteran's own blue spark only: stat in game order,
+// star within the stat — ascending runs 1★ Speed, 2★ Speed, … 3★ Wit.
+const BLUE_ORDER = ["Speed", "Stamina", "Power", "Guts", "Wit"];
+const blueSparkRank = (v: Veteran): number => {
+  const blue = v.factors.find((f) => f.kind === "blue");
+  if (!blue) return -1;
+  const stat = BLUE_ORDER.indexOf(blue.name);
+  // A degraded label (stale reference data) sorts before 1★ Speed.
+  return stat === -1 ? -1 : stat * 3 + (blue.star - 1);
+};
+
+type SortPref = { key: SortKey; asc: boolean };
+const SORT_STORE = "umalab.sort";
+const defaultSort: SortPref = { key: "register_time", asc: false };
+
+function loadSortPref(): SortPref {
+  try {
+    const raw = localStorage.getItem(SORT_STORE);
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<SortPref>;
+      if (SORTS.some(([, k]) => k === p.key) && typeof p.asc === "boolean") {
+        return p as SortPref;
+      }
+    }
+  } catch {
+    // unreadable storage or garbage value — fall through to the default
+  }
+  return defaultSort;
+}
 
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
 // Art comes from `python scripts/extract_fav_icons.py` (gitignored); without it
@@ -304,7 +326,7 @@ export default function App() {
   const [latest, setLatest] = useState<ImportInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("rank_score");
+  const [sort, setSort] = useState<SortPref>(loadSortPref);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [tagFilter, setTagFilter] = useState("");
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
@@ -369,6 +391,15 @@ export default function App() {
     }
   };
 
+  const applySort = (next: SortPref) => {
+    setSort(next);
+    try {
+      localStorage.setItem(SORT_STORE, JSON.stringify(next));
+    } catch {
+      // storage full/blocked — the choice still applies for this session
+    }
+  };
+
   const usedMarks = useMemo(
     () => [...new Set(veterans.flatMap((v) => v.tags))].sort(),
     [veterans]
@@ -378,15 +409,20 @@ export default function App() {
     const cards = tagFilter
       ? veterans.filter((v) => v.tags.includes(tagFilter))
       : [...veterans];
+    const val = (v: Veteran) =>
+      sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key];
     cards.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      return typeof av === "string" && typeof bv === "string"
-        ? bv.localeCompare(av) // register_time is ISO — string desc = newest first
-        : Number(bv) - Number(av);
+      const av = val(a);
+      const bv = val(b);
+      // register_time is ISO, so string compare doubles as date order.
+      const cmp =
+        typeof av === "string" && typeof bv === "string"
+          ? av.localeCompare(bv)
+          : Number(av) - Number(bv);
+      return sort.asc ? cmp : -cmp;
     });
     return cards;
-  }, [veterans, sortKey, tagFilter]);
+  }, [veterans, sort, tagFilter]);
 
   // Derived from the roster, not stored: a refresh (tag edit, re-import)
   // updates the open modal in place, and an import that drops the veteran
@@ -411,8 +447,11 @@ export default function App() {
           <label className="sort-label">
             Sort
             <select
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              value={sort.key}
+              onChange={(e) => {
+                const key = e.target.value as SortKey;
+                applySort({ key, asc: DEFAULT_ASC[key] });
+              }}
             >
               {SORTS.map(([label, key]) => (
                 <option key={key} value={key}>
@@ -420,6 +459,14 @@ export default function App() {
                 </option>
               ))}
             </select>
+            <button
+              className="sort-dir"
+              title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
+              aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
+              onClick={() => applySort({ ...sort, asc: !sort.asc })}
+            >
+              {sort.asc ? "▲" : "▼"}
+            </button>
           </label>
           {usedMarks.length > 0 && (
             <div className="mark-row">

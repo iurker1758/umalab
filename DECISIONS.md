@@ -231,16 +231,26 @@ Keep adding entries as the build evolves. This file is the interview.
   list. Everything else (stats, aptitudes, mark editing, sparks, lineage)
   moved into a click-open modal that reuses the table era's detail
   components unchanged. Column-header sorting went with the columns;
-  sorting is a single always-descending select — best-first for numbers,
-  newest-first for the trained date. Missing art (fresh clone before
-  `fetch_icons.py`, or a card newer than the local index — the #10
-  contract) renders an initial-letter tile, no asset needed.
+  sorting is a select over four keys — Rating (`rank_score`), Sparks
+  (the veteran's **own blue spark**, ordered stat-then-star: 1★ Speed →
+  3★ Wit), Date Acquired (the default, newest first), Name — plus an
+  ▲/▼ direction toggle; picking a key resets direction to that key's
+  natural start. The sort preference persists in `localStorage`
+  (single-user, per-device; no API surface or migration for one
+  preference — a DB settings table would subsume it if cross-device
+  sync ever matters). Missing art (fresh clone before `fetch_icons.py`,
+  or a card newer than the local index — the #10 contract) renders an
+  initial-letter tile, no asset needed.
 - **Rejected:** name captions under cards — they repeat what the icon
   already says, force two-line cards, and were explicitly not wanted;
   keeping the table behind a view toggle — two roster UIs to maintain
-  before any real design pass; ascending sort directions — scanning a
-  grid wants best/newest first, and a direction toggle earns another
-  control for a case with no use; virtualizing the grid — ~100 cards
+  before any real design pass; per-stat sort keys (Speed/Stamina/…,
+  the table's columns) — shipped briefly on this branch, but scanning
+  a grid never asked "sort by Guts", and the four kept keys are the
+  questions actually asked of a roster; sorting Sparks across the
+  whole lineage — the hunted-skill scoring milestone is the real
+  answer to "which card breeds best", and a star-total here would
+  pre-empt it with a worse number; virtualizing the grid — ~100 cards
   (#7's scale) render fine.
 - **Would change my mind:** icon-only becoming ambiguous (many trained
   copies of the same card differing only in sparks) — then a caption or

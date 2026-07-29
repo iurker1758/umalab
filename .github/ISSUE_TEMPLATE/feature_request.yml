@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a change, starting from the requirement
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: requirement
+    attributes:
+      label: Requirement
+      description: What need exists, independent of any solution?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution (optional)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+      description: If this lands and the choice is non-obvious, it gets a DECISIONS.md entry.

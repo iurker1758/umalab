@@ -1,0 +1,6 @@
+{
+  "extends": "../.markdownlint.jsonc",
+  // PR/issue templates are body fragments pasted into GitHub forms —
+  // they intentionally start at h2, not a top-level heading.
+  "MD041": false
+}

@@ -1,0 +1,8 @@
+{
+  // Markdown lint rules — read by markdownlint-cli2 (CI, npx) and the
+  // VS Code markdownlint extension. File set lives in .markdownlint-cli2.jsonc.
+  "default": true,
+  // Prose wraps at ~80 by convention, but links and tables run long —
+  // line length isn't worth policing.
+  "MD013": false
+}

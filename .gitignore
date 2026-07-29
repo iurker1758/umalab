@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# node
+node_modules/
+dist/
+dev-dist/
+*.tsbuildinfo
+# env & editors
+.env
+.DS_Store
+.idea/
+.vscode/
+# secrets — the uma.moe API key must never land in the repo
+uma_api_key.txt

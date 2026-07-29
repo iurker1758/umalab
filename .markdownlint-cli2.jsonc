@@ -1,0 +1,5 @@
+{
+  // File set for markdownlint-cli2; rules live in .markdownlint.jsonc.
+  "globs": ["**/*.md"],
+  "ignores": ["backend/.venv", "**/node_modules", "**/.pytest_cache", "frontend/dist", "frontend/dev-dist"]
+}

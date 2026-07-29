@@ -1,0 +1,39 @@
+/* Minimal legibility only — the real design pass is its own step. */
+:root { color-scheme: dark; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #101418; color: #e8e8e8; }
+.app { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+header { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; }
+h1 { margin: 0.25rem 0; }
+.toolbar { display: flex; align-items: center; gap: 1rem; }
+button { background: #2a76c9; color: #fff; border: 0; border-radius: 8px; padding: 0.55rem 1rem; font-size: 1rem; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: default; }
+.import-info { opacity: 0.7; font-size: 0.9rem; }
+.error { color: #ff8a80; }
+.empty { opacity: 0.8; margin-top: 2rem; }
+
+.roster { width: 100%; border-collapse: collapse; margin-top: 1rem; font-variant-numeric: tabular-nums; }
+.roster th { text-align: left; padding: 0.5rem 0.6rem; cursor: pointer; user-select: none; white-space: nowrap; border-bottom: 1px solid #2a3340; }
+.roster td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1a2027; white-space: nowrap; }
+.row { cursor: pointer; }
+.row:hover { background: #161c23; }
+.row.expanded { background: #1a2230; }
+.name-cell { font-weight: 600; }
+.outfit { font-weight: 400; opacity: 0.7; font-size: 0.85rem; }
+.rarity { font-weight: 400; opacity: 0.6; font-size: 0.85rem; }
+.trained-cell, .apt-cell { opacity: 0.75; font-size: 0.9rem; }
+
+.detail-row td { background: #141a21; padding: 0.9rem 1rem; white-space: normal; }
+.detail { display: flex; flex-direction: column; gap: 0.8rem; }
+.apt-grid { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+.apt-label { opacity: 0.6; font-size: 0.85rem; }
+.detail-section { border-top: 1px solid #1f2833; padding-top: 0.6rem; }
+.detail-heading, .lineage-title { font-size: 0.95rem; margin-bottom: 0.35rem; }
+.lineage-label { opacity: 0.6; font-size: 0.85rem; margin-right: 0.25rem; }
+.lineage-slot { margin: 0.4rem 0; }
+
+.chips { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+.chip { border-radius: 999px; padding: 0.12rem 0.6rem; font-size: 0.82rem; background: #232b34; }
+.chip.blue { background: #1e3a5f; }
+.chip.pink { background: #5f1e46; }
+.chip.white { background: #3a4250; }
+.chip.unique { background: #275034; }

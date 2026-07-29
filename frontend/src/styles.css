@@ -129,11 +129,12 @@ button:disabled { opacity: 0.6; cursor: default; }
 .filter-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.25rem; height: 1.25rem; border-radius: 999px; background: #2a76c9; font-size: 0.75rem; font-weight: 700; padding: 0 0.3rem; }
 
 .filter-backdrop { position: fixed; inset: 0; z-index: 7; }
-.filter-panel { position: fixed; right: 1rem; bottom: 4.5rem; z-index: 8; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
+.filter-panel { position: fixed; right: 1rem; bottom: 4.5rem; z-index: 8; box-sizing: border-box; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
 .filter-chip-row { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
 .filter-group-label { width: 4.2rem; flex-shrink: 0; font-size: 0.8rem; opacity: 0.6; }
 .uma-popout-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.4); }
-.uma-popout { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(480px, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
+.uma-popout { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; box-sizing: border-box; width: min(520px, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
+.uma-popout .card-chip img, .uma-popout .card-chip .lineage-icon-fallback { width: 60px; height: 60px; }
 .uma-search { width: 100%; box-sizing: border-box; margin-bottom: 0.6rem; background: #1a2027; border: 1px solid #2a3340; border-radius: 8px; color: inherit; padding: 0.5rem 0.7rem; font-size: 0.95rem; }
 .filter-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
 .filter-title { font-weight: 600; margin-right: auto; }
@@ -159,10 +160,12 @@ button:disabled { opacity: 0.6; cursor: default; }
 .card-chip.active { opacity: 1; border-color: #2a76c9; background: #1e3a5f; }
 .card-chip img, .card-chip .lineage-icon-fallback { width: 40px; height: 40px; object-fit: contain; display: inline-flex; }
 
-.sort-float { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.35rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
-.sort-float select { border-radius: 999px; }
-.sort-dir { background: #1a2027; border: 1px solid #2a3340; border-radius: 999px; color: inherit; padding: 0.4rem 0.55rem; font-size: 0.8rem; line-height: 1; }
-.sort-dir:hover { border-color: #2a76c9; }
+/* Flat controls inside the sort pill — no inner chips, so it carries the
+   same visual weight as the Filters pill beside it. */
+.sort-float { display: flex; align-items: center; font-size: 0.9rem; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.25rem 0.5rem 0.25rem 0.35rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+.sort-float select { background: transparent; border: 0; border-radius: 999px; font-size: 0.9rem; padding: 0.3rem 0.2rem 0.3rem 0.5rem; }
+.sort-dir { background: transparent; border: 0; border-radius: 999px; color: inherit; padding: 0.3rem 0.4rem; font-size: 0.8rem; line-height: 1; opacity: 0.75; }
+.sort-dir:hover { opacity: 1; }
 
 /* Phones: denser grid — 4 cards per row on a ~390px screen. Everything on
    the card scales down with it; the spark strip is the width constraint. */

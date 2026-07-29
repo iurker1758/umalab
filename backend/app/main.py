@@ -9,7 +9,7 @@ import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +59,21 @@ class LineageMemberOut(BaseModel):
 class SkillOut(BaseModel):
     skill_id: int
     level: int
+    # Presentation-only enrichment from the bundled skills reference — the DB
+    # keeps skills raw (DECISIONS.md #5, #12), so refreshed reference data
+    # shows up without a re-import. None/defaults when the id is unknown.
+    name: str | None = None
+    rarity: int | None = None
+    unique: bool = False
+
+    @model_validator(mode="after")
+    def _enrich(self) -> SkillOut:
+        info = reference.SKILLS.get(self.skill_id)
+        if info is not None:
+            self.name = info["name"]
+            self.rarity = info["rarity"]
+            self.unique = info["unique"]
+        return self
 
 
 class VeteranOut(BaseModel):

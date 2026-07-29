@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Factor, type ImportInfo, type LineageMember, type Veteran } from "./api";
+import {
+  api,
+  type Factor,
+  type ImportInfo,
+  type LineageMember,
+  type Skill,
+  type Veteran,
+} from "./api";
 
 // Aptitude ints 1..8 map to letters G..S (verified: pink sparks gate on >= 7 = A).
 const APT = "-GFEDCBAS";
@@ -152,6 +159,25 @@ function MarkIcon({ id }: { id: string }) {
         setFailed(true);
       }}
     />
+  );
+}
+
+function SkillChips({ skills }: { skills: Skill[] }) {
+  // Uniques (own and inherited) lead; the rest keep the dump's order.
+  const sorted = [...skills].sort((a, b) => Number(b.unique) - Number(a.unique));
+  return (
+    <span className="chips">
+      {sorted.map((s) => (
+        <span
+          key={s.skill_id}
+          className={s.unique ? "chip unique" : s.rarity === 2 ? "chip gold" : "chip"}
+          title={s.unique ? "Unique skill" : s.rarity === 2 ? "Gold skill" : undefined}
+        >
+          {s.name ?? `Skill ${s.skill_id}`}
+          {s.unique && s.level > 1 ? ` Lv${s.level}` : ""}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -322,6 +348,10 @@ function VeteranDetail({
             <span className="apt-label">{label}</span> {apt(v[key] as number)}
           </span>
         ))}
+      </div>
+      <div className="detail-section">
+        <div className="detail-heading">Skills</div>
+        <SkillChips skills={v.skills} />
       </div>
       <div className="detail-section">
         <div className="detail-heading">Own sparks</div>

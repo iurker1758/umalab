@@ -76,6 +76,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .chip.pink { background: #5f1e46; }
 .chip.white { background: #3a4250; }
 .chip.unique { background: #275034; }
+.chip.gold { background: #5a4a1e; }
 .chip.race { background: #5a4a1e; }
 .chip.scenario { background: #46345c; }
 

@@ -25,6 +25,11 @@ export interface LineageMember {
 export interface Skill {
   skill_id: number;
   level: number;
+  // Enriched by the API from the bundled skills reference; null/false when
+  // the id is missing from it (e.g. a brand-new skill before a data refresh).
+  name: string | null;
+  rarity: number | null;
+  unique: boolean;
 }
 
 export interface Veteran {

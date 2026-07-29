@@ -1,4 +1,4 @@
-"""Regenerate app/data/{cards,factors}.json from uma.moe's resources endpoints.
+"""Regenerate app/data/{cards,factors,skills}.json from uma.moe's resources.
 
 cards.json: joins character.json.gz (card_id-keyed Global roster) with
 character_names.json.gz (chara_id -> {name, skins}) into
@@ -10,7 +10,11 @@ key -> {name, type} where key = uma.moe id // 10 (= factor_id // 100 in a
 dump record). Types: 0 blue, 1 pink, 2 race, 3 white skill, 4 scenario,
 5 unique, -1 other.
 
-Both outputs are committed; rerun this manually when the game updates
+skills.json: skill_id -> {name, rarity, unique} from skills.json.gz,
+gap-patched from the factor table (uma.moe's skill list has holes that
+real dumps hit — see the pass comments in main()).
+
+All outputs are committed; rerun this manually when the game updates
 (DECISIONS.md #6).
 
 Usage:
@@ -108,8 +112,68 @@ def main() -> None:
         for f in raw_factors
     }
 
+    raw_skills = cast(
+        "list[dict[str, Any]]", fetch_json(f"{BASE_URL}/current/skills.json.gz", api_key)
+    )
+    skills: dict[str, dict[str, Any]] = {}
+    for s in raw_skills:
+        sid = s.get("skill_id")
+        if not isinstance(sid, int) or str(sid) in skills:
+            continue  # duplicates exist (per-card unique rows); first wins
+        # Some names carry embedded newlines ("Red \r\nShift/…") — collapse.
+        name = " ".join(str(s.get("name") or "").split()) or f"Skill {sid}"
+        skills[str(sid)] = {
+            "name": name,
+            "rarity": s.get("rarity"),
+            "unique": bool(s.get("unique")),
+        }
+
+    # uma.moe's skill list has holes that real dumps hit. Patch from the
+    # factor table, whose names are the game's own (DECISIONS.md #8).
+    # Pass 1 — base uniques: a type-5 factor key is chara_id*100 + 1, and the
+    # matching unique skill id is 100001 + (chara_id - 1000)*10 (verified
+    # against a real dump: factor key 101001 "Shooting for Victory!" is
+    # skill 100101 on a trained Taiki Shuttle).
+    for key_str, info in factors.items():
+        key = int(key_str)
+        if info["type"] == 5 and key % 100 == 1:
+            sid = str(100001 + (key // 100 - 1000) * 10)
+            if sid not in skills:
+                skills[sid] = {"name": info["name"], "rarity": 5, "unique": True}
+    # Pass 2 — inherited uniques: 9XXXXX is the inheritable (white-star) copy
+    # of unique 1XXXXX; same name, rendered as a normal skill.
+    for key_str in list(skills):
+        sid_int = int(key_str)
+        if 100000 <= sid_int <= 199999 and skills[key_str]["unique"]:
+            inherited = str(sid_int + 800000)
+            if inherited not in skills:
+                skills[inherited] = {
+                    "name": skills[key_str]["name"],
+                    "rarity": 1,
+                    "unique": False,
+                }
+    # Pass 3 — white-skill families: factor key = skill_id // 10. Suffix 1 is
+    # the ◎ tier and 2 the ○ tier (per uma.moe's own pairs, e.g. 200161
+    # "Wet Conditions ◎" / 200162 "Wet Conditions ○"). Factor names carry ○,
+    # so suffix-1 patches swap it; names without ○ stay as-is (best effort).
+    for key_str, info in factors.items():
+        if info["type"] != 3:
+            continue
+        for suffix in (1, 2):
+            sid = str(int(key_str) * 10 + suffix)
+            if sid in skills:
+                continue
+            name = cast(str, info["name"])
+            if suffix == 1 and name.endswith("○"):
+                name = name[:-1] + "◎"
+            skills[sid] = {"name": name, "rarity": 1, "unique": False}
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    for filename, payload in (("cards.json", cards), ("factors.json", factors)):
+    for filename, payload in (
+        ("cards.json", cards),
+        ("factors.json", factors),
+        ("skills.json", skills),
+    ):
         out = DATA_DIR / filename
         out.write_text(
             json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",

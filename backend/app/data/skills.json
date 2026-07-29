@@ -317,7 +317,7 @@
   "100421": {
     "name": "I'm Possible!",
     "rarity": 5,
-    "unique": false
+    "unique": true
   },
   "100431": {
     "name": "Ding Dong, Boo!",
@@ -617,7 +617,7 @@
   "100991": {
     "name": "Shine On, Tomakomai! ☆",
     "rarity": 5,
-    "unique": false
+    "unique": true
   },
   "101001": {
     "name": "Never Say Never",
@@ -3014,11 +3014,6 @@
     "rarity": 1,
     "unique": false
   },
-  "200661": {
-    "name": "Wait-and-See",
-    "rarity": 1,
-    "unique": false
-  },
   "200662": {
     "name": "Wait-and-See",
     "rarity": 1,
@@ -3139,17 +3134,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200782": {
-    "name": "Trick (Rear)",
-    "rarity": 1,
-    "unique": false
-  },
   "200791": {
-    "name": "Frenzied Front Runners",
-    "rarity": 1,
-    "unique": false
-  },
-  "200792": {
     "name": "Frenzied Front Runners",
     "rarity": 1,
     "unique": false
@@ -3159,17 +3144,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200802": {
-    "name": "Frenzied Pace Chasers",
-    "rarity": 1,
-    "unique": false
-  },
   "200811": {
-    "name": "Frenzied Late Surgers",
-    "rarity": 1,
-    "unique": false
-  },
-  "200812": {
     "name": "Frenzied Late Surgers",
     "rarity": 1,
     "unique": false
@@ -3179,17 +3154,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200822": {
-    "name": "Frenzied End Closers",
-    "rarity": 1,
-    "unique": false
-  },
   "200831": {
-    "name": "Subdued Front Runners",
-    "rarity": 1,
-    "unique": false
-  },
-  "200832": {
     "name": "Subdued Front Runners",
     "rarity": 1,
     "unique": false
@@ -3199,17 +3164,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200842": {
-    "name": "Flustered Front Runners",
-    "rarity": 1,
-    "unique": false
-  },
   "200851": {
-    "name": "Hesitant Front Runners",
-    "rarity": 1,
-    "unique": false
-  },
-  "200852": {
     "name": "Hesitant Front Runners",
     "rarity": 1,
     "unique": false
@@ -3219,17 +3174,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200862": {
-    "name": "Subdued Pace Chasers",
-    "rarity": 1,
-    "unique": false
-  },
   "200871": {
-    "name": "Flustered Pace Chasers",
-    "rarity": 1,
-    "unique": false
-  },
-  "200872": {
     "name": "Flustered Pace Chasers",
     "rarity": 1,
     "unique": false
@@ -3239,17 +3184,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200882": {
-    "name": "Hesitant Pace Chasers",
-    "rarity": 1,
-    "unique": false
-  },
   "200891": {
-    "name": "Subdued Late Surgers",
-    "rarity": 1,
-    "unique": false
-  },
-  "200892": {
     "name": "Subdued Late Surgers",
     "rarity": 1,
     "unique": false
@@ -3259,17 +3194,7 @@
     "rarity": 1,
     "unique": false
   },
-  "200902": {
-    "name": "Flustered Late Surgers",
-    "rarity": 1,
-    "unique": false
-  },
   "200911": {
-    "name": "Hesitant Late Surgers",
-    "rarity": 1,
-    "unique": false
-  },
-  "200912": {
     "name": "Hesitant Late Surgers",
     "rarity": 1,
     "unique": false
@@ -3279,27 +3204,12 @@
     "rarity": 1,
     "unique": false
   },
-  "200922": {
-    "name": "Subdued End Closers",
-    "rarity": 1,
-    "unique": false
-  },
   "200931": {
     "name": "Flustered End Closers",
     "rarity": 1,
     "unique": false
   },
-  "200932": {
-    "name": "Flustered End Closers",
-    "rarity": 1,
-    "unique": false
-  },
   "200941": {
-    "name": "Hesitant End Closers",
-    "rarity": 1,
-    "unique": false
-  },
-  "200942": {
     "name": "Hesitant End Closers",
     "rarity": 1,
     "unique": false
@@ -3689,11 +3599,6 @@
     "rarity": 1,
     "unique": false
   },
-  "201301": {
-    "name": "Restart",
-    "rarity": 1,
-    "unique": false
-  },
   "201302": {
     "name": "Restart",
     "rarity": 1,
@@ -3979,17 +3884,7 @@
     "rarity": 1,
     "unique": false
   },
-  "201572": {
-    "name": "Triple 7s",
-    "rarity": 1,
-    "unique": false
-  },
   "201581": {
-    "name": "Highlander",
-    "rarity": 1,
-    "unique": false
-  },
-  "201582": {
     "name": "Highlander",
     "rarity": 1,
     "unique": false
@@ -4029,27 +3924,12 @@
     "rarity": 1,
     "unique": false
   },
-  "201622": {
-    "name": "Shake It Out",
-    "rarity": 1,
-    "unique": false
-  },
   "201631": {
     "name": "Sympathy",
     "rarity": 1,
     "unique": false
   },
-  "201632": {
-    "name": "Sympathy",
-    "rarity": 1,
-    "unique": false
-  },
   "201641": {
-    "name": "Lone Wolf",
-    "rarity": 1,
-    "unique": false
-  },
-  "201642": {
     "name": "Lone Wolf",
     "rarity": 1,
     "unique": false
@@ -4275,11 +4155,6 @@
     "unique": false
   },
   "202161": {
-    "name": "Restraint",
-    "rarity": 1,
-    "unique": false
-  },
-  "202162": {
     "name": "Restraint",
     "rarity": 1,
     "unique": false
@@ -4754,11 +4629,6 @@
     "rarity": 1,
     "unique": false
   },
-  "202611": {
-    "name": "Unrestrained Passion",
-    "rarity": 1,
-    "unique": false
-  },
   "202612": {
     "name": "Unrestrained Passion",
     "rarity": 1,
@@ -4929,18 +4799,8 @@
     "rarity": 1,
     "unique": false
   },
-  "210092": {
-    "name": "Racing Spirit: Stamina",
-    "rarity": 1,
-    "unique": false
-  },
   "210101": {
     "name": "Racing Spirit: Stamina",
-    "rarity": 1,
-    "unique": false
-  },
-  "210102": {
-    "name": "Racing Spirit: Power",
     "rarity": 1,
     "unique": false
   },
@@ -4949,18 +4809,8 @@
     "rarity": 1,
     "unique": false
   },
-  "210112": {
-    "name": "Racing Spirit: Guts",
-    "rarity": 1,
-    "unique": false
-  },
   "210121": {
     "name": "Racing Spirit: Guts",
-    "rarity": 1,
-    "unique": false
-  },
-  "210122": {
-    "name": "Racing Spirit: Wit",
     "rarity": 1,
     "unique": false
   },
@@ -4969,128 +4819,8 @@
     "rarity": 1,
     "unique": false
   },
-  "210132": {
-    "name": "Racing Spirit: Mood",
-    "rarity": 1,
-    "unique": false
-  },
   "210141": {
     "name": "Racing Spirit: Mood",
-    "rarity": 1,
-    "unique": false
-  },
-  "210142": {
-    "name": "Racing Spirit: Speed +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210151": {
-    "name": "Racing Spirit: Stamina +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210152": {
-    "name": "Racing Spirit: Stamina +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210161": {
-    "name": "Racing Spirit: Power +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210162": {
-    "name": "Racing Spirit: Power +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210171": {
-    "name": "Racing Spirit: Guts +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210172": {
-    "name": "Racing Spirit: Guts +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210181": {
-    "name": "Racing Spirit: Wit +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210182": {
-    "name": "Racing Spirit: Wit +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210191": {
-    "name": "Racing Spirit: Mood +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210192": {
-    "name": "Racing Spirit: Mood +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210201": {
-    "name": "Eyes on the Goal",
-    "rarity": 1,
-    "unique": false
-  },
-  "210202": {
-    "name": "Eyes on the Goal",
-    "rarity": 1,
-    "unique": false
-  },
-  "210211": {
-    "name": "Ignited Spirit: Speed +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210212": {
-    "name": "Ignited Spirit: Speed +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210221": {
-    "name": "Ignited Spirit: Stamina +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210222": {
-    "name": "Ignited Spirit: Stamina +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210231": {
-    "name": "Ignited Spirit: Power +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210232": {
-    "name": "Ignited Spirit: Power +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210241": {
-    "name": "Ignited Spirit: Guts +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210242": {
-    "name": "Ignited Spirit: Guts +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210251": {
-    "name": "Ignited Spirit: Wit +",
-    "rarity": 1,
-    "unique": false
-  },
-  "210252": {
-    "name": "Ignited Spirit: Wit +",
     "rarity": 1,
     "unique": false
   },
@@ -5187,12 +4917,12 @@
   "300131": {
     "name": "Ruler of Japan",
     "rarity": 5,
-    "unique": false
+    "unique": true
   },
   "300141": {
     "name": "Indomitable",
     "rarity": 5,
-    "unique": false
+    "unique": true
   },
   "900011": {
     "name": "Shooting Star",
@@ -5337,7 +5067,7 @@
   "900291": {
     "name": "Snow Bright, Snow Flight",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900301": {
     "name": "Blue Rose Closer",
@@ -5402,12 +5132,12 @@
   "900421": {
     "name": "I'm Possible!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900431": {
     "name": "Ding Dong, Boo!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900441": {
     "name": "Victory belongs to me—Strelitzia! ☆",
@@ -5427,7 +5157,7 @@
   "900471": {
     "name": "Raise My Soul's Blade!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900481": {
     "name": "Pop & Polish",
@@ -5437,7 +5167,7 @@
   "900491": {
     "name": "Laugh at the Odds",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900501": {
     "name": "Nemesis",
@@ -5462,7 +5192,7 @@
   "900551": {
     "name": "Magical☆Marvelous★World",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900561": {
     "name": "I See Victory in My Future!",
@@ -5472,7 +5202,7 @@
   "900571": {
     "name": "Lyrical Journey",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900581": {
     "name": "I Never Goof Up!",
@@ -5507,12 +5237,12 @@
   "900651": {
     "name": "Hands in the Air Like Ya Don't Care!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900661": {
     "name": "Turbo BLAST!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900671": {
     "name": "Eternal Encompassing Shine",
@@ -5532,7 +5262,7 @@
   "900701": {
     "name": "Seirios",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900711": {
     "name": "A Lifelong Dream, A Moment's Flight",
@@ -5552,32 +5282,32 @@
   "900761": {
     "name": "World in Bloom",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900781": {
     "name": "Sunny Breeze",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900831": {
     "name": "Mission: Triumph",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900841": {
     "name": "Sublimated Thunder",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900851": {
     "name": "Ever Supreme",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900871": {
     "name": "Silent Letter",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "900981": {
     "name": "Luck Runs My Way",
@@ -5587,27 +5317,27 @@
   "900991": {
     "name": "Shine On, Tomakomai! ☆",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "901001": {
     "name": "Never Say Never",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "901041": {
     "name": "Sunrise Banner—Katsuragi Ace!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "901051": {
     "name": "Ad Astra",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "901061": {
     "name": "Bang! Miracle Shot ☆",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910011": {
     "name": "Dazzl'n ♪ Diver",
@@ -5617,7 +5347,7 @@
   "910021": {
     "name": "Ahead of the Horizon",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910031": {
     "name": "Certain Victory",
@@ -5647,12 +5377,12 @@
   "910081": {
     "name": "Into High Gear!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910091": {
     "name": "Queen's Lumination",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910101": {
     "name": "Joyful Voyage!",
@@ -5667,7 +5397,7 @@
   "910121": {
     "name": "First Bite of the Feast!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910131": {
     "name": "Legacy of the Strong",
@@ -5687,7 +5417,7 @@
   "910161": {
     "name": "Free From the Ashes",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910171": {
     "name": "Arrows Whistle, Shadows Disperse",
@@ -5702,7 +5432,7 @@
   "910191": {
     "name": "THE MOE AAAA Thanks for My Life",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910201": {
     "name": "Break It Down!",
@@ -5712,7 +5442,7 @@
   "910211": {
     "name": "Lightning Flare",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910221": {
     "name": "Best day ever",
@@ -5737,7 +5467,7 @@
   "910271": {
     "name": "A Warm Cup for You",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910301": {
     "name": "Every Rose Has Its Fangs",
@@ -5747,17 +5477,17 @@
   "910311": {
     "name": "Fresh☆Parlor",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910321": {
     "name": "Summer Halation",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910341": {
     "name": "Firelight",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910351": {
     "name": "Ticket to Your Dreams!",
@@ -5782,7 +5512,7 @@
   "910411": {
     "name": "Cherry☆Scramble",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910451": {
     "name": "Give Mummy a Hug ♡",
@@ -5797,7 +5527,7 @@
   "910481": {
     "name": "Us Girlies Keep Winnin'! ♪",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910501": {
     "name": "Hephaestus",
@@ -5807,7 +5537,7 @@
   "910511": {
     "name": "Flowering Dreams",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910521": {
     "name": "114th Time's the Charm",
@@ -5817,7 +5547,7 @@
   "910531": {
     "name": "Scorching Summer Tech!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910561": {
     "name": "Bountiful Harvest",
@@ -5827,7 +5557,7 @@
   "910581": {
     "name": "Spooky, Scary, Happy",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910591": {
     "name": "Wherever This Wonder Leads",
@@ -5847,27 +5577,27 @@
   "910621": {
     "name": "Tumbly Power Drive!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910671": {
     "name": "Rain Cloud Bolt",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910681": {
     "name": "Bring on the Banquet!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910691": {
     "name": "Watch! Me! BLOOM!",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "910711": {
     "name": "Danser le Présent",
     "rarity": 1,
-    "unique": false
+    "unique": true
   },
   "920011": {
     "name": "Dreams Donned with Pride!",

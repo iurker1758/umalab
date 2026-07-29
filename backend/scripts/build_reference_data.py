@@ -15,8 +15,10 @@ dump record). Types: 0 blue, 1 pink, 2 race, 3 white skill, 4 scenario,
 5 unique, -1 other.
 
 skills.json: skill_id -> {name, rarity, unique} from skills.json.gz,
-gap-patched from the factor table (uma.moe's skill list has holes that
-real dumps hit — see the pass comments in main()).
+gap-patched from the local master.mdb (skill_data + text_data category 47,
+the game's own names/rarities) and, for gameless regenerations, from the
+factor table and the previous committed file — see the pass comments in
+main(). The unique flag is normalized locally (uma.moe's is inconsistent).
 
 All outputs are committed; rerun this manually when the game updates
 (DECISIONS.md #6).
@@ -74,6 +76,27 @@ def load_card_titles() -> dict[str, str]:
     else:
         print(f"card titles: master.mdb not found, kept {len(titles)} previous")
     return titles
+
+
+def load_mdb_skills() -> dict[str, dict[str, Any]]:
+    """The game's own skill table: id -> {name, rarity}. Authoritative for
+    Global — used to fill uma.moe's holes with real names instead of guesses.
+    Empty on a machine without the game."""
+    if not MASTER_MDB.exists():
+        return {}
+    con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
+    try:
+        rows = con.execute(
+            'SELECT s.id, t.text, s.rarity FROM skill_data s'
+            ' JOIN text_data t ON t.category = 47 AND t."index" = s.id'
+        ).fetchall()
+    finally:
+        con.close()
+    return {
+        str(sid): {"name": " ".join(str(text).split()), "rarity": rarity}
+        for sid, text, rarity in rows
+        if text
+    }
 
 
 def fetch(url: str, api_key: str) -> bytes:
@@ -169,9 +192,25 @@ def main() -> None:
             "unique": bool(s.get("unique")),
         }
 
-    # uma.moe's skill list has holes that real dumps hit. Patch from the
-    # factor table, whose names are the game's own (DECISIONS.md #8).
-    # Pass 1 — base uniques: a type-5 factor key is chara_id*100 + 1, and the
+    # uma.moe's skill list has holes that real dumps hit, and its unique
+    # flag is wrong on some rows. Patch and normalize locally.
+    # Pass 1 — master.mdb: the installed client's own names/rarities fill
+    # any hole exactly. Suffix arithmetic can NOT stand in for this: the
+    # published pairs run both x1-gold/x2-white ("Beeline Burst" /
+    # "Straightaway Adept") and x1-white/x2-gold ("Uma Stan"/"Superstan"),
+    # and some suffix ids (200661) don't exist in the game at all.
+    mdb_skills = load_mdb_skills()
+    filled = 0
+    for sid, info in mdb_skills.items():
+        if sid not in skills:
+            skills[sid] = {"name": info["name"], "rarity": info["rarity"], "unique": False}
+            filled += 1
+    if mdb_skills:
+        print(f"skills: {filled} holes filled from local master.mdb")
+    else:
+        print("skills: master.mdb not found, using fallback passes only")
+
+    # Pass 2 — base uniques: a type-5 factor key is chara_id*100 + 1, and the
     # matching unique skill id is 100001 + (chara_id - 1000)*10 (verified
     # against a real dump: factor key 101001 "Shooting for Victory!" is
     # skill 100101 on a trained Taiki Shuttle).
@@ -181,33 +220,57 @@ def main() -> None:
             sid = str(100001 + (key // 100 - 1000) * 10)
             if sid not in skills:
                 skills[sid] = {"name": info["name"], "rarity": 5, "unique": True}
-    # Pass 2 — inherited uniques: 9XXXXX is the inheritable (white-star) copy
-    # of unique 1XXXXX; same name, rendered as a normal skill.
+
+    # Pass 3 — inherited uniques: 9XXXXX is the inheritable (white-star) copy
+    # of unique 1XXXXX; same name. The base is recognized by rarity >= 3, not
+    # the not-yet-normalized upstream unique flag.
     for key_str in list(skills):
         sid_int = int(key_str)
-        if 100000 <= sid_int <= 199999 and skills[key_str]["unique"]:
+        if 100000 <= sid_int <= 199999 and cast(int, skills[key_str]["rarity"] or 0) >= 3:
             inherited = str(sid_int + 800000)
             if inherited not in skills:
                 skills[inherited] = {
                     "name": skills[key_str]["name"],
                     "rarity": 1,
-                    "unique": False,
+                    "unique": True,
                 }
-    # Pass 3 — white-skill families: factor key = skill_id // 10. Suffix 1 is
-    # the ◎ tier and 2 the ○ tier (per uma.moe's own pairs, e.g. 200161
-    # "Wet Conditions ◎" / 200162 "Wet Conditions ○"). Factor names carry ○,
-    # so suffix-1 patches swap it; names without ○ stay as-is (best effort).
+
+    # Pass 4 — gameless fallback, ◎/○ families only: when a type-3 factor
+    # name ends in ○, suffix 1 is the ◎ tier and 2 the ○ tier (holds for
+    # every such pair uma.moe publishes). Families without a ○ name are left
+    # alone — one of their suffixes is a gold skill whose name nothing here
+    # can derive, and guessing used to write white names onto gold ids.
     for key_str, info in factors.items():
-        if info["type"] != 3:
+        name = cast(str, info["name"])
+        if info["type"] != 3 or not name.endswith("○"):
             continue
-        for suffix in (1, 2):
+        for suffix, tier_name in ((1, name[:-1] + "◎"), (2, name)):
             sid = str(int(key_str) * 10 + suffix)
-            if sid in skills:
-                continue
-            name = cast(str, info["name"])
-            if suffix == 1 and name.endswith("○"):
-                name = name[:-1] + "◎"
-            skills[sid] = {"name": name, "rarity": 1, "unique": False}
+            if sid not in skills:
+                skills[sid] = {"name": tier_name, "rarity": 1, "unique": False}
+
+    # Pass 5 — carry-over, like card titles: a machine without the game keeps
+    # any previously committed entry the passes above couldn't reproduce.
+    # Skipped when master.mdb is present — it is exhaustive for Global, so
+    # anything still missing doesn't exist, and stale fabrications from older
+    # script versions get dropped instead of carried forward.
+    skills_file = DATA_DIR / "skills.json"
+    if not mdb_skills and skills_file.exists():
+        prev_skills = cast(
+            "dict[str, dict[str, Any]]",
+            json.loads(skills_file.read_text(encoding="utf-8")),
+        )
+        for sid, entry in prev_skills.items():
+            skills.setdefault(sid, entry)
+
+    # Normalize the unique flag — uma.moe ships it wrong on some rows (42 of
+    # 137 inherited uniques, 4 of 82 rarity-5 bases). Full-table audit: every
+    # rarity 3/4 row is an upgraded unique, rarity 5+ is a base unique, and
+    # 9XXXXX is the inherited-unique range; nothing else is ever unique.
+    for sid, entry in skills.items():
+        entry["unique"] = (
+            cast(int, entry["rarity"] or 0) >= 3 or 900000 <= int(sid) <= 999999
+        )
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     for filename, payload in (

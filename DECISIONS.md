@@ -322,14 +322,16 @@ Keep adding entries as the build evolves. This file is the interview.
   star level (1★/2★/3★ chips, own unique by default, same legacy
   toggle); favorites are the 15 mark icons plus a **no-favorite** chip
   (matches unmarked veterans; ORs with marks like any other chip). A
-  sixth section, **Skill sparks** (after Unique), filters by
-  white-spark name through the same search-popout pattern as Umas
-  (vocabulary = the ~140 white sparks actually present in the roster,
-  not the full game table) — each selected skill carries its **own**
+  sixth section, **Common Sparks** (after Unique), filters by white- or
+  race-spark name through the same search-popout pattern as Umas
+  (vocabulary = the ~170 such sparks actually present in the roster,
+  not the full game table) — each selected spark carries its **own**
   star mode and legacy toggle, with a per-section reset beside the
-  chooser. The panel header shows a live "N of M match" count and a
-  Reset-filters button so filters can be tuned without closing the
-  panel. State persists in `localStorage` (`umalab.filters`), applied
+  chooser. Unlike every other section, selected common sparks **AND**
+  together: a breeding shortlist wants veterans carrying every hunted
+  spark, and OR across specific skills answers no real question. The
+  panel header shows a live "N of M match" count and a Reset-Filters
+  button so filters can be tuned without closing the panel. State persists in `localStorage` (`umalab.filters`), applied
   client-side per #7.
 - **Rejected:** OR across everything — a grid that only grows as you
   select more answers no real roster question; filtering by specific

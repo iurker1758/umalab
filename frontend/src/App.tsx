@@ -315,11 +315,16 @@ function matchesFilters(v: Veteran, f: Filters): boolean {
   ) {
     return false;
   }
+  // Common sparks (white + race) AND together — a breeding shortlist wants
+  // veterans that carry EVERY hunted spark, unlike the OR chips elsewhere.
   if (
     f.whites.length > 0 &&
-    !f.whites.some((w) =>
+    !f.whites.every((w) =>
       pool(w.legacy).some(
-        (fa) => fa.kind === "white" && fa.name === w.name && starOk(fa.star, w.stars)
+        (fa) =>
+          (fa.kind === "white" || fa.kind === "race") &&
+          fa.name === w.name &&
+          starOk(fa.star, w.stars)
       )
     )
   ) {
@@ -524,7 +529,7 @@ function VeteranDetail({
         <SkillChips skills={v.skills} />
       </div>
       <div className="detail-section">
-        <div className="detail-heading">Own sparks</div>
+        <div className="detail-heading">Own Sparks</div>
         <FactorChips factors={v.factors} />
       </div>
       {parents.map((parent, i) => (
@@ -650,7 +655,7 @@ function StarModeRow({
         aria-pressed={legacy}
         onClick={onLegacy}
       >
-        Legacy sparks
+        Legacy Sparks
       </button>
     </div>
   );
@@ -817,7 +822,7 @@ function FilterPanel({
             disabled={countFilters(filters) === 0}
             onClick={() => onChange(defaultFilters)}
           >
-            Reset filters
+            Reset Filters
           </button>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
@@ -834,7 +839,7 @@ function FilterPanel({
                 setUmaOpen(true);
               }}
             >
-              Choose umas…
+              Choose Umas…
             </button>
             {cards
               .filter((c) => filters.cards.includes(c.card_id))
@@ -851,14 +856,14 @@ function FilterPanel({
         </div>
 
         <SparkSection
-          title="Attribute sparks"
+          title="Attribute Sparks"
           groups={[[null, BLUE_ORDER.map((n) => [sparkAbbr(n), n])]]}
           kind="blue"
           value={filters.blue}
           onChange={(blue) => onChange({ ...filters, blue })}
         />
         <SparkSection
-          title="Aptitude sparks"
+          title="Aptitude Sparks"
           groups={PINK_SPARK_GROUPS}
           kind="pink"
           value={filters.pink}
@@ -866,7 +871,7 @@ function FilterPanel({
         />
 
         <div className="filter-section">
-          <div className="filter-heading">Unique spark</div>
+          <div className="filter-heading">Unique Spark</div>
           <StarModeRow
             stars={filters.unique.stars}
             legacy={filters.unique.legacy}
@@ -884,7 +889,7 @@ function FilterPanel({
         </div>
 
         <div className="filter-section">
-          <div className="filter-heading">Skill sparks</div>
+          <div className="filter-heading">Common Sparks</div>
           <div className="filter-chips">
             <button
               className="fchip"
@@ -893,14 +898,14 @@ function FilterPanel({
                 setSparkOpen(true);
               }}
             >
-              Choose sparks…
+              Choose Sparks…
             </button>
             {filters.whites.length > 0 && (
               <button
                 className="fchip"
                 onClick={() => onChange({ ...filters, whites: [] })}
               >
-                Reset sparks
+                Reset Sparks
               </button>
             )}
           </div>
@@ -982,11 +987,11 @@ function FilterPanel({
       {sparkOpen && (
         <>
           <div className="uma-popout-backdrop" onMouseDown={() => setSparkOpen(false)} />
-          <div className="uma-popout" role="dialog" aria-label="Choose skill sparks">
+          <div className="uma-popout" role="dialog" aria-label="Choose common sparks">
             <input
               className="uma-search"
               type="search"
-              placeholder="Search skills…"
+              placeholder="Search sparks…"
               value={sparkQuery}
               autoFocus
               onChange={(e) => setSparkQuery(e.target.value)}
@@ -1302,14 +1307,15 @@ export default function App() {
     );
   }, [veterans]);
 
-  // Every white-spark name present anywhere in the roster (own + lineage) —
-  // the searchable vocabulary for the Skill sparks filter.
-  const whiteSparkNames = useMemo(() => {
+  // Every common-spark (white skill + race) name present anywhere in the
+  // roster (own + lineage) — the searchable vocabulary for the filter.
+  const commonSparkNames = useMemo(() => {
     const names = new Set<string>();
+    const want = (k: string) => k === "white" || k === "race";
     for (const v of veterans) {
-      for (const f of v.factors) if (f.kind === "white") names.add(f.name);
+      for (const f of v.factors) if (want(f.kind)) names.add(f.name);
       for (const m of v.lineage) {
-        for (const f of m.factors) if (f.kind === "white") names.add(f.name);
+        for (const f of m.factors) if (want(f.kind)) names.add(f.name);
       }
     }
     return [...names].sort((a, b) => a.localeCompare(b));
@@ -1423,7 +1429,7 @@ export default function App() {
         <FilterPanel
           filters={filters}
           cards={rosterCards}
-          whiteNames={whiteSparkNames}
+          whiteNames={commonSparkNames}
           iconIndex={iconIndex}
           matchCount={sorted.length}
           total={veterans.length}

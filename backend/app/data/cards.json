@@ -2,486 +2,583 @@
   "100101": {
     "chara_id": 1001,
     "name": "Special Week",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Special Dreamer]"
   },
   "100102": {
     "chara_id": 1001,
     "name": "Special Week",
-    "outfit": "Summer"
+    "outfit": "Summer",
+    "title": "[Hopp'n♪Happy Heart]"
   },
   "100103": {
     "chara_id": 1001,
     "name": "Special Week",
-    "outfit": "Commander"
+    "outfit": "Commander",
+    "title": "[Ruler of Japan]"
   },
   "100201": {
     "chara_id": 1002,
     "name": "Silence Suzuka",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Innocent Silence]"
   },
   "100301": {
     "chara_id": 1003,
     "name": "Tokai Teio",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Peak Joy]"
   },
   "100302": {
     "chara_id": 1003,
     "name": "Tokai Teio",
-    "outfit": "Anime Collab"
+    "outfit": "Anime Collab",
+    "title": "[Beyond the Horizon]"
   },
   "100401": {
     "chara_id": 1004,
     "name": "Maruzensky",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Formula R]"
   },
   "100402": {
     "chara_id": 1004,
     "name": "Maruzensky",
-    "outfit": "Summer"
+    "outfit": "Summer",
+    "title": "[Hot☆Summer Night]"
   },
   "100501": {
     "chara_id": 1005,
     "name": "Fuji Kiseki",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Shooting Star Revue]"
   },
   "100502": {
     "chara_id": 1005,
     "name": "Fuji Kiseki",
-    "outfit": "Ballroom"
+    "outfit": "Ballroom",
+    "title": "[Succès Étoilé]"
   },
   "100601": {
     "chara_id": 1006,
     "name": "Oguri Cap",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Starlight Beat]"
   },
   "100602": {
     "chara_id": 1006,
     "name": "Oguri Cap",
-    "outfit": "Christmas"
+    "outfit": "Christmas",
+    "title": "[Ashen Miracle]"
   },
   "100701": {
     "chara_id": 1007,
     "name": "Gold Ship",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Red Strife]"
   },
   "100702": {
     "chara_id": 1007,
     "name": "Gold Ship",
-    "outfit": "Summer"
+    "outfit": "Summer",
+    "title": "[RUN! RUIN! LAUNCHER!]"
   },
   "100801": {
     "chara_id": 1008,
     "name": "Vodka",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Wild Top Gear]"
   },
   "100901": {
     "chara_id": 1009,
     "name": "Daiwa Scarlet",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Peak Blue]"
   },
   "101001": {
     "chara_id": 1010,
     "name": "Taiki Shuttle",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Wild Frontier]"
   },
   "101002": {
     "chara_id": 1010,
     "name": "Taiki Shuttle",
-    "outfit": "Camping"
+    "outfit": "Camping",
+    "title": "[Bubblegum☆Memories]"
   },
   "101101": {
     "chara_id": 1011,
     "name": "Grass Wonder",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Stone-Piercing Blue]"
   },
   "101102": {
     "chara_id": 1011,
     "name": "Grass Wonder",
-    "outfit": "Fantasy"
+    "outfit": "Fantasy",
+    "title": "[Saintly Jade Cleric]"
   },
   "101201": {
     "chara_id": 1012,
     "name": "Hishi Amazon",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Azure Amazon]"
   },
   "101301": {
     "chara_id": 1013,
     "name": "Mejiro McQueen",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Frontline Elegance]"
   },
   "101302": {
     "chara_id": 1013,
     "name": "Mejiro McQueen",
-    "outfit": "Anime Collab"
+    "outfit": "Anime Collab",
+    "title": "[End of the Skies]"
   },
   "101303": {
     "chara_id": 1013,
     "name": "Mejiro McQueen",
-    "outfit": "Summer"
+    "outfit": "Summer",
+    "title": "[Fair Lady of the Waves]"
   },
   "101401": {
     "chara_id": 1014,
     "name": "El Condor Pasa",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[El☆Número 1]"
   },
   "101402": {
     "chara_id": 1014,
     "name": "El Condor Pasa",
-    "outfit": "Fantasy"
+    "outfit": "Fantasy",
+    "title": "[Kukulkan Warrior]"
   },
   "101501": {
     "chara_id": 1015,
     "name": "T.M. Opera O",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[O Sole Suo!]"
   },
   "101502": {
     "chara_id": 1015,
     "name": "T.M. Opera O",
-    "outfit": "New Year"
+    "outfit": "New Year",
+    "title": "[New Year, Same Radiance!]"
   },
   "101601": {
     "chara_id": 1016,
     "name": "Narita Brian",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Maverick]"
   },
   "101701": {
     "chara_id": 1017,
     "name": "Symboli Rudolf",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Emperor's Path]"
   },
   "101702": {
     "chara_id": 1017,
     "name": "Symboli Rudolf",
-    "outfit": "Festival"
+    "outfit": "Festival",
+    "title": "[Archer by Moonlight]"
   },
   "101801": {
     "chara_id": 1018,
     "name": "Air Groove",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Empress Road]"
   },
   "101802": {
     "chara_id": 1018,
     "name": "Air Groove",
-    "outfit": "Wedding"
+    "outfit": "Wedding",
+    "title": "[Quercus Civilis]"
   },
   "101901": {
     "chara_id": 1019,
     "name": "Agnes Digital",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Full-Color Fangirling]"
   },
   "102001": {
     "chara_id": 1020,
     "name": "Seiun Sky",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Reeling in the Big One]"
   },
   "102002": {
     "chara_id": 1020,
     "name": "Seiun Sky",
-    "outfit": "Ballroom"
+    "outfit": "Ballroom",
+    "title": "[Soirée des Chatons]"
   },
   "102101": {
     "chara_id": 1021,
     "name": "Tamamo Cross",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Fast as Lightning]"
   },
   "102201": {
     "chara_id": 1022,
     "name": "Fine Motion",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Noble Seamair]"
   },
   "102202": {
     "chara_id": 1022,
     "name": "Fine Motion",
-    "outfit": "Titania"
+    "outfit": "Titania",
+    "title": "[Titania]"
   },
   "102301": {
     "chara_id": 1023,
     "name": "Biwa Hayahide",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[pf. Winning Equation...]"
   },
   "102302": {
     "chara_id": 1023,
     "name": "Biwa Hayahide",
-    "outfit": "Christmas"
+    "outfit": "Christmas",
+    "title": "[Rouge Caroler]"
   },
   "102401": {
     "chara_id": 1024,
     "name": "Mayano Top Gun",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Scramble☆Zone]"
   },
   "102402": {
     "chara_id": 1024,
     "name": "Mayano Top Gun",
-    "outfit": "Wedding"
+    "outfit": "Wedding",
+    "title": "[Sunlight Bouquet]"
   },
   "102501": {
     "chara_id": 1025,
     "name": "Manhattan Cafe",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Creeping Shadow]"
   },
   "102601": {
     "chara_id": 1026,
     "name": "Mihono Bourbon",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[MB-19890425]"
   },
   "102602": {
     "chara_id": 1026,
     "name": "Mihono Bourbon",
-    "outfit": "Valentine"
+    "outfit": "Valentine",
+    "title": "[CODE: ICING]"
   },
   "102701": {
     "chara_id": 1027,
     "name": "Mejiro Ryan",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Down the Line]"
   },
   "102801": {
     "chara_id": 1028,
     "name": "Hishi Akebono",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Buono ☆ Alla Moda]"
   },
   "103001": {
     "chara_id": 1030,
     "name": "Rice Shower",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Rosy Dreams]"
   },
   "103002": {
     "chara_id": 1030,
     "name": "Rice Shower",
-    "outfit": "Make up Vampire!"
+    "outfit": "Make up Vampire!",
+    "title": "[Vampire Makeover!]"
   },
   "103101": {
     "chara_id": 1031,
     "name": "Ines Fujin",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Always Electrifying]"
   },
   "103201": {
     "chara_id": 1032,
     "name": "Agnes Tachyon",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[tach-nology]"
   },
   "103301": {
     "chara_id": 1033,
     "name": "Admire Vega",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Starry Nocturne]"
   },
   "103401": {
     "chara_id": 1034,
     "name": "Inari One",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Edomurasaki]"
   },
   "103501": {
     "chara_id": 1035,
     "name": "Winning Ticket",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Get to Winning!]"
   },
   "103502": {
     "chara_id": 1035,
     "name": "Winning Ticket",
-    "outfit": "Dream Deliverer"
+    "outfit": "Dream Deliverer",
+    "title": "[Dream Deliverer]"
   },
   "103601": {
     "chara_id": 1036,
     "name": "Air Shakur",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[unsigned]"
   },
   "103701": {
     "chara_id": 1037,
     "name": "Eishin Flash",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Meisterschaft]"
   },
   "103702": {
     "chara_id": 1037,
     "name": "Eishin Flash",
-    "outfit": "Valentine"
+    "outfit": "Valentine",
+    "title": "[Precise Chocolatier]"
   },
   "103801": {
     "chara_id": 1038,
     "name": "Curren Chan",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Fille Éclair]"
   },
   "103802": {
     "chara_id": 1038,
     "name": "Curren Chan",
-    "outfit": "Wedding"
+    "outfit": "Wedding",
+    "title": "[Ma Chérie of the New Moon]"
   },
   "103901": {
     "chara_id": 1039,
     "name": "Kawakami Princess",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Princess of Pink]"
   },
   "104001": {
     "chara_id": 1040,
     "name": "Gold City",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Authentic / 1928]"
   },
   "104002": {
     "chara_id": 1040,
     "name": "Gold City",
-    "outfit": "Festival"
+    "outfit": "Festival",
+    "title": "[Autumn Cosmos]"
   },
   "104101": {
     "chara_id": 1041,
     "name": "Sakura Bakushin O",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Blossom in Learning]"
   },
   "104401": {
     "chara_id": 1044,
     "name": "Sweep Tosho",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Platanus Witch]"
   },
   "104501": {
     "chara_id": 1045,
     "name": "Super Creek",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Murmuring Stream]"
   },
   "104502": {
     "chara_id": 1045,
     "name": "Super Creek",
-    "outfit": "Halloween"
+    "outfit": "Halloween",
+    "title": "[Chiffon-Wrapped Mummy]"
   },
   "104601": {
     "chara_id": 1046,
     "name": "Smart Falcon",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[LOVE☆4EVER]"
   },
   "104602": {
     "chara_id": 1046,
     "name": "Smart Falcon",
-    "outfit": "Grand Live"
+    "outfit": "Grand Live",
+    "title": "[Twilight Triumph]"
   },
   "104801": {
     "chara_id": 1048,
     "name": "Tosen Jordan",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Jokester ☆ Vibes]"
   },
   "105001": {
     "chara_id": 1050,
     "name": "Narita Taishin",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Nevertheless]"
   },
   "105002": {
     "chara_id": 1050,
     "name": "Narita Taishin",
-    "outfit": "Steampunk"
+    "outfit": "Steampunk",
+    "title": "[Difference Engineer]"
   },
   "105101": {
     "chara_id": 1051,
     "name": "Nishino Flower",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Layered Petals]"
   },
   "105201": {
     "chara_id": 1052,
     "name": "Haru Urara",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Bestest Prize ♪]"
   },
   "105202": {
     "chara_id": 1052,
     "name": "Haru Urara",
-    "outfit": "New Year"
+    "outfit": "New Year",
+    "title": "[New Year ♪ New Urara!]"
   },
   "105301": {
     "chara_id": 1053,
     "name": "Bamboo Memory",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Iron Ambition]"
   },
   "105601": {
     "chara_id": 1056,
     "name": "Matikanefukukitaru",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Rising☆Fortune]"
   },
   "105602": {
     "chara_id": 1056,
     "name": "Matikanefukukitaru",
-    "outfit": "Full Armor"
+    "outfit": "Full Armor",
+    "title": "[Lucky Tidings]"
   },
   "105801": {
     "chara_id": 1058,
     "name": "Meisho Doto",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Turbulent Blue]"
   },
   "105901": {
     "chara_id": 1059,
     "name": "Mejiro Dober",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Off the Line]"
   },
   "105902": {
     "chara_id": 1059,
     "name": "Mejiro Dober",
-    "outfit": "Camping"
+    "outfit": "Camping",
+    "title": "[Sapphire Sojourn]"
   },
   "106001": {
     "chara_id": 1060,
     "name": "Nice Nature",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Poinsettia Ribbon]"
   },
   "106002": {
     "chara_id": 1060,
     "name": "Nice Nature",
-    "outfit": "Cheerleader"
+    "outfit": "Cheerleader",
+    "title": "[Run & Win]"
   },
   "106101": {
     "chara_id": 1061,
     "name": "King Halo",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[King of Emeralds]"
   },
   "106102": {
     "chara_id": 1061,
     "name": "King Halo",
-    "outfit": "Cheerleader"
+    "outfit": "Cheerleader",
+    "title": "[Cheerleader in Noble White]"
   },
   "106201": {
     "chara_id": 1062,
     "name": "Matikanetannhauser",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Clippety-Tippety-Clop]"
   },
   "106401": {
     "chara_id": 1064,
     "name": "Mejiro Palmer",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Line Breakthrough]"
   },
   "106701": {
     "chara_id": 1067,
     "name": "Satono Diamond",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Natural Brilliance]"
   },
   "106801": {
     "chara_id": 1068,
     "name": "Kitasan Black",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Gilded Shrine to Glory]"
   },
   "106901": {
     "chara_id": 1069,
     "name": "Sakura Chiyono O",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Strength in Full Bloom]"
   },
   "107101": {
     "chara_id": 1071,
     "name": "Mejiro Ardan",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Crystalline]"
   },
   "107201": {
     "chara_id": 1072,
     "name": "Yaeno Muteki",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Blazed Head, Covered Fists]"
   },
   "107401": {
     "chara_id": 1074,
     "name": "Mejiro Bright",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Brunissage Line]"
   },
   "109801": {
     "chara_id": 1098,
     "name": "Copano Rickey",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Eightfold☆Fortune]"
   },
   "9100101": {
     "chara_id": 1001,
     "name": "Special Week",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Special Dreamer]"
   },
   "9101101": {
     "chara_id": 1011,
     "name": "Grass Wonder",
-    "outfit": "Original"
+    "outfit": "Original",
+    "title": "[Stone-Piercing Blue]"
   }
 }

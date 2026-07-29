@@ -112,7 +112,18 @@ class VeteranOut(BaseModel):
     # a veteran carries at most one mark — widening back to multiple is then
     # an app-level change, not an API break.
     tags: list[str] = []
+    # Card epithet ("[Special Dreamer]"), read-time enrichment like skill
+    # names (DECISIONS.md #12) — not stored, so a cards.json refresh applies
+    # without a re-import. Empty when the card is unknown to the reference.
+    title: str = ""
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _enrich(self) -> VeteranOut:
+        card = reference.CARDS.get(self.card_id)
+        if card is not None:
+            self.title = card["title"]
+        return self
 
 
 class ImportOut(BaseModel):

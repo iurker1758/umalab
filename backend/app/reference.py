@@ -6,7 +6,7 @@ come from the game's own text_data via uma.moe (DECISIONS.md #8).
 """
 import json
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -15,6 +15,7 @@ class Card(TypedDict):
     chara_id: int
     name: str
     outfit: str
+    title: str  # bracketed card epithet, e.g. "[Special Dreamer]"; may be ""
 
 
 class FactorInfo(TypedDict):
@@ -30,7 +31,11 @@ class SkillInfo(TypedDict):
 
 def _load_cards() -> dict[int, Card]:
     raw = json.loads((DATA_DIR / "cards.json").read_text(encoding="utf-8"))
-    return {int(card_id): card for card_id, card in raw.items()}
+    # "title" default keeps a pre-title cards.json (or a gameless regen) valid.
+    return {
+        int(card_id): cast("Card", {"title": "", **card})
+        for card_id, card in raw.items()
+    }
 
 
 def _load_factors() -> dict[int, FactorInfo]:

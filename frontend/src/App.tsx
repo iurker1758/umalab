@@ -12,18 +12,69 @@ import {
 const APT = "-GFEDCBAS";
 const apt = (n: number) => APT[n] ?? "?";
 
-const APTITUDES: [label: string, key: keyof Veteran][] = [
-  ["Turf", "proper_ground_turf"],
-  ["Dirt", "proper_ground_dirt"],
-  ["Short", "proper_distance_short"],
-  ["Mile", "proper_distance_mile"],
-  ["Medium", "proper_distance_middle"],
-  ["Long", "proper_distance_long"],
-  ["Front", "proper_running_style_nige"],
-  ["Pace", "proper_running_style_senko"],
-  ["Late", "proper_running_style_sashi"],
-  ["End", "proper_running_style_oikomi"],
+// Aptitudes grouped the way the game's detail screen shows them.
+const APT_GROUPS: [group: string, apts: [label: string, key: keyof Veteran][]][] = [
+  [
+    "Track",
+    [
+      ["Turf", "proper_ground_turf"],
+      ["Dirt", "proper_ground_dirt"],
+    ],
+  ],
+  [
+    "Distance",
+    [
+      ["Sprint", "proper_distance_short"],
+      ["Mile", "proper_distance_mile"],
+      ["Medium", "proper_distance_middle"],
+      ["Long", "proper_distance_long"],
+    ],
+  ],
+  [
+    "Style",
+    [
+      ["Front", "proper_running_style_nige"],
+      ["Pace", "proper_running_style_senko"],
+      ["Late", "proper_running_style_sashi"],
+      ["End", "proper_running_style_oikomi"],
+    ],
+  ],
 ];
+
+// Stat value → grade letter, verified against in-game veteran screens
+// (1200→SS+, 1110→SS, 612→B, 488→C). 50-wide up to D+, 100-wide C..A+,
+// 50-wide S..SS, then SS+ open-ended: current Global shows SS+ even past
+// 1200 (the uncapped stats); JP's U-ladder can slot in here when Global
+// starts displaying it.
+const STAT_GRADES: [min: number, label: string][] = [
+  [1150, "SS+"],
+  [1100, "SS"],
+  [1050, "S+"],
+  [1000, "S"],
+  [900, "A+"],
+  [800, "A"],
+  [700, "B+"],
+  [600, "B"],
+  [500, "C+"],
+  [400, "C"],
+  [350, "D+"],
+  [300, "D"],
+  [250, "E+"],
+  [200, "E"],
+  [150, "F+"],
+  [100, "F"],
+  [50, "G+"],
+  [0, "G"],
+];
+const statGrade = (n: number): string =>
+  STAT_GRADES.find(([min]) => n >= min)?.[1] ?? "G";
+
+// Letter → color-family class, shared by stat grades and aptitude letters
+// (SS/S gold, A orange, … G gray — same palette as the rank badges).
+const gradeClass = (letter: string): string =>
+  "sabcdefgu".includes(letter[0]?.toLowerCase() ?? "")
+    ? `ltr-${letter[0].toLowerCase()}`
+    : "";
 
 type SortKey = "rank_score" | "blue_spark" | "register_time" | "name";
 
@@ -342,11 +393,20 @@ function VeteranDetail({
   return (
     <div className="detail">
       <TagEditor v={v} onChanged={onChanged} onError={onError} />
-      <div className="apt-grid">
-        {APTITUDES.map(([label, key]) => (
-          <span key={key} className="apt">
-            <span className="apt-label">{label}</span> {apt(v[key] as number)}
-          </span>
+      <div className="apt-groups">
+        {APT_GROUPS.map(([group, apts]) => (
+          <div key={group} className="apt-row">
+            <span className="apt-group">{group}</span>
+            {apts.map(([label, key]) => {
+              const letter = apt(v[key] as number);
+              return (
+                <span key={key} className="apt-box">
+                  <span className="apt-label">{label}</span>
+                  <span className={`apt-letter ${gradeClass(letter)}`}>{letter}</span>
+                </span>
+              );
+            })}
+          </div>
         ))}
       </div>
       <div className="detail-section">
@@ -476,15 +536,12 @@ function VeteranModal({
     };
   }, []);
 
-  const stats: [label: string, value: string | number][] = [
-    ["Spd", v.speed],
-    ["Sta", v.stamina],
-    ["Pow", v.power],
+  const stats: [label: string, value: number][] = [
+    ["Speed", v.speed],
+    ["Stamina", v.stamina],
+    ["Power", v.power],
     ["Guts", v.guts],
     ["Wit", v.wiz],
-    ["Fans", v.fans.toLocaleString()],
-    ["Wins", v.wins],
-    ["Trained", v.register_time.slice(0, 10)],
   ];
 
   const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
@@ -501,11 +558,10 @@ function VeteranModal({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          {/* Icon + rank badge stand in for the name (kept in the tooltip). */}
           <span className="modal-id" title={title}>
             <span className="card-art modal-art">
               {icon ? (
-                <img src={`/icons/chara/${icon}`} alt={title} />
+                <img src={`/icons/chara/${icon}`} alt="" />
               ) : (
                 <span className="card-fallback" aria-hidden="true">
                   {v.name.charAt(0)}
@@ -518,18 +574,50 @@ function VeteranModal({
                 {tier}
               </span>
             </span>
+            <span className="modal-names">
+              {v.title && <span className="modal-card-title">{v.title}</span>}
+              <span className="modal-name">{v.name}</span>
+            </span>
           </span>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </header>
+        <table className="stat-table">
+          <thead>
+            <tr>
+              {stats.map(([label]) => (
+                <th key={label}>{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {stats.map(([label, value]) => {
+                const grade = statGrade(value);
+                return (
+                  <td key={label}>
+                    <span className={`stat-grade ${gradeClass(grade)}`}>{grade}</span>
+                    {value}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
         <div className="stat-row">
-          {stats.map(([label, value]) => (
-            <span key={label}>
-              <span className="stat-label">{label}</span>
-              {value}
-            </span>
-          ))}
+          <span>
+            <span className="stat-label">Fans</span>
+            {v.fans.toLocaleString()}
+          </span>
+          <span>
+            <span className="stat-label">Wins</span>
+            {v.wins}
+          </span>
+          <span>
+            <span className="stat-label">Trained</span>
+            {v.register_time.slice(0, 10)}
+          </span>
         </div>
         <VeteranDetail v={v} iconIndex={iconIndex} onChanged={onChanged} onError={onError} />
       </div>

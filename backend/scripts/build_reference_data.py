@@ -2,7 +2,11 @@
 
 cards.json: joins character.json.gz (card_id-keyed Global roster) with
 character_names.json.gz (chara_id -> {name, skins}) into
-card_id -> {chara_id, name, outfit}.
+card_id -> {chara_id, name, outfit, title}. The title (the card's bracketed
+epithet, e.g. "[Starlight Beat]") isn't in any uma.moe artifact — it's read
+from the local Global client's master.mdb (plain SQLite, text_data category
+5) when the game is installed; otherwise titles carry over from the previous
+cards.json so a gameless regeneration never wipes them.
 
 factors.json: from factors.json.gz — the game's own factor names
 (Global master.mdb text_data category 147), reshaped to
@@ -28,6 +32,7 @@ import argparse
 import gzip
 import json
 import os
+import sqlite3
 import sys
 import urllib.request
 from pathlib import Path
@@ -35,6 +40,40 @@ from typing import Any, cast
 
 BASE_URL = "https://uma.moe/resources"
 DATA_DIR = Path(__file__).resolve().parent.parent / "app" / "data"
+MASTER_MDB = (
+    Path(os.path.expanduser("~"))
+    / "AppData/LocalLow/Cygames/Umamusume/master/master.mdb"
+)
+
+
+def load_card_titles() -> dict[str, str]:
+    """Card epithets from the local game client, falling back to whatever the
+    committed cards.json already has (a machine without the game keeps them)."""
+    titles: dict[str, str] = {}
+    cards_file = DATA_DIR / "cards.json"
+    if cards_file.exists():
+        prev = cast(
+            "dict[str, dict[str, Any]]",
+            json.loads(cards_file.read_text(encoding="utf-8")),
+        )
+        titles = {
+            cid: cast(str, c["title"])
+            for cid, c in prev.items()
+            if isinstance(c.get("title"), str) and c["title"]
+        }
+    if MASTER_MDB.exists():
+        con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
+        try:
+            rows = con.execute(
+                'SELECT "index", text FROM text_data WHERE category = 5'
+            ).fetchall()
+        finally:
+            con.close()
+        titles.update({str(cid): text for cid, text in rows if text})
+        print(f"card titles: {len(rows)} from local master.mdb")
+    else:
+        print(f"card titles: master.mdb not found, kept {len(titles)} previous")
+    return titles
 
 
 def fetch(url: str, api_key: str) -> bytes:
@@ -90,6 +129,7 @@ def main() -> None:
         characters_raw = list(cast("dict[str, Any]", characters_raw).values())
     characters = cast("list[dict[str, Any]]", characters_raw)
 
+    titles = load_card_titles()
     cards: dict[str, dict[str, Any]] = {}
     for char in characters:
         card_id = int(cast(int, char["id"]))
@@ -102,6 +142,7 @@ def main() -> None:
             "chara_id": chara_id,
             "name": entry.get("name") or char.get("name") or f"Card {card_id}",
             "outfit": skins.get(skin_key, ""),
+            "title": titles.get(card_id_str, ""),
         }
 
     raw_factors = cast(

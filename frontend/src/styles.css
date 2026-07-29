@@ -46,16 +46,40 @@ button:disabled { opacity: 0.6; cursor: default; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: flex-start; justify-content: center; padding: 3rem 1rem; overflow-y: auto; z-index: 10; }
 .modal { background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 1rem 1.25rem 1.25rem; max-width: 720px; width: 100%; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.6rem; }
-.modal-id { display: flex; align-items: flex-end; gap: 0.5rem; }
-.modal-art { width: 64px; max-width: 64px; }
+.modal-id { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.modal-art { width: 64px; max-width: 64px; flex-shrink: 0; }
 .modal-art .card-fallback { font-size: 1.6rem; }
+.modal-names { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.modal-card-title { font-size: 0.85rem; opacity: 0.7; }
+.modal-name { font-size: 1.15rem; font-weight: 600; }
 .modal-close { background: transparent; border: 0; color: inherit; font-size: 1.4rem; padding: 0 0.3rem; opacity: 0.7; }
 .modal-close:hover { opacity: 1; }
+
+.stat-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; margin-bottom: 0.5rem; }
+.stat-table th { font-size: 0.8rem; font-weight: 600; opacity: 0.7; text-align: left; padding: 0.15rem 0.3rem; border-bottom: 1px solid #1f2833; }
+.stat-table td { padding: 0.35rem 0.3rem 0.15rem; font-size: 0.95rem; white-space: nowrap; }
+.stat-grade { display: inline-block; border-radius: 6px; padding: 1px 5px; margin-right: 0.35rem; font-size: 0.72rem; font-weight: 700; }
+
+/* Letter color families — stat grades and aptitude letters. */
+.ltr-s { color: #e8c15a; }
+.ltr-a { color: #f08a5c; }
+.ltr-b { color: #ef8fc2; }
+.ltr-c { color: #8ed07d; }
+.ltr-d { color: #7fb0ef; }
+.ltr-e { color: #cf93e8; }
+.ltr-f { color: #ab97f0; }
+.ltr-g { color: #9aa1ab; }
+.ltr-u { color: #a898e8; }
+
 .stat-row { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-bottom: 0.8rem; font-variant-numeric: tabular-nums; }
 .stat-label { opacity: 0.6; font-size: 0.85rem; margin-right: 0.25rem; }
 
 .detail { display: flex; flex-direction: column; gap: 0.8rem; }
-.apt-grid { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+.apt-groups { display: flex; flex-direction: column; gap: 0.35rem; }
+.apt-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.apt-group { width: 4.5rem; flex-shrink: 0; font-size: 0.85rem; opacity: 0.7; }
+.apt-box { display: inline-flex; align-items: baseline; gap: 0.35rem; background: #1a2027; border: 1px solid #232b34; border-radius: 8px; padding: 0.2rem 0.55rem; }
+.apt-letter { font-weight: 700; }
 .apt-label { opacity: 0.6; font-size: 0.85rem; }
 .detail-section { border-top: 1px solid #1f2833; padding-top: 0.6rem; }
 .detail-heading, .lineage-title { font-size: 0.95rem; margin-bottom: 0.35rem; }
@@ -107,5 +131,8 @@ button:disabled { opacity: 0.6; cursor: default; }
   .spark-strip { gap: 2px; }
   .spark-label { font-size: 0.5rem; padding: 0.5px 2.5px; }
   .star { font-size: 0.52rem; }
+  /* Stat cells are ~70px on a phone — stack the grade over the number. */
+  .stat-table td { font-size: 0.85rem; }
+  .stat-grade { display: block; width: fit-content; margin: 0 0 2px; }
 }
 select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.95rem; }

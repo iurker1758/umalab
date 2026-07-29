@@ -65,6 +65,9 @@ export interface Veteran {
   skills: Skill[];
   lineage: LineageMember[];
   tags: string[];
+  // Card epithet ("[Special Dreamer]"), enriched by the API from the bundled
+  // card reference; empty string when unknown.
+  title: string;
 }
 
 export interface ImportInfo {

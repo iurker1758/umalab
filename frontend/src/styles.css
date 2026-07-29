@@ -56,8 +56,8 @@ button:disabled { opacity: 0.6; cursor: default; }
 .modal-close:hover { opacity: 1; }
 
 .stat-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; margin-bottom: 0.5rem; }
-.stat-table th { font-size: 0.8rem; font-weight: 600; opacity: 0.7; text-align: left; padding: 0.15rem 0.3rem; border-bottom: 1px solid #1f2833; }
-.stat-table td { padding: 0.35rem 0.3rem 0.15rem; font-size: 0.95rem; white-space: nowrap; }
+.stat-table th { font-size: 0.8rem; font-weight: 600; opacity: 0.7; text-align: center; padding: 0.15rem 0.3rem; border-bottom: 1px solid #1f2833; }
+.stat-table td { padding: 0.35rem 0.3rem 0.15rem; font-size: 0.95rem; white-space: nowrap; text-align: center; }
 .stat-grade { display: inline-block; border-radius: 6px; padding: 1px 5px; margin-right: 0.35rem; font-size: 0.72rem; font-weight: 700; }
 
 /* Letter color families — stat grades and aptitude letters. */
@@ -78,7 +78,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .apt-groups { display: flex; flex-direction: column; gap: 0.35rem; }
 .apt-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .apt-group { width: 4.5rem; flex-shrink: 0; font-size: 0.85rem; opacity: 0.7; }
-.apt-box { display: inline-flex; align-items: baseline; gap: 0.35rem; background: #1a2027; border: 1px solid #232b34; border-radius: 8px; padding: 0.2rem 0.55rem; }
+.apt-box { display: inline-flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 6.5rem; height: 2rem; background: #1a2027; border: 1px solid #232b34; border-radius: 8px; padding: 0 0.55rem; }
 .apt-letter { font-weight: 700; }
 .apt-label { opacity: 0.6; font-size: 0.85rem; }
 .detail-section { border-top: 1px solid #1f2833; padding-top: 0.6rem; }
@@ -133,6 +133,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   .star { font-size: 0.52rem; }
   /* Stat cells are ~70px on a phone — stack the grade over the number. */
   .stat-table td { font-size: 0.85rem; }
-  .stat-grade { display: block; width: fit-content; margin: 0 0 2px; }
+  .stat-grade { display: block; width: fit-content; margin: 0 auto 2px; }
+  .apt-box { width: 5.6rem; height: 1.8rem; padding: 0 0.45rem; }
 }
 select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.95rem; }

@@ -4,7 +4,7 @@ never a real extractor dump.
 import pytest
 
 from app.ingest import IngestError, decode_factor, derive_chara_id, parse_dump, parse_veteran
-from app.reference import Card
+from app.reference import Card, FactorInfo
 
 CARDS: dict[int, Card] = {
     101701: {"chara_id": 1017, "name": "Symboli Rudolf", "outfit": "Original"},
@@ -12,9 +12,15 @@ CARDS: dict[int, Card] = {
     100101: {"chara_id": 1001, "name": "Special Week", "outfit": "Original"},
 }
 
-WHITE_NAMES: dict[int, str] = {
-    20035: "Corner Recovery",
-    20038: "Straightaway Recovery",
+FACTORS: dict[int, FactorInfo] = {
+    3: {"name": "Power", "type": 0},
+    34: {"name": "Long", "type": 1},
+    10001: {"name": "February S.", "type": 2},
+    20035: {"name": "Corner Recovery", "type": 3},
+    20038: {"name": "Straightaway Recovery", "type": 3},
+    30001: {"name": "URA Finale", "type": 4},
+    101701: {"name": "Emperor's Step", "type": 5},
+    40001: {"name": "Carnival Bonus", "type": -1},
 }
 
 
@@ -76,48 +82,62 @@ def make_veteran(trained_chara_id: int = 7001, card_id: int = 103201) -> dict[st
 # ---------- decode_factor ----------
 
 def test_blue_factor():
-    assert decode_factor(303, CARDS, WHITE_NAMES) == {
+    assert decode_factor(303, CARDS, FACTORS) == {
         "factor_id": 303, "kind": "blue", "key": 3, "star": 3, "name": "Power",
     }
 
 
 def test_blue_factor_unknown_key_degrades():
-    assert decode_factor(903, CARDS, WHITE_NAMES)["name"] == "Blue 9"
+    assert decode_factor(903, CARDS, FACTORS)["name"] == "Blue 9"
 
 
 def test_pink_factor():
-    decoded = decode_factor(3402, CARDS, WHITE_NAMES)
+    decoded = decode_factor(3402, CARDS, FACTORS)
     assert (decoded["kind"], decoded["key"], decoded["star"]) == ("pink", 34, 2)
     assert decoded["name"] == "Long"
 
 
 def test_pink_factor_unknown_key_degrades():
-    assert decode_factor(9902, CARDS, WHITE_NAMES)["name"] == "Pink 99"
+    assert decode_factor(9902, CARDS, FACTORS)["name"] == "Pink 99"
 
 
 def test_white_factor():
-    decoded = decode_factor(2003502, CARDS, WHITE_NAMES)
+    decoded = decode_factor(2003502, CARDS, FACTORS)
     assert (decoded["kind"], decoded["key"], decoded["star"]) == ("white", 20035, 2)
     assert decoded["name"] == "Corner Recovery"
 
 
 def test_white_factor_unknown_key_falls_back():
-    assert decode_factor(2102101, CARDS, WHITE_NAMES)["name"] == "Unknown (21021)"
+    assert decode_factor(2102101, CARDS, FACTORS)["name"] == "Unknown (21021)"
 
 
-def test_unique_factor_named_from_card():
-    decoded = decode_factor(10170103, CARDS, WHITE_NAMES)
+def test_unique_factor_named_from_reference():
+    decoded = decode_factor(10170103, CARDS, FACTORS)
     assert (decoded["kind"], decoded["key"], decoded["star"]) == ("unique", 101701, 3)
-    assert decoded["name"] == "Symboli Rudolf (unique)"
+    assert decoded["name"] == "Emperor's Step"
 
 
 def test_unique_factor_unknown_card_falls_back():
-    assert decode_factor(99999901, CARDS, WHITE_NAMES)["name"] == "Card 999999 (unique)"
+    assert decode_factor(99999901, CARDS, FACTORS)["name"] == "Card 999999 (unique)"
+
+
+def test_race_factor():
+    decoded = decode_factor(1000102, CARDS, FACTORS)
+    assert (decoded["kind"], decoded["name"], decoded["star"]) == ("race", "February S.", 2)
+
+
+def test_scenario_factor():
+    decoded = decode_factor(3000101, CARDS, FACTORS)
+    assert (decoded["kind"], decoded["name"]) == ("scenario", "URA Finale")
+
+
+def test_unmapped_type_decodes_as_other():
+    assert decode_factor(4000101, CARDS, FACTORS)["kind"] == "other"
 
 
 def test_star_comes_from_id_not_level():
     # the dump's `level` field is always 0; only the id encodes the star
-    assert decode_factor(2003503, CARDS, WHITE_NAMES)["star"] == 3
+    assert decode_factor(2003503, CARDS, FACTORS)["star"] == 3
 
 
 # ---------- derive_chara_id ----------
@@ -133,7 +153,7 @@ def test_chara_id_from_seven_digit_card():
 # ---------- parse_veteran ----------
 
 def test_parse_veteran_scalars_and_card_label():
-    veteran = parse_veteran(make_veteran(), CARDS, WHITE_NAMES)
+    veteran = parse_veteran(make_veteran(), CARDS, FACTORS)
     assert veteran["trained_chara_id"] == 7001
     assert veteran["chara_id"] == 1032  # derived; the dump's own field is null
     assert (veteran["name"], veteran["outfit"]) == ("Agnes Tachyon", "Original")
@@ -142,18 +162,18 @@ def test_parse_veteran_scalars_and_card_label():
 
 
 def test_parse_veteran_unknown_card_falls_back():
-    veteran = parse_veteran(make_veteran(card_id=888888), CARDS, WHITE_NAMES)
+    veteran = parse_veteran(make_veteran(card_id=888888), CARDS, FACTORS)
     assert (veteran["name"], veteran["outfit"]) == ("Card 888888", "")
 
 
 def test_parse_veteran_decodes_own_factors():
-    veteran = parse_veteran(make_veteran(), CARDS, WHITE_NAMES)
+    veteran = parse_veteran(make_veteran(), CARDS, FACTORS)
     assert [f["kind"] for f in veteran["factors"]] == ["blue", "pink", "white", "unique"]
     assert all(f["factor_id"] for f in veteran["factors"])  # raw id always retained
 
 
 def test_parse_veteran_lineage_relations():
-    lineage = parse_veteran(make_veteran(), CARDS, WHITE_NAMES)["lineage"]
+    lineage = parse_veteran(make_veteran(), CARDS, FACTORS)["lineage"]
     relations = {m["position_id"]: m["relation"] for m in lineage}
     assert relations == {
         10: "parent", 20: "parent",
@@ -165,7 +185,7 @@ def test_parse_veteran_lineage_relations():
 
 
 def test_parse_veteran_keeps_raw_skills():
-    veteran = parse_veteran(make_veteran(), CARDS, WHITE_NAMES)
+    veteran = parse_veteran(make_veteran(), CARDS, FACTORS)
     assert veteran["skills"] == [{"skill_id": 200351, "level": 1}]
 
 
@@ -173,37 +193,37 @@ def test_parse_veteran_missing_field_raises():
     raw = make_veteran()
     del raw["speed"]
     with pytest.raises(IngestError, match="missing 'speed'"):
-        parse_veteran(raw, CARDS, WHITE_NAMES)
+        parse_veteran(raw, CARDS, FACTORS)
 
 
 def test_parse_veteran_null_field_raises():
     raw = make_veteran()
     raw["rank_score"] = None
     with pytest.raises(IngestError, match="missing 'rank_score'"):
-        parse_veteran(raw, CARDS, WHITE_NAMES)
+        parse_veteran(raw, CARDS, FACTORS)
 
 
 # ---------- parse_dump ----------
 
 def test_parse_dump_happy_path():
     dump = [make_veteran(7001), make_veteran(7002)]
-    assert len(parse_dump(dump, CARDS, WHITE_NAMES)) == 2
+    assert len(parse_dump(dump, CARDS, FACTORS)) == 2
 
 
 def test_parse_dump_rejects_non_list():
     with pytest.raises(IngestError, match="JSON array"):
-        parse_dump({"trained_chara_array": []}, CARDS, WHITE_NAMES)
+        parse_dump({"trained_chara_array": []}, CARDS, FACTORS)
 
 
 def test_parse_dump_rejects_non_object_items():
     with pytest.raises(IngestError, match="JSON object"):
-        parse_dump(["nope"], CARDS, WHITE_NAMES)
+        parse_dump(["nope"], CARDS, FACTORS)
 
 
 def test_parse_dump_rejects_duplicate_ids():
     with pytest.raises(IngestError, match="duplicate trained_chara_id 7001"):
-        parse_dump([make_veteran(7001), make_veteran(7001)], CARDS, WHITE_NAMES)
+        parse_dump([make_veteran(7001), make_veteran(7001)], CARDS, FACTORS)
 
 
 def test_parse_dump_empty_is_valid():
-    assert parse_dump([], CARDS, WHITE_NAMES) == []
+    assert parse_dump([], CARDS, FACTORS) == []

@@ -1,17 +1,23 @@
-"""Regenerate app/data/cards.json from uma.moe's resources endpoints.
+"""Regenerate app/data/{cards,factors}.json from uma.moe's resources endpoints.
 
-Joins character.json.gz (card_id-keyed Global roster) with
+cards.json: joins character.json.gz (card_id-keyed Global roster) with
 character_names.json.gz (chara_id -> {name, skins}) into
-card_id -> {chara_id, name, outfit}. The output is committed; rerun this
-manually when the game adds characters (DECISIONS.md #6).
+card_id -> {chara_id, name, outfit}.
+
+factors.json: from factors.json.gz — the game's own factor names
+(Global master.mdb text_data category 147), reshaped to
+key -> {name, type} where key = uma.moe id // 10 (= factor_id // 100 in a
+dump record). Types: 0 blue, 1 pink, 2 race, 3 white skill, 4 scenario,
+5 unique, -1 other.
+
+Both outputs are committed; rerun this manually when the game updates
+(DECISIONS.md #6).
 
 Usage:
     python scripts/build_reference_data.py --api-key-file <path>
     # or set UMA_MOE_API_KEY
 
 Needs a uma.moe API key (sent as X-API-Key; anonymous requests get 403).
-Also prints the manifest's artifact list, flagging any skill/factor artifact —
-a future hook for regenerating factor_names.json from the same source.
 """
 import argparse
 import gzip
@@ -23,7 +29,7 @@ from pathlib import Path
 from typing import Any, cast
 
 BASE_URL = "https://uma.moe/resources"
-OUT_FILE = Path(__file__).resolve().parent.parent / "app" / "data" / "cards.json"
+DATA_DIR = Path(__file__).resolve().parent.parent / "app" / "data"
 
 
 def fetch(url: str, api_key: str) -> bytes:
@@ -58,13 +64,6 @@ def main() -> None:
 
     manifest = fetch_json(f"{BASE_URL}/manifest.json", api_key)
     print(f"manifest version: {manifest.get('version')}")
-    print("artifacts:")
-    for artifact in manifest.get("files", manifest.get("artifacts", [])):
-        name = artifact if isinstance(artifact, str) else artifact.get("name", str(artifact))
-        flag = "  <-- possible factor-names source" if any(
-            token in str(name).lower() for token in ("skill", "factor")
-        ) else ""
-        print(f"  {name}{flag}")
 
     characters_raw = fetch_json(f"{BASE_URL}/current/character.json.gz", api_key)
     names = cast(
@@ -90,12 +89,22 @@ def main() -> None:
             "outfit": skins.get(skin_key, ""),
         }
 
-    OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OUT_FILE.write_text(
-        json.dumps(cards, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    raw_factors = cast(
+        "list[dict[str, Any]]", fetch_json(f"{BASE_URL}/current/factors.json.gz", api_key)
     )
-    print(f"wrote {len(cards)} cards -> {OUT_FILE}")
+    factors = {
+        str(int(cast(str, f["id"])) // 10): {"name": f["text"], "type": f["type"]}
+        for f in raw_factors
+    }
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for filename, payload in (("cards.json", cards), ("factors.json", factors)):
+        out = DATA_DIR / filename
+        out.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(f"wrote {len(payload)} entries -> {out}")
 
 
 if __name__ == "__main__":

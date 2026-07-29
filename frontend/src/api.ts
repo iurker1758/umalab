@@ -3,7 +3,7 @@
 
 export interface Factor {
   factor_id: number;
-  kind: "blue" | "pink" | "white" | "unique";
+  kind: "blue" | "pink" | "white" | "unique" | "race" | "scenario" | "other";
   key: number;
   star: number;
   name: string;

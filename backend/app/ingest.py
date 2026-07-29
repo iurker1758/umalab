@@ -2,26 +2,26 @@
 
 An UmaExtractor `data.json` is a JSON array of trained-character records
 (the game's `trained_chara_array`). A factor id packs a spark as one int:
+key = factor_id // 100, star = factor_id % 100 (the record's `level` field
+is always 0 and is ignored).
 
-- key = factor_id // 100, star = factor_id % 100 (the record's `level`
-  field is always 0 and is ignored)
-- key < 10            -> blue stat factor
-- 10 < key < 100      -> pink aptitude factor
-- key >= 100000       -> unique-skill factor (key is the source card_id)
-- otherwise           -> white skill factor (key = skill_id // 10)
+The factor's kind and name come from the bundled factors reference (the
+game's own factor table via uma.moe: blue/pink/race/white/scenario/unique).
+Keys absent from the reference fall back to a range heuristic:
+key < 10 blue, 10..99 pink, >= 100000 unique (key is the source card_id,
+white keys are skill_id // 10).
 
 `succession_chara_array` is the full 6-slot lineage: position_id 10/20 are
 the parents; 11/12 and 21/22 are each parent's parents.
 
-Reference dicts (cards, white factor names) are passed in so tests can use
-synthetic fixtures; the blue/pink label constants come from `reference`
-(static data, no file reads).
+Reference dicts (cards, factors) are passed in so tests can use synthetic
+fixtures.
 """
 from __future__ import annotations
 
 from typing import Any, cast
 
-from .reference import BLUE_FACTOR_NAMES, PINK_FACTOR_NAMES, Card
+from .reference import FACTOR_TYPE_KINDS, Card, FactorInfo
 
 PARENT_POSITIONS = (10, 20)
 
@@ -72,17 +72,21 @@ def card_label(card_id: int, cards: dict[int, Card]) -> tuple[str, str]:
 def decode_factor(
     factor_id: int,
     cards: dict[int, Card],
-    white_names: dict[int, str],
+    factors: dict[int, FactorInfo],
 ) -> dict[str, Any]:
     key, star = factor_id // 100, factor_id % 100
-    if key < 10:
-        kind, name = "blue", BLUE_FACTOR_NAMES.get(key, f"Blue {key}")
+    info = factors.get(key)
+    if info is not None:
+        kind = FACTOR_TYPE_KINDS.get(info["type"], "other")
+        name = info["name"]
+    elif key < 10:
+        kind, name = "blue", f"Blue {key}"
     elif key < 100:
-        kind, name = "pink", PINK_FACTOR_NAMES.get(key, f"Pink {key}")
+        kind, name = "pink", f"Pink {key}"
     elif key >= 100_000:
         kind, name = "unique", f"{card_label(key, cards)[0]} (unique)"
     else:
-        kind, name = "white", white_names.get(key, f"Unknown ({key})")
+        kind, name = "white", f"Unknown ({key})"
     return {"factor_id": factor_id, "kind": kind, "key": key, "star": star, "name": name}
 
 
@@ -95,27 +99,27 @@ def _require(record: dict[str, Any], field: str, context: str) -> Any:
 def _decode_factor_list(
     record: dict[str, Any],
     cards: dict[int, Card],
-    white_names: dict[int, str],
+    factors: dict[int, FactorInfo],
     context: str,
 ) -> list[dict[str, Any]]:
-    factors: Any = record.get("factor_info_array") or []
-    if not isinstance(factors, list):
+    entries: Any = record.get("factor_info_array") or []
+    if not isinstance(entries, list):
         raise IngestError(f"{context} has a malformed 'factor_info_array'")
     decoded: list[dict[str, Any]] = []
-    for entry in cast("list[Any]", factors):
+    for entry in cast("list[Any]", entries):
         factor_id: Any = (
             cast("dict[str, Any]", entry).get("factor_id") if isinstance(entry, dict) else None
         )
         if not isinstance(factor_id, int):
             raise IngestError(f"{context} has a malformed factor entry")
-        decoded.append(decode_factor(factor_id, cards, white_names))
+        decoded.append(decode_factor(factor_id, cards, factors))
     return decoded
 
 
 def _parse_lineage_member(
     member: Any,
     cards: dict[int, Card],
-    white_names: dict[int, str],
+    factors: dict[int, FactorInfo],
     context: str,
 ) -> dict[str, Any]:
     if not isinstance(member, dict):
@@ -134,14 +138,14 @@ def _parse_lineage_member(
         "rarity": member.get("rarity", 0),
         "talent_level": member.get("talent_level", 0),
         "rank": member.get("rank", 0),
-        "factors": _decode_factor_list(member, cards, white_names, context),
+        "factors": _decode_factor_list(member, cards, factors, context),
     }
 
 
 def parse_veteran(
     raw: dict[str, Any],
     cards: dict[int, Card],
-    white_names: dict[int, str],
+    factors: dict[int, FactorInfo],
 ) -> dict[str, Any]:
     """One dump record -> a dict matching the Veteran model's columns."""
     context = f"veteran (trained_chara_id={raw.get('trained_chara_id', '?')})"
@@ -155,7 +159,7 @@ def parse_veteran(
     fields["chara_id"] = derive_chara_id(fields["card_id"])
     fields["name"], fields["outfit"] = card_label(fields["card_id"], cards)
     fields["register_time"] = str(raw.get("register_time") or "")[:19]
-    fields["factors"] = _decode_factor_list(raw, cards, white_names, context)
+    fields["factors"] = _decode_factor_list(raw, cards, factors, context)
 
     skills: Any = raw.get("skill_array") or []
     if not isinstance(skills, list):
@@ -166,7 +170,7 @@ def parse_veteran(
     if not isinstance(succession, list):
         raise IngestError(f"{context} has a malformed 'succession_chara_array'")
     fields["lineage"] = [
-        _parse_lineage_member(member, cards, white_names, context)
+        _parse_lineage_member(member, cards, factors, context)
         for member in cast("list[Any]", succession)
     ]
     return fields
@@ -175,7 +179,7 @@ def parse_veteran(
 def parse_dump(
     data: Any,
     cards: dict[int, Card],
-    white_names: dict[int, str],
+    factors: dict[int, FactorInfo],
 ) -> list[dict[str, Any]]:
     """A whole data.json -> Veteran column dicts. Raises IngestError when malformed."""
     if not isinstance(data, list):
@@ -185,7 +189,7 @@ def parse_dump(
     for raw in cast("list[Any]", data):
         if not isinstance(raw, dict):
             raise IngestError("expected every veteran to be a JSON object")
-        veteran = parse_veteran(cast("dict[str, Any]", raw), cards, white_names)
+        veteran = parse_veteran(cast("dict[str, Any]", raw), cards, factors)
         if veteran["trained_chara_id"] in seen:
             raise IngestError(
                 f"duplicate trained_chara_id {veteran['trained_chara_id']} in dump"

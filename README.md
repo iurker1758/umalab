@@ -33,13 +33,16 @@ up as requirements → choice → rejected alternatives.
 ## Interesting problems
 
 - **Factor-id decoding**: the game encodes a spark as one integer —
-  `key = factor_id // 100`, star `= factor_id % 100`, where the key's range
-  says whether it's a blue stat, pink aptitude, green unique, or white skill
-  factor (white keys are `skill_id // 10`). All decoding lives in a pure
-  `ingest.py`, tested against hand-built fixtures.
-- **Verifying reference labels from data alone**: pink-factor names were
-  confirmed against a real 99-veteran dump using the in-game rule that pink
-  sparks only roll on A-or-better aptitudes — 99/99 consistent.
+  `key = factor_id // 100`, star `= factor_id % 100` — and the key resolves
+  through a bundled copy of the game's own factor table (via uma.moe) into a
+  name and kind: blue stat, pink aptitude, race, white skill, scenario, or
+  unique. All decoding lives in a pure `ingest.py`, tested against
+  hand-built fixtures.
+- **Verifying reference labels from data alone**: before adopting the
+  official table, pink-factor names were confirmed against a real
+  99-veteran dump using the in-game rule that pink sparks only roll on
+  A-or-better aptitudes — 99/99 consistent (and later matched the table,
+  bar one label).
 - **Snapshot imports**: an extractor dump is the whole roster, so imports are
   full-replace in one transaction — an upsert would quietly resurrect veterans
   you deleted in-game.

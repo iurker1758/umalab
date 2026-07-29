@@ -118,7 +118,7 @@ async def create_import(
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise HTTPException(400, f"not valid JSON: {e}") from e
     try:
-        veterans = ingest.parse_dump(data, reference.CARDS, reference.WHITE_FACTOR_NAMES)
+        veterans = ingest.parse_dump(data, reference.CARDS, reference.FACTORS)
     except ingest.IngestError as e:
         raise HTTPException(400, str(e)) from e
 

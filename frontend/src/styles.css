@@ -9,7 +9,9 @@ h1 { margin: 0.25rem 0; }
 button { background: #2a76c9; color: #fff; border: 0; border-radius: 8px; padding: 0.55rem 1rem; font-size: 1rem; cursor: pointer; }
 button:disabled { opacity: 0.6; cursor: default; }
 .import-info { opacity: 0.7; font-size: 0.9rem; }
-.error { color: #ff8a80; }
+/* Fixed toast above every backdrop (mark popup peaks at z 20) so failures
+   surfaced while a modal is open stay readable. Click dismisses. */
+.error { position: fixed; top: 0.75rem; left: 50%; transform: translateX(-50%); z-index: 30; box-sizing: border-box; max-width: min(560px, calc(100vw - 2rem)); margin: 0; padding: 0.55rem 0.9rem; color: #ff8a80; background: #2a1517; border: 1px solid #5c2b2e; border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); cursor: pointer; }
 .empty { opacity: 0.8; margin-top: 2rem; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.6rem; margin-top: 1rem; }
@@ -89,7 +91,10 @@ button:disabled { opacity: 0.6; cursor: default; }
 .lineage-slot { margin: 0.4rem 0; }
 .lineage-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
 .lineage-parent { display: flex; align-items: center; gap: 0.5rem; background: none; border: 0; padding: 0; margin-bottom: 0.35rem; color: inherit; font-size: 1rem; text-align: left; }
-.lineage-parent:disabled { cursor: default; opacity: 1; }
+.lineage-parent[aria-disabled="true"] { cursor: default; }
+/* Muted caption keeps ancestors identifiable on touch (no tooltips) and on
+   icon-less fresh clones. */
+.lineage-name { opacity: 0.65; font-size: 0.85rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lineage-parent .lineage-title { margin-bottom: 0; }
 .lineage-caret { opacity: 0.55; font-size: 0.8rem; }
 .lineage-icon { width: 36px; height: 36px; object-fit: contain; }

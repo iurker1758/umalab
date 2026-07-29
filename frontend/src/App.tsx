@@ -250,18 +250,31 @@ const starModeLabel = (m: StarMode) => (m === "all" ? "All" : m === "2plus" ? "2
 
 const FILTER_STORE = "umalab.filters";
 
+const isStarMode = (m: unknown): m is StarMode => STAR_MODES.includes(m as StarMode);
+// A persisted spark section must be valid in full — a missing stars/legacy
+// field would silently read as "3★ only" downstream (starOk's last arm).
+const isSparkFilter = (s: SparkFilter | undefined): s is SparkFilter =>
+  s !== undefined &&
+  Array.isArray(s.names) &&
+  s.names.every((n) => typeof n === "string") &&
+  isStarMode(s.stars) &&
+  typeof s.legacy === "boolean";
+
 function loadFilters(): Filters {
   try {
     const raw = localStorage.getItem(FILTER_STORE);
     if (raw) {
       const p = JSON.parse(raw) as Filters;
-      // Shallow shape check; anything off (incl. older formats) falls back.
+      // Shape check; anything off (incl. older formats) falls back.
       if (
-        Array.isArray(p.blue?.names) &&
-        Array.isArray(p.pink?.names) &&
-        STAR_MODES.includes(p.unique?.stars) &&
+        isSparkFilter(p.blue) &&
+        isSparkFilter(p.pink) &&
+        isStarMode(p.unique?.stars) &&
+        typeof p.unique?.legacy === "boolean" &&
         Array.isArray(p.marks) &&
-        Array.isArray(p.cards)
+        p.marks.every((m) => typeof m === "string") &&
+        Array.isArray(p.cards) &&
+        p.cards.every((c) => typeof c === "number")
       ) {
         return {
           ...defaultFilters,
@@ -270,7 +283,10 @@ function loadFilters(): Filters {
           // matching the current per-skill form.
           whites: Array.isArray(p.whites)
             ? p.whites.filter(
-                (w) => typeof w?.name === "string" && STAR_MODES.includes(w?.stars)
+                (w) =>
+                  typeof w?.name === "string" &&
+                  isStarMode(w?.stars) &&
+                  typeof w?.legacy === "boolean"
               )
             : defaultFilters.whites,
         };
@@ -299,8 +315,13 @@ const countFilters = (f: Filters) =>
 
 function matchesFilters(v: Veteran, f: Filters): boolean {
   // "Legacy" widens a spark section's pool to the whole 6-slot lineage.
+  // Built lazily at most once per veteran — every white-filter row plus the
+  // blue/pink/unique sections may all ask for it in one pass.
+  let legacyPool: Factor[] | null = null;
   const pool = (legacy: boolean): Factor[] =>
-    legacy ? [...v.factors, ...v.lineage.flatMap((m) => m.factors)] : v.factors;
+    legacy
+      ? (legacyPool ??= [...v.factors, ...v.lineage.flatMap((m) => m.factors)])
+      : v.factors;
   if (
     f.blue.names.length > 0 &&
     !pool(f.blue.legacy).some(
@@ -345,6 +366,31 @@ function matchesFilters(v: Veteran, f: Filters): boolean {
   return true;
 }
 
+// A filter whose target left the roster is cleared, not masked — masking
+// would let it reactivate silently when the target returns, and a persisted
+// filter could otherwise hide the whole roster with nothing left in the
+// panel to explain why. Runs on every roster load (mark edits, re-imports).
+function reconcileFilters(f: Filters, vets: Veteran[]): Filters {
+  const marks = new Set<string>([""]); // the no-favorite chip is always valid
+  const cards = new Set<number>();
+  const sparks = new Set<string>();
+  for (const v of vets) {
+    if (v.tags[0]) marks.add(v.tags[0]);
+    cards.add(v.card_id);
+    for (const fa of v.factors) if (isCommonKind(fa.kind)) sparks.add(fa.name);
+    for (const m of v.lineage) {
+      for (const fa of m.factors) if (isCommonKind(fa.kind)) sparks.add(fa.name);
+    }
+  }
+  const next: Filters = {
+    ...f,
+    marks: f.marks.filter((m) => marks.has(m)),
+    cards: f.cards.filter((c) => cards.has(c)),
+    whites: f.whites.filter((w) => sparks.has(w.name)),
+  };
+  return countFilters(next) === countFilters(f) ? f : next;
+}
+
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
 // Art comes from `python scripts/extract_fav_icons.py` (gitignored); without it
 // the <MarkIcon> fallback renders the mark number instead.
@@ -358,9 +404,13 @@ const MARK_IDS = Array.from({ length: 15 }, (_, i) => `mark_${String(i + 1).padS
 const missingMarkArt = new Set<string>();
 
 function MarkIcon({ id }: { id: string }) {
-  const [failed, setFailed] = useState(missingMarkArt.has(id));
+  // failed is state derived from the id prop: a reused instance whose id
+  // changes (e.g. the modal's mark button after picking a different mark)
+  // must re-derive, or one missing PNG sticks to every mark shown after it.
+  const [state, setState] = useState({ id, failed: missingMarkArt.has(id) });
+  if (state.id !== id) setState({ id, failed: missingMarkArt.has(id) });
   const label = `Mark ${Number(id.slice(-2))}`;
-  return failed ? (
+  return state.failed ? (
     <span className="mark-fallback" title={label}>
       {Number(id.slice(-2))}
     </span>
@@ -372,7 +422,7 @@ function MarkIcon({ id }: { id: string }) {
       title={label}
       onError={() => {
         missingMarkArt.add(id);
-        setFailed(true);
+        setState({ id, failed: true });
       }}
     />
   );
@@ -409,7 +459,9 @@ function FactorChips({ factors }: { factors: Factor[] }) {
   );
 }
 
-// Lineage rows are icon-identified like the cards — names live in tooltips.
+// Lineage rows lead with the icon, but the name stays in the DOM as a muted
+// caption — tooltips alone never fire on touch, and without icon art (a
+// fresh clone; DECISIONS.md #10) the row would otherwise be a bare initial.
 const memberTitle = (m: LineageMember) =>
   `${m.name}${m.outfit && m.outfit !== "Original" ? ` (${m.outfit})` : ""}`;
 
@@ -427,6 +479,7 @@ function LineageSlot({
       <div className="lineage-head" title={memberTitle(member)}>
         <span className="lineage-label">{label}</span>
         <LineageIcon icon={icon} name={member.name} />
+        <span className="lineage-name">{memberTitle(member)}</span>
       </div>
       <FactorChips factors={member.factors} />
     </div>
@@ -465,16 +518,19 @@ function ParentSection({
   const [open, setOpen] = useState(false);
   return (
     <div className="detail-section">
+      {/* aria-disabled + click guard, not disabled: a disabled button
+          swallows pointer events, which also killed the title tooltip. */}
       <button
         className="lineage-parent"
         title={memberTitle(parent)}
-        onClick={() => setOpen(!open)}
+        onClick={() => grandparents.length > 0 && setOpen(!open)}
         aria-expanded={open}
         aria-label={`${label}: ${memberTitle(parent)}`}
-        disabled={grandparents.length === 0}
+        aria-disabled={grandparents.length === 0}
       >
         <span className="lineage-label">{label}</span>
         <LineageIcon icon={iconIndex[String(parent.card_id)]} name={parent.name} />
+        <span className="lineage-name">{memberTitle(parent)}</span>
         {grandparents.length > 0 && (
           <span className="lineage-caret">{open ? "▾" : "▸"}</span>
         )}
@@ -1232,6 +1288,7 @@ export default function App() {
       setVeterans(vets);
       setLatest(imp);
       setError(null);
+      setFilters((prev) => reconcileFilters(prev, vets));
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
     }
@@ -1289,14 +1346,15 @@ export default function App() {
     }
   };
 
-  const applyFilters = (next: Filters) => {
-    setFilters(next);
+  // Persisted as an effect so every write path — panel edits AND the
+  // reconciliation inside refresh() — lands in storage.
+  useEffect(() => {
     try {
-      localStorage.setItem(FILTER_STORE, JSON.stringify(next));
+      localStorage.setItem(FILTER_STORE, JSON.stringify(filters));
     } catch {
       // storage full/blocked — the choice still applies for this session
     }
-  };
+  }, [filters]);
 
   // One entry per distinct card in the roster, for the Umas filter section.
   const rosterCards = useMemo(() => {
@@ -1368,13 +1426,23 @@ export default function App() {
         </div>
       </header>
 
-      {error && <p className="error">{error}</p>}
-
-      {veterans.length === 0 && !error ? (
-        <p className="empty">
-          No roster yet. Run UmaExtractor on the game's Veteran List screen, then import the
-          <code> data.json</code> it produces.
+      {/* Fixed toast so it stays readable over the modal/picker backdrops —
+          a mark-update failure used to vanish behind them. Click dismisses. */}
+      {error && (
+        <p className="error" role="alert" title="Dismiss" onClick={() => setError(null)}>
+          {error}
         </p>
+      )}
+
+      {veterans.length === 0 ? (
+        // With the backend unreachable the error toast is the whole story —
+        // blaming the filters here sent people hunting through the panel.
+        !error && (
+          <p className="empty">
+            No roster yet. Run UmaExtractor on the game's Veteran List screen, then import the
+            <code> data.json</code> it produces.
+          </p>
+        )
       ) : sorted.length === 0 ? (
         <p className="empty">No veterans match the filters.</p>
       ) : (
@@ -1434,7 +1502,7 @@ export default function App() {
           iconIndex={iconIndex}
           matchCount={sorted.length}
           total={veterans.length}
-          onChange={applyFilters}
+          onChange={setFilters}
           onClose={() => setFilterOpen(false)}
         />
       )}

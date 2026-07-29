@@ -322,10 +322,10 @@ Keep adding entries as the build evolves. This file is the interview.
   star level (1★/2★/3★ chips, own unique by default, same legacy
   toggle); favorites are the 15 mark icons plus a **no-favorite** chip
   (matches unmarked veterans; ORs with marks like any other chip). A
-  sixth section, **Common Sparks** (after Unique), filters by white- or
-  race-spark name through the same search-popout pattern as Umas
-  (vocabulary = the ~170 such sparks actually present in the roster,
-  not the full game table) — each selected spark carries its **own**
+  sixth section, **Common Sparks** (after Unique), filters by white-,
+  race-, or scenario-spark name through the same search-popout pattern
+  as Umas (vocabulary = the ~170 such sparks actually present in the
+  roster, not the full game table) — each selected spark carries its **own**
   star mode and legacy toggle, with a per-section reset beside the
   chooser. Unlike every other section, selected common sparks **AND**
   together: a breeding shortlist wants veterans carrying every hunted

@@ -1,7 +1,8 @@
 /* Minimal legibility only — the real design pass is its own step. */
 :root { color-scheme: dark; }
-body { margin: 0; font-family: system-ui, sans-serif; background: #101418; color: #e8e8e8; }
-.app { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #101418; color: #e8e8e8; -webkit-tap-highlight-color: transparent; }
+/* Bottom padding keeps the last card row clear of the floating sort pill. */
+.app { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1.25rem 4.5rem; }
 header { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; }
 h1 { margin: 0.25rem 0; }
 .toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
@@ -78,7 +79,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .mark-fallback { display: inline-block; min-width: 20px; text-align: center; font-size: 0.8rem; opacity: 0.8; }
 
 /* Floating sort control — pinned to the viewport, under the modal (z 10). */
-.sort-float { position: fixed; bottom: 1rem; right: 1rem; z-index: 5; display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.4rem 0.5rem 0.4rem 0.9rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+.sort-float { position: fixed; bottom: 1rem; right: 1rem; z-index: 5; display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.35rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
 .sort-float select { border-radius: 999px; }
 .sort-dir { background: #1a2027; border: 1px solid #2a3340; border-radius: 999px; color: inherit; padding: 0.4rem 0.55rem; font-size: 0.8rem; line-height: 1; }
 .sort-dir:hover { border-color: #2a76c9; }

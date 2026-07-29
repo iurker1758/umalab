@@ -557,8 +557,8 @@ export default function App() {
 
       {veterans.length > 0 && (
         <label className="sort-float">
-          Sort
           <select
+            aria-label="Sort by"
             value={sort.key}
             onChange={(e) => {
               const key = e.target.value as SortKey;

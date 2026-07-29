@@ -192,18 +192,34 @@ function loadSortPref(): SortPref {
 // OR within a category, AND across categories: each section you touch
 // narrows the grid, untouched sections don't filter at all.
 
-// Pink spark chips: short label → the factor name in the data.
-const PINK_SPARKS: [label: string, name: string][] = [
-  ["Turf", "Turf"],
-  ["Dirt", "Dirt"],
-  ["Sprint", "Sprint"],
-  ["Mile", "Mile"],
-  ["Medium", "Medium"],
-  ["Long", "Long"],
-  ["Front", "Front Runner"],
-  ["Pace", "Pace Chaser"],
-  ["Late", "Late Surger"],
-  ["End", "End Closer"],
+// Pink spark chips, grouped like the aptitude display: group label →
+// [chip label, factor name in the data].
+const PINK_SPARK_GROUPS: [group: string, chips: [label: string, name: string][]][] = [
+  [
+    "Track",
+    [
+      ["Turf", "Turf"],
+      ["Dirt", "Dirt"],
+    ],
+  ],
+  [
+    "Distance",
+    [
+      ["Sprint", "Sprint"],
+      ["Mile", "Mile"],
+      ["Medium", "Medium"],
+      ["Long", "Long"],
+    ],
+  ],
+  [
+    "Style",
+    [
+      ["Front", "Front Runner"],
+      ["Pace", "Pace Chaser"],
+      ["Late", "Late Surger"],
+      ["End", "End Closer"],
+    ],
+  ],
 ];
 
 type StarMode = "all" | "2plus" | "3";
@@ -574,13 +590,13 @@ function VeteranCard({
 
 function SparkSection({
   title,
-  chips,
+  groups,
   kind,
   value,
   onChange,
 }: {
   title: string;
-  chips: [label: string, name: string][];
+  groups: [group: string | null, chips: [label: string, name: string][]][];
   kind: "blue" | "pink";
   value: SparkFilter;
   onChange: (next: SparkFilter) => void;
@@ -595,17 +611,20 @@ function SparkSection({
   return (
     <div className="filter-section">
       <div className="filter-heading">{title}</div>
-      <div className="filter-chips">
-        {chips.map(([label, name]) => (
-          <button
-            key={name}
-            className={`fchip ${kind}${value.names.includes(name) ? " active" : ""}`}
-            onClick={() => toggleName(name)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {groups.map(([group, chips], i) => (
+        <div key={group ?? i} className="filter-chip-row">
+          {group && <span className="filter-group-label">{group}</span>}
+          {chips.map(([label, name]) => (
+            <button
+              key={name}
+              className={`fchip ${kind}${value.names.includes(name) ? " active" : ""}`}
+              onClick={() => toggleName(name)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ))}
       <div className="filter-opts">
         <span className="seg-group" role="radiogroup" aria-label={`${title} star level`}>
           {(["all", "2plus", "3"] as const).map((m) => (
@@ -632,6 +651,34 @@ function SparkSection({
   );
 }
 
+function UmaCardChip({
+  card,
+  icon,
+  active,
+  onToggle,
+}: {
+  card: Veteran;
+  icon: string | undefined;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  const title = `${card.name}${card.outfit && card.outfit !== "Original" ? ` (${card.outfit})` : ""}`;
+  return (
+    <button
+      className={active ? "card-chip active" : "card-chip"}
+      title={title}
+      aria-label={title}
+      onClick={onToggle}
+    >
+      {icon ? (
+        <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />
+      ) : (
+        <span className="lineage-icon-fallback">{card.name.charAt(0)}</span>
+      )}
+    </button>
+  );
+}
+
 function FilterPanel({
   filters,
   cards,
@@ -645,16 +692,33 @@ function FilterPanel({
   onChange: (next: Filters) => void;
   onClose: () => void;
 }) {
+  const [umaOpen, setUmaOpen] = useState(false);
+  const [umaQuery, setUmaQuery] = useState("");
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (umaOpen) {
+        setUmaOpen(false);
+      } else {
+        onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, umaOpen]);
 
   const toggleIn = <T,>(list: T[], value: T): T[] =>
     list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+  const toggleCard = (id: number) =>
+    onChange({ ...filters, cards: toggleIn(filters.cards, id) });
+
+  const query = umaQuery.trim().toLowerCase();
+  const queried = query
+    ? cards.filter((c) =>
+        `${c.name} ${c.outfit}`.toLowerCase().includes(query)
+      )
+    : cards;
 
   return (
     <>
@@ -674,16 +738,42 @@ function FilterPanel({
           </button>
         </header>
 
+        <div className="filter-section">
+          <div className="filter-heading">Umas</div>
+          <div className="filter-chips">
+            <button
+              className="fchip"
+              onClick={() => {
+                setUmaQuery("");
+                setUmaOpen(true);
+              }}
+            >
+              Choose umas…
+            </button>
+            {cards
+              .filter((c) => filters.cards.includes(c.card_id))
+              .map((c) => (
+                <UmaCardChip
+                  key={c.card_id}
+                  card={c}
+                  icon={iconIndex[String(c.card_id)]}
+                  active
+                  onToggle={() => toggleCard(c.card_id)}
+                />
+              ))}
+          </div>
+        </div>
+
         <SparkSection
           title="Attribute sparks"
-          chips={BLUE_ORDER.map((n) => [sparkAbbr(n), n])}
+          groups={[[null, BLUE_ORDER.map((n) => [sparkAbbr(n), n])]]}
           kind="blue"
           value={filters.blue}
           onChange={(blue) => onChange({ ...filters, blue })}
         />
         <SparkSection
           title="Aptitude sparks"
-          chips={PINK_SPARKS}
+          groups={PINK_SPARK_GROUPS}
           kind="pink"
           value={filters.pink}
           onChange={(pink) => onChange({ ...filters, pink })}
@@ -727,6 +817,16 @@ function FilterPanel({
         <div className="filter-section">
           <div className="filter-heading">Favorites</div>
           <div className="filter-chips">
+            <button
+              className={filters.marks.includes("") ? "mark-toggle active" : "mark-toggle"}
+              title="No favorite"
+              aria-label="No favorite"
+              onClick={() => onChange({ ...filters, marks: toggleIn(filters.marks, "") })}
+            >
+              <span className="mark-none" aria-hidden="true">
+                ✕
+              </span>
+            </button>
             {MARK_IDS.map((id) => (
               <button
                 key={id}
@@ -739,36 +839,35 @@ function FilterPanel({
             ))}
           </div>
         </div>
-
-        <div className="filter-section">
-          <div className="filter-heading">Umas</div>
-          <div className="filter-chips filter-cards">
-            {cards.map((c) => {
-              const icon = iconIndex[String(c.card_id)];
-              const title = `${c.name}${c.outfit && c.outfit !== "Original" ? ` (${c.outfit})` : ""}`;
-              return (
-                <button
-                  key={c.card_id}
-                  className={
-                    filters.cards.includes(c.card_id) ? "card-chip active" : "card-chip"
-                  }
-                  title={title}
-                  aria-label={title}
-                  onClick={() =>
-                    onChange({ ...filters, cards: toggleIn(filters.cards, c.card_id) })
-                  }
-                >
-                  {icon ? (
-                    <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />
-                  ) : (
-                    <span className="lineage-icon-fallback">{c.name.charAt(0)}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
       </div>
+
+      {umaOpen && (
+        <>
+          <div className="uma-popout-backdrop" onClick={() => setUmaOpen(false)} />
+          <div className="uma-popout" role="dialog" aria-label="Choose umas">
+            <input
+              className="uma-search"
+              type="search"
+              placeholder="Search by name…"
+              value={umaQuery}
+              autoFocus
+              onChange={(e) => setUmaQuery(e.target.value)}
+            />
+            <div className="filter-chips">
+              {queried.map((c) => (
+                <UmaCardChip
+                  key={c.card_id}
+                  card={c}
+                  icon={iconIndex[String(c.card_id)]}
+                  active={filters.cards.includes(c.card_id)}
+                  onToggle={() => toggleCard(c.card_id)}
+                />
+              ))}
+              {queried.length === 0 && <span className="empty">No umas match.</span>}
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -1134,12 +1233,38 @@ export default function App() {
       )}
 
       {veterans.length > 0 && (
-        <button className="filter-float" onClick={() => setFilterOpen(true)}>
-          Filters
-          {countFilters(filters) > 0 && (
-            <span className="filter-count">{countFilters(filters)}</span>
-          )}
-        </button>
+        <div className="pill-dock">
+          <button className="filter-float" onClick={() => setFilterOpen(true)}>
+            Filters
+            {countFilters(filters) > 0 && (
+              <span className="filter-count">{countFilters(filters)}</span>
+            )}
+          </button>
+          <label className="sort-float">
+            <select
+              aria-label="Sort by"
+              value={sort.key}
+              onChange={(e) => {
+                const key = e.target.value as SortKey;
+                applySort({ key, asc: DEFAULT_ASC[key] });
+              }}
+            >
+              {SORTS.map(([label, key]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button
+              className="sort-dir"
+              title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
+              aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
+              onClick={() => applySort({ ...sort, asc: !sort.asc })}
+            >
+              {sort.asc ? "▲" : "▼"}
+            </button>
+          </label>
+        </div>
       )}
 
       {filterOpen && (
@@ -1150,33 +1275,6 @@ export default function App() {
           onChange={applyFilters}
           onClose={() => setFilterOpen(false)}
         />
-      )}
-
-      {veterans.length > 0 && (
-        <label className="sort-float">
-          <select
-            aria-label="Sort by"
-            value={sort.key}
-            onChange={(e) => {
-              const key = e.target.value as SortKey;
-              applySort({ key, asc: DEFAULT_ASC[key] });
-            }}
-          >
-            {SORTS.map(([label, key]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <button
-            className="sort-dir"
-            title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
-            aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
-            onClick={() => applySort({ ...sort, asc: !sort.asc })}
-          >
-            {sort.asc ? "▲" : "▼"}
-          </button>
-        </label>
       )}
 
       {selected && (

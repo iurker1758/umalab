@@ -308,17 +308,22 @@ Keep adding entries as the build evolves. This file is the interview.
   favorite mark, and the specific card — without a query language; the
   daily driver is a phone; filters must survive a reload like the sort
   does.
-- **Choice:** a Filters pill (bottom-left, twin of the sort pill)
-  opening a bottom-sheet panel with five sections. Selections OR within
-  a section and AND across sections — each section you touch narrows
-  the grid, untouched sections don't filter. The two spark sections
-  carry a star-level mode (All / 2★+ / 3★) and a per-section **Legacy
-  sparks** toggle that widens matching from own sparks to the whole
-  6-slot lineage; the unique section selects by star level (1★/2★/3★
-  chips, own unique by default, same legacy toggle); favorites are the
-  15 mark icons; Umas is an icon grid of the exact cards in the roster
-  (base and alt outfits filter separately). State persists in
-  `localStorage` (`umalab.filters`), applied client-side per #7.
+- **Choice:** a Filters pill docked beside the sort pill (bottom-right)
+  opening a bottom-sheet panel with five sections, Umas first.
+  Selections OR within a section and AND across sections — each section
+  you touch narrows the grid, untouched sections don't filter. Umas
+  opens a search popout (name/outfit substring) over an icon grid of
+  the exact cards in the roster (base and alt outfits filter
+  separately); picks show as removable chips in the panel. The two
+  spark sections carry a star-level mode (All / 2★+ / 3★) and a
+  per-section **Legacy sparks** toggle that widens matching from own
+  sparks to the whole 6-slot lineage; aptitude chips group as
+  Track/Distance/Style like the modal. The unique section selects by
+  star level (1★/2★/3★ chips, own unique by default, same legacy
+  toggle); favorites are the 15 mark icons plus a **no-favorite** chip
+  (matches unmarked veterans; ORs with marks like any other chip).
+  State persists in `localStorage` (`umalab.filters`), applied
+  client-side per #7.
 - **Rejected:** OR across everything — a grid that only grows as you
   select more answers no real roster question; filtering by specific
   unique-skill name — ~90 chips of UI for a question ("who has a 3★

@@ -19,7 +19,6 @@ const APTITUDES: [label: string, key: keyof Veteran][] = [
 ];
 
 type SortKey =
-  | "name"
   | "rank_score"
   | "speed"
   | "stamina"
@@ -30,17 +29,18 @@ type SortKey =
   | "wins"
   | "register_time";
 
-const COLUMNS: [label: string, key: SortKey][] = [
-  ["Uma", "name"],
+// Every sort is descending — "best first" for numbers, newest first for the
+// trained date. Ascending earns nothing on a grid you scan, not read.
+const SORTS: [label: string, key: SortKey][] = [
   ["Score", "rank_score"],
-  ["Spd", "speed"],
-  ["Sta", "stamina"],
-  ["Pow", "power"],
+  ["Speed", "speed"],
+  ["Stamina", "stamina"],
+  ["Power", "power"],
   ["Guts", "guts"],
   ["Wit", "wiz"],
   ["Fans", "fans"],
   ["Wins", "wins"],
-  ["Trained", "register_time"],
+  ["Newest", "register_time"],
 ];
 
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
@@ -50,7 +50,7 @@ const MARK_IDS = Array.from({ length: 15 }, (_, i) => `mark_${String(i + 1).padS
 
 // One 404 per mark id is enough — remember which ids lack art so later
 // MarkIcon mounts go straight to the numbered fallback instead of re-firing
-// the same requests on every row expansion. Per-id, not a single flag: the
+// the same requests on every modal open. Per-id, not a single flag: the
 // extraction script can leave a partial set (sprites missing from the atlas
 // are skipped with a warning), and one absent PNG must not suppress the rest.
 const missingMarkArt = new Set<string>();
@@ -186,15 +186,128 @@ function VeteranDetail({
   );
 }
 
+function VeteranCard({
+  v,
+  icon,
+  onOpen,
+}: {
+  v: Veteran;
+  icon: string | undefined;
+  onOpen: () => void;
+}) {
+  const [artFailed, setArtFailed] = useState(false);
+  const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
+  return (
+    <button className="card" title={title} aria-label={title} onClick={onOpen}>
+      <span className="card-art">
+        {icon && !artFailed ? (
+          <img
+            src={`/icons/chara/${icon}`}
+            alt=""
+            loading="lazy"
+            onError={() => setArtFailed(true)}
+          />
+        ) : (
+          // Fresh clones have no icon art (gitignored; DECISIONS.md #10) and
+          // new cards can be missing from a stale index — an initial tile
+          // keeps the grid usable either way.
+          <span className="card-fallback" aria-hidden="true">
+            {v.name.charAt(0)}
+          </span>
+        )}
+        {v.tags[0] && (
+          <span className="card-badge">
+            <MarkIcon id={v.tags[0]} />
+          </span>
+        )}
+      </span>
+      <span className="card-score">{v.rank_score.toLocaleString()}</span>
+    </button>
+  );
+}
+
+function VeteranModal({
+  v,
+  onClose,
+  onChanged,
+  onError,
+}: {
+  v: Veteran;
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    // The backdrop scrolls instead of the page while the modal is open.
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  const stats: [label: string, value: string | number][] = [
+    ["Spd", v.speed],
+    ["Sta", v.stamina],
+    ["Pow", v.power],
+    ["Guts", v.guts],
+    ["Wit", v.wiz],
+    ["Fans", v.fans.toLocaleString()],
+    ["Wins", v.wins],
+    ["Trained", v.register_time.slice(0, 10)],
+  ];
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={v.name}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="modal-header">
+          <h2>
+            {v.name}
+            {v.outfit && v.outfit !== "Original" ? (
+              <span className="outfit"> {v.outfit}</span>
+            ) : null}
+            <span className="rarity"> ★{v.rarity}</span>
+          </h2>
+          <button className="modal-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+        <div className="stat-row">
+          {stats.map(([label, value]) => (
+            <span key={label}>
+              <span className="stat-label">{label}</span>
+              {value}
+            </span>
+          ))}
+        </div>
+        <VeteranDetail v={v} onChanged={onChanged} onError={onError} />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [veterans, setVeterans] = useState<Veteran[]>([]);
   const [latest, setLatest] = useState<ImportInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("rank_score");
-  const [sortAsc, setSortAsc] = useState(false);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [tagFilter, setTagFilter] = useState("");
+  const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -219,6 +332,28 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    // The icon index is a gitignored build product of scripts/fetch_icons.py
+    // (DECISIONS.md #10) — a fresh clone legitimately has none, so any
+    // failure just leaves every card on the initial-letter fallback.
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/icons/chara/index.json");
+        if (!res.ok) return;
+        const data: unknown = await res.json();
+        if (!cancelled && data !== null && typeof data === "object") {
+          setIconIndex(data as Record<string, string>);
+        }
+      } catch {
+        // missing or non-JSON response — placeholders it is
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
@@ -234,38 +369,29 @@ export default function App() {
     }
   };
 
-  const onSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortKey(key);
-      setSortAsc(key === "name"); // text ascending, numbers descending by default
-    }
-  };
-
   const usedMarks = useMemo(
     () => [...new Set(veterans.flatMap((v) => v.tags))].sort(),
     [veterans]
   );
 
   const sorted = useMemo(() => {
-    // The expanded veteran is pinned into the view even if a mark change just
-    // dropped it out of the active filter — re-categorizing mid-edit must not
-    // yank the panel away. Collapsing it lets the filter apply normally.
-    const rows = tagFilter
-      ? veterans.filter((v) => v.tags.includes(tagFilter) || v.id === expandedId)
+    const cards = tagFilter
+      ? veterans.filter((v) => v.tags.includes(tagFilter))
       : [...veterans];
-    rows.sort((a, b) => {
+    cards.sort((a, b) => {
       const av = a[sortKey];
       const bv = b[sortKey];
-      const cmp =
-        typeof av === "string" && typeof bv === "string"
-          ? av.localeCompare(bv)
-          : Number(av) - Number(bv);
-      return sortAsc ? cmp : -cmp;
+      return typeof av === "string" && typeof bv === "string"
+        ? bv.localeCompare(av) // register_time is ISO — string desc = newest first
+        : Number(bv) - Number(av);
     });
-    return rows;
-  }, [veterans, sortKey, sortAsc, tagFilter, expandedId]);
+    return cards;
+  }, [veterans, sortKey, tagFilter]);
+
+  // Derived from the roster, not stored: a refresh (tag edit, re-import)
+  // updates the open modal in place, and an import that drops the veteran
+  // closes it instead of showing stale data.
+  const selected = veterans.find((v) => v.id === selectedId);
 
   return (
     <div className="app">
@@ -282,6 +408,19 @@ export default function App() {
             hidden
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
+          <label className="sort-label">
+            Sort
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+            >
+              {SORTS.map(([label, key]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           {usedMarks.length > 0 && (
             <div className="mark-row">
               {usedMarks.map((id) => (
@@ -313,85 +452,26 @@ export default function App() {
           <code> data.json</code> it produces.
         </p>
       ) : (
-        <table className="roster">
-          <thead>
-            <tr>
-              {COLUMNS.map(([label, key]) => (
-                <th key={key} onClick={() => onSort(key)}>
-                  {label}
-                  {sortKey === key ? (sortAsc ? " ▲" : " ▼") : ""}
-                </th>
-              ))}
-              <th>Apt</th>
-              <th>Tags</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((v) => (
-              <VeteranRow
-                key={v.id}
-                v={v}
-                expanded={expandedId === v.id}
-                onToggle={() => setExpandedId(expandedId === v.id ? null : v.id)}
-                onChanged={refresh}
-                onError={setError}
-              />
-            ))}
-          </tbody>
-        </table>
+        <div className="grid">
+          {sorted.map((v) => (
+            <VeteranCard
+              key={v.id}
+              v={v}
+              icon={iconIndex[String(v.card_id)]}
+              onOpen={() => setSelectedId(v.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <VeteranModal
+          v={selected}
+          onClose={() => setSelectedId(null)}
+          onChanged={refresh}
+          onError={setError}
+        />
       )}
     </div>
-  );
-}
-
-function VeteranRow({
-  v,
-  expanded,
-  onToggle,
-  onChanged,
-  onError,
-}: {
-  v: Veteran;
-  expanded: boolean;
-  onToggle: () => void;
-  onChanged: () => Promise<void>;
-  onError: (msg: string) => void;
-}) {
-  return (
-    <>
-      <tr className={expanded ? "row expanded" : "row"} onClick={onToggle}>
-        <td className="name-cell">
-          {v.name}
-          {v.outfit && v.outfit !== "Original" ? <span className="outfit"> {v.outfit}</span> : null}
-          <span className="rarity"> ★{v.rarity}</span>
-        </td>
-        <td>{v.rank_score.toLocaleString()}</td>
-        <td>{v.speed}</td>
-        <td>{v.stamina}</td>
-        <td>{v.power}</td>
-        <td>{v.guts}</td>
-        <td>{v.wiz}</td>
-        <td>{v.fans.toLocaleString()}</td>
-        <td>{v.wins}</td>
-        <td className="trained-cell">{v.register_time.slice(0, 10)}</td>
-        <td className="apt-cell">
-          T{apt(v.proper_ground_turf)} D{apt(v.proper_ground_dirt)}
-        </td>
-        <td>
-          <span className="mark-badges">
-            {v.tags.map((id) => (
-              <MarkIcon key={id} id={id} />
-            ))}
-          </span>
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="detail-row">
-          <td colSpan={COLUMNS.length + 2}>
-            <VeteranDetail v={v} onChanged={onChanged} onError={onError} />
-          </td>
-        </tr>
-      )}
-    </>
   );
 }

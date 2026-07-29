@@ -7,7 +7,8 @@ browsable: stats,
 aptitudes, and every inheritance factor (spark) across the full
 parent/grandparent lineage, decoded to human-readable names.
 
-> **Screenshot / GIF goes here** — this is the first thing anyone sees. Keep it current.
+> **Screenshot / GIF goes here** — the roster grid with icons and mark badges
+> is the money shot. Keep it current.
 
 ## How it works
 
@@ -15,9 +16,10 @@ parent/grandparent lineage, decoded to human-readable names.
   characters to a `data.json`.
 - Upload that file in UmaLab. Each import replaces the roster with the new
   snapshot — the file is the source of truth.
-- Browse and sort the roster: stats, rank score, aptitude letters, and each
-  veteran's own sparks plus the white sparks carried by all six lineage slots
-  (2 parents + 4 grandparents).
+- Browse the roster as a grid of the game's own character icons — rank score
+  under each card, favorite-mark badge on top. Click a card for the full
+  detail: stats, aptitude letters, and each veteran's own sparks plus the
+  sparks carried by all six lineage slots (2 parents + 4 grandparents).
 
 Planned next: hunted-skill spark scoring (expected sparks before/after reroll,
 ported from the predecessor tkinter app) and an English inheritance-blueprint

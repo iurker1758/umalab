@@ -328,59 +328,12 @@ function ParentSection({
   );
 }
 
-function TagEditor({
-  v,
-  onChanged,
-  onError,
-}: {
-  v: Veteran;
-  onChanged: () => Promise<void>;
-  onError: (msg: string) => void;
-}) {
-  // Single-select: a veteran carries at most one mark. Clicking another mark
-  // moves the selection (the backend replaces), clicking the active one clears.
-  const current = v.tags[0];
-  const pick = async (id: string) => {
-    let failure: string | null = null;
-    try {
-      if (id === current) {
-        await api.removeTag(v.trained_chara_id, id);
-      } else {
-        await api.addTag(v.trained_chara_id, id);
-      }
-    } catch (e) {
-      failure = `Mark update failed: ${e instanceof Error ? e.message : String(e)}`;
-    }
-    await onChanged(); // refresh even after a failure — it corrects stale state
-    if (failure) onError(failure);
-  };
-
-  return (
-    <div className="mark-row">
-      {MARK_IDS.map((id) => (
-        <button
-          key={id}
-          className={id === current ? "mark-toggle active" : "mark-toggle"}
-          title={id === current ? "Remove mark" : "Set mark"}
-          onClick={() => void pick(id)}
-        >
-          <MarkIcon id={id} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function VeteranDetail({
   v,
   iconIndex,
-  onChanged,
-  onError,
 }: {
   v: Veteran;
   iconIndex: Record<string, string>;
-  onChanged: () => Promise<void>;
-  onError: (msg: string) => void;
 }) {
   const parents = v.lineage.filter((m) => m.relation === "parent");
   const grandparentsOf = (parent: LineageMember) =>
@@ -392,7 +345,6 @@ function VeteranDetail({
 
   return (
     <div className="detail">
-      <TagEditor v={v} onChanged={onChanged} onError={onError} />
       <div className="apt-groups">
         {APT_GROUPS.map(([group, apts]) => (
           <div key={group} className="apt-row">
@@ -520,13 +472,22 @@ function VeteranModal({
   onChanged: () => Promise<void>;
   onError: (msg: string) => void;
 }) {
+  // Mark picker popup state lives here so Escape can close it before the
+  // modal itself.
+  const [markOpen, setMarkOpen] = useState(false);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (markOpen) {
+        setMarkOpen(false);
+      } else {
+        onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, markOpen]);
 
   useEffect(() => {
     // The backdrop scrolls instead of the page while the modal is open.
@@ -547,6 +508,25 @@ function VeteranModal({
   const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
   const icon = iconIndex[String(v.card_id)];
   const tier = rankTier(v.rank_score);
+
+  // Single-select: picking another mark moves the selection (the backend
+  // replaces), picking the active one clears it.
+  const currentMark = v.tags[0];
+  const pickMark = async (id: string) => {
+    setMarkOpen(false);
+    let failure: string | null = null;
+    try {
+      if (id === currentMark) {
+        await api.removeTag(v.trained_chara_id, id);
+      } else {
+        await api.addTag(v.trained_chara_id, id);
+      }
+    } catch (e) {
+      failure = `Mark update failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    await onChanged(); // refresh even after a failure — it corrects stale state
+    if (failure) onError(failure);
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -573,6 +553,43 @@ function VeteranModal({
               >
                 {tier}
               </span>
+              <button
+                className="modal-mark"
+                aria-expanded={markOpen}
+                aria-label={currentMark ? "Change mark" : "Set mark"}
+                title={currentMark ? "Change mark" : "Set mark"}
+                onClick={() => setMarkOpen(!markOpen)}
+              >
+                {currentMark ? (
+                  <MarkIcon id={currentMark} />
+                ) : (
+                  <span className="modal-mark-empty" aria-hidden="true">
+                    +
+                  </span>
+                )}
+              </button>
+              {markOpen && (
+                <>
+                  {/* invisible click-away layer; the modal's own onClick
+                      already stops propagation, so this never closes it */}
+                  <span
+                    className="mark-popup-backdrop"
+                    onClick={() => setMarkOpen(false)}
+                  />
+                  <span className="mark-popup" role="dialog" aria-label="Choose mark">
+                    {MARK_IDS.map((id) => (
+                      <button
+                        key={id}
+                        className={id === currentMark ? "mark-toggle active" : "mark-toggle"}
+                        title={id === currentMark ? "Remove mark" : "Set mark"}
+                        onClick={() => void pickMark(id)}
+                      >
+                        <MarkIcon id={id} />
+                      </button>
+                    ))}
+                  </span>
+                </>
+              )}
             </span>
             <span className="modal-names">
               {v.title && <span className="modal-card-title">{v.title}</span>}
@@ -619,7 +636,7 @@ function VeteranModal({
             {v.register_time.slice(0, 10)}
           </span>
         </div>
-        <VeteranDetail v={v} iconIndex={iconIndex} onChanged={onChanged} onError={onError} />
+        <VeteranDetail v={v} iconIndex={iconIndex} />
       </div>
     </div>
   );

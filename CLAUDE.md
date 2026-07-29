@@ -29,6 +29,9 @@ Backend (from `backend/`, venv in `.venv/`):
 - Reference data: `python scripts/build_reference_data.py` (uma.moe key from
   `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it; the old
   tkinter app keeps its own copy at `../../uma/uma_api_key.txt`)
+- Character icons: `python scripts/fetch_icons.py` (no key) →
+  `frontend/public/icons/` — gitignored game art, fetched per clone/update,
+  never committed (DECISIONS.md #10)
 
 Frontend (from `frontend/`):
 

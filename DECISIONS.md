@@ -162,3 +162,26 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** a future extractor version exporting the game's
   tag assignments — then an import-time sync (game tags → app tags) becomes
   the obvious bridge.
+
+## 10. Game image assets: fetched locally, never committed
+
+- **Requirements:** the roster grid needs the in-game character icons (and
+  later the favorite-mark icons); the repo is public; game art is Cygames'
+  copyrighted property; icon hosting must not depend on a third party at
+  page-load time.
+- **Choice:** scripts fetch/extract images into `frontend/public/icons/`,
+  which is gitignored — the repo stays a *client* of the art, never a
+  redistribution point. Character icons come from uma.moe's frontend assets
+  (`chara_stand_{card_id}.webp`, the exact 128×128 in-game icon) with
+  GameTora's thumbnails as fallback; a committed-free `index.json` maps
+  card_id → filename. A fresh clone runs the fetch script once
+  (documented in README/CLAUDE.md).
+- **Rejected:** hotlinking uma.moe/GameTora — their asset paths are
+  deploy artifacts that can move silently, uma.moe sends no CORS header,
+  and it spends their bandwidth per page load; committing the images —
+  440 KB is trivial but publishing game art in the repo is exactly the
+  posture to avoid; umapyoi's images — official-site promo art keyed by
+  character, not the per-card in-game icons.
+- **Would change my mind:** the app being hosted for others (icons must
+  then live on the deployment, still not in git), or a source with clearly
+  licensed art appearing.

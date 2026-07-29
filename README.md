@@ -71,6 +71,10 @@ Reference data (`backend/app/data/`) is committed; regenerate it when the game
 adds characters: `python scripts/build_reference_data.py` (needs a
 [uma.moe](https://uma.moe) API key in `backend/.env` as `UMA_MOE_API_KEY`).
 
+Character icons are **not** committed (they're game art — DECISIONS.md
+entry 10); fetch them once per clone or game update:
+`python scripts/fetch_icons.py` (no key needed).
+
 ## Credits
 
 UmaLab is an unofficial fan tool. Uma Musume: Pretty Derby and all its

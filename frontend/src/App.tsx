@@ -188,6 +188,111 @@ function loadSortPref(): SortPref {
   return defaultSort;
 }
 
+// ---------- filtering ----------
+// OR within a category, AND across categories: each section you touch
+// narrows the grid, untouched sections don't filter at all.
+
+// Pink spark chips: short label → the factor name in the data.
+const PINK_SPARKS: [label: string, name: string][] = [
+  ["Turf", "Turf"],
+  ["Dirt", "Dirt"],
+  ["Sprint", "Sprint"],
+  ["Mile", "Mile"],
+  ["Medium", "Medium"],
+  ["Long", "Long"],
+  ["Front", "Front Runner"],
+  ["Pace", "Pace Chaser"],
+  ["Late", "Late Surger"],
+  ["End", "End Closer"],
+];
+
+type StarMode = "all" | "2plus" | "3";
+type SparkFilter = { names: string[]; stars: StarMode; legacy: boolean };
+type Filters = {
+  blue: SparkFilter;
+  pink: SparkFilter;
+  unique: { stars: number[]; legacy: boolean };
+  marks: string[];
+  cards: number[];
+};
+
+const defaultFilters: Filters = {
+  blue: { names: [], stars: "all", legacy: false },
+  pink: { names: [], stars: "all", legacy: false },
+  unique: { stars: [], legacy: false },
+  marks: [],
+  cards: [],
+};
+
+const FILTER_STORE = "umalab.filters";
+
+function loadFilters(): Filters {
+  try {
+    const raw = localStorage.getItem(FILTER_STORE);
+    if (raw) {
+      const p = JSON.parse(raw) as Filters;
+      // Shallow shape check; anything off falls back wholesale.
+      if (
+        Array.isArray(p.blue?.names) &&
+        Array.isArray(p.pink?.names) &&
+        Array.isArray(p.unique?.stars) &&
+        Array.isArray(p.marks) &&
+        Array.isArray(p.cards)
+      ) {
+        return { ...defaultFilters, ...p };
+      }
+    }
+  } catch {
+    // unreadable storage or garbage value — fall through to the default
+  }
+  return defaultFilters;
+}
+
+const starOk = (star: number, mode: StarMode) =>
+  mode === "all" ? true : mode === "2plus" ? star >= 2 : star === 3;
+
+const countFilters = (f: Filters) =>
+  f.blue.names.length +
+  f.pink.names.length +
+  f.unique.stars.length +
+  f.marks.length +
+  f.cards.length;
+
+function matchesFilters(v: Veteran, f: Filters): boolean {
+  // "Legacy" widens a spark section's pool to the whole 6-slot lineage.
+  const pool = (legacy: boolean): Factor[] =>
+    legacy ? [...v.factors, ...v.lineage.flatMap((m) => m.factors)] : v.factors;
+  if (
+    f.blue.names.length > 0 &&
+    !pool(f.blue.legacy).some(
+      (fa) =>
+        fa.kind === "blue" && f.blue.names.includes(fa.name) && starOk(fa.star, f.blue.stars)
+    )
+  ) {
+    return false;
+  }
+  if (
+    f.pink.names.length > 0 &&
+    !pool(f.pink.legacy).some(
+      (fa) =>
+        fa.kind === "pink" && f.pink.names.includes(fa.name) && starOk(fa.star, f.pink.stars)
+    )
+  ) {
+    return false;
+  }
+  if (
+    f.unique.stars.length > 0 &&
+    !pool(f.unique.legacy).some(
+      (fa) => fa.kind === "unique" && f.unique.stars.includes(fa.star)
+    )
+  ) {
+    return false;
+  }
+  if (f.marks.length > 0 && !f.marks.includes(v.tags[0] ?? "")) return false;
+  if (f.cards.length > 0 && !f.cards.includes(v.card_id)) return false;
+  return true;
+}
+
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
 // Art comes from `python scripts/extract_fav_icons.py` (gitignored); without it
 // the <MarkIcon> fallback renders the mark number instead.
@@ -467,6 +572,207 @@ function VeteranCard({
   );
 }
 
+function SparkSection({
+  title,
+  chips,
+  kind,
+  value,
+  onChange,
+}: {
+  title: string;
+  chips: [label: string, name: string][];
+  kind: "blue" | "pink";
+  value: SparkFilter;
+  onChange: (next: SparkFilter) => void;
+}) {
+  const toggleName = (name: string) =>
+    onChange({
+      ...value,
+      names: value.names.includes(name)
+        ? value.names.filter((n) => n !== name)
+        : [...value.names, name],
+    });
+  return (
+    <div className="filter-section">
+      <div className="filter-heading">{title}</div>
+      <div className="filter-chips">
+        {chips.map(([label, name]) => (
+          <button
+            key={name}
+            className={`fchip ${kind}${value.names.includes(name) ? " active" : ""}`}
+            onClick={() => toggleName(name)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="filter-opts">
+        <span className="seg-group" role="radiogroup" aria-label={`${title} star level`}>
+          {(["all", "2plus", "3"] as const).map((m) => (
+            <button
+              key={m}
+              className={value.stars === m ? "seg active" : "seg"}
+              aria-pressed={value.stars === m}
+              onClick={() => onChange({ ...value, stars: m })}
+            >
+              {m === "all" ? "All" : m === "2plus" ? "2★+" : "3★"}
+            </button>
+          ))}
+        </span>
+        <button
+          className={value.legacy ? "legacy-toggle active" : "legacy-toggle"}
+          title="Also match sparks carried by parents and grandparents"
+          aria-pressed={value.legacy}
+          onClick={() => onChange({ ...value, legacy: !value.legacy })}
+        >
+          Legacy sparks
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilterPanel({
+  filters,
+  cards,
+  iconIndex,
+  onChange,
+  onClose,
+}: {
+  filters: Filters;
+  cards: Veteran[];
+  iconIndex: Record<string, string>;
+  onChange: (next: Filters) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const toggleIn = <T,>(list: T[], value: T): T[] =>
+    list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+
+  return (
+    <>
+      <div className="filter-backdrop" onClick={onClose} />
+      <div className="filter-panel" role="dialog" aria-label="Filters">
+        <header className="filter-header">
+          <span className="filter-title">Filters</span>
+          <button
+            className="filter-clear"
+            disabled={countFilters(filters) === 0}
+            onClick={() => onChange(defaultFilters)}
+          >
+            Clear all
+          </button>
+          <button className="modal-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+
+        <SparkSection
+          title="Attribute sparks"
+          chips={BLUE_ORDER.map((n) => [sparkAbbr(n), n])}
+          kind="blue"
+          value={filters.blue}
+          onChange={(blue) => onChange({ ...filters, blue })}
+        />
+        <SparkSection
+          title="Aptitude sparks"
+          chips={PINK_SPARKS}
+          kind="pink"
+          value={filters.pink}
+          onChange={(pink) => onChange({ ...filters, pink })}
+        />
+
+        <div className="filter-section">
+          <div className="filter-heading">Unique spark</div>
+          <div className="filter-chips">
+            {[1, 2, 3].map((s) => (
+              <button
+                key={s}
+                className={`fchip unique${filters.unique.stars.includes(s) ? " active" : ""}`}
+                onClick={() =>
+                  onChange({
+                    ...filters,
+                    unique: { ...filters.unique, stars: toggleIn(filters.unique.stars, s) },
+                  })
+                }
+              >
+                {s}★
+              </button>
+            ))}
+          </div>
+          <div className="filter-opts">
+            <button
+              className={filters.unique.legacy ? "legacy-toggle active" : "legacy-toggle"}
+              title="Also match unique sparks carried by parents and grandparents"
+              aria-pressed={filters.unique.legacy}
+              onClick={() =>
+                onChange({
+                  ...filters,
+                  unique: { ...filters.unique, legacy: !filters.unique.legacy },
+                })
+              }
+            >
+              Legacy sparks
+            </button>
+          </div>
+        </div>
+
+        <div className="filter-section">
+          <div className="filter-heading">Favorites</div>
+          <div className="filter-chips">
+            {MARK_IDS.map((id) => (
+              <button
+                key={id}
+                className={filters.marks.includes(id) ? "mark-toggle active" : "mark-toggle"}
+                title={`Mark ${Number(id.slice(-2))}`}
+                onClick={() => onChange({ ...filters, marks: toggleIn(filters.marks, id) })}
+              >
+                <MarkIcon id={id} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="filter-section">
+          <div className="filter-heading">Umas</div>
+          <div className="filter-chips filter-cards">
+            {cards.map((c) => {
+              const icon = iconIndex[String(c.card_id)];
+              const title = `${c.name}${c.outfit && c.outfit !== "Original" ? ` (${c.outfit})` : ""}`;
+              return (
+                <button
+                  key={c.card_id}
+                  className={
+                    filters.cards.includes(c.card_id) ? "card-chip active" : "card-chip"
+                  }
+                  title={title}
+                  aria-label={title}
+                  onClick={() =>
+                    onChange({ ...filters, cards: toggleIn(filters.cards, c.card_id) })
+                  }
+                >
+                  {icon ? (
+                    <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />
+                  ) : (
+                    <span className="lineage-icon-fallback">{c.name.charAt(0)}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function VeteranModal({
   v,
   iconIndex,
@@ -669,6 +975,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sort, setSort] = useState<SortPref>(loadSortPref);
+  const [filters, setFilters] = useState<Filters>(loadFilters);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
@@ -736,8 +1044,28 @@ export default function App() {
     }
   };
 
+  const applyFilters = (next: Filters) => {
+    setFilters(next);
+    try {
+      localStorage.setItem(FILTER_STORE, JSON.stringify(next));
+    } catch {
+      // storage full/blocked — the choice still applies for this session
+    }
+  };
+
+  // One entry per distinct card in the roster, for the Umas filter section.
+  const rosterCards = useMemo(() => {
+    const seen = new Map<number, Veteran>();
+    for (const v of veterans) {
+      if (!seen.has(v.card_id)) seen.set(v.card_id, v);
+    }
+    return [...seen.values()].sort(
+      (a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id
+    );
+  }, [veterans]);
+
   const sorted = useMemo(() => {
-    const cards = [...veterans];
+    const cards = veterans.filter((v) => matchesFilters(v, filters));
     const val = (v: Veteran) =>
       sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key];
     cards.sort((a, b) => {
@@ -751,7 +1079,7 @@ export default function App() {
       return sort.asc ? cmp : -cmp;
     });
     return cards;
-  }, [veterans, sort]);
+  }, [veterans, sort, filters]);
 
   // Derived from the roster, not stored: a refresh (tag edit, re-import)
   // updates the open modal in place, and an import that drops the veteran
@@ -789,6 +1117,8 @@ export default function App() {
           No roster yet. Run UmaExtractor on the game's Veteran List screen, then import the
           <code> data.json</code> it produces.
         </p>
+      ) : sorted.length === 0 ? (
+        <p className="empty">No veterans match the filters.</p>
       ) : (
         <div className="grid">
           {sorted.map((v) => (
@@ -801,6 +1131,25 @@ export default function App() {
             />
           ))}
         </div>
+      )}
+
+      {veterans.length > 0 && (
+        <button className="filter-float" onClick={() => setFilterOpen(true)}>
+          Filters
+          {countFilters(filters) > 0 && (
+            <span className="filter-count">{countFilters(filters)}</span>
+          )}
+        </button>
+      )}
+
+      {filterOpen && (
+        <FilterPanel
+          filters={filters}
+          cards={rosterCards}
+          iconIndex={iconIndex}
+          onChange={applyFilters}
+          onClose={() => setFilterOpen(false)}
+        />
       )}
 
       {veterans.length > 0 && (

@@ -46,8 +46,9 @@ const blueSparkRank = (v: Veteran): number => {
   return stat === -1 ? -1 : stat * 3 + (blue.star - 1);
 };
 
-// Rating → rank-tier breakpoints, from the community ratings sheet
-// (u/TokuHer0). First row whose minimum the score clears wins.
+// Rating → rank-tier breakpoints (community-documented; the dump's own
+// `rank` field is a raw id, not the displayed tier). First row whose
+// minimum the score clears wins — note the U tiers sit above SS+.
 const RANK_TIERS: [min: number, label: string][] = [
   [63400, "US"],
   [55200, "UA"],
@@ -421,7 +422,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [sort, setSort] = useState<SortPref>(loadSortPref);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [tagFilter, setTagFilter] = useState("");
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -430,11 +430,6 @@ export default function App() {
       const [vets, imp] = await Promise.all([api.veterans(), api.latestImport()]);
       setVeterans(vets);
       setLatest(imp);
-      // A filter whose mark lost its last carrier is cleared, not masked —
-      // masking would let it silently reactivate when the mark returns.
-      setTagFilter((prev) =>
-        prev && !vets.some((v) => v.tags.includes(prev)) ? "" : prev
-      );
       setError(null);
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
@@ -493,15 +488,8 @@ export default function App() {
     }
   };
 
-  const usedMarks = useMemo(
-    () => [...new Set(veterans.flatMap((v) => v.tags))].sort(),
-    [veterans]
-  );
-
   const sorted = useMemo(() => {
-    const cards = tagFilter
-      ? veterans.filter((v) => v.tags.includes(tagFilter))
-      : [...veterans];
+    const cards = [...veterans];
     const val = (v: Veteran) =>
       sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key];
     cards.sort((a, b) => {
@@ -515,7 +503,7 @@ export default function App() {
       return sort.asc ? cmp : -cmp;
     });
     return cards;
-  }, [veterans, sort, tagFilter]);
+  }, [veterans, sort]);
 
   // Derived from the roster, not stored: a refresh (tag edit, re-import)
   // updates the open modal in place, and an import that drops the veteran
@@ -537,44 +525,6 @@ export default function App() {
             hidden
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
-          <label className="sort-label">
-            Sort
-            <select
-              value={sort.key}
-              onChange={(e) => {
-                const key = e.target.value as SortKey;
-                applySort({ key, asc: DEFAULT_ASC[key] });
-              }}
-            >
-              {SORTS.map(([label, key]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
-              className="sort-dir"
-              title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
-              aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
-              onClick={() => applySort({ ...sort, asc: !sort.asc })}
-            >
-              {sort.asc ? "▲" : "▼"}
-            </button>
-          </label>
-          {usedMarks.length > 0 && (
-            <div className="mark-row">
-              {usedMarks.map((id) => (
-                <button
-                  key={id}
-                  className={tagFilter === id ? "mark-toggle active" : "mark-toggle"}
-                  title={tagFilter === id ? "Show all" : "Filter by mark"}
-                  onClick={() => setTagFilter(tagFilter === id ? "" : id)}
-                >
-                  <MarkIcon id={id} />
-                </button>
-              ))}
-            </div>
-          )}
           {latest && (
             <span className="import-info">
               {latest.veteran_count} veterans · imported{" "}
@@ -603,6 +553,33 @@ export default function App() {
             />
           ))}
         </div>
+      )}
+
+      {veterans.length > 0 && (
+        <label className="sort-float">
+          Sort
+          <select
+            value={sort.key}
+            onChange={(e) => {
+              const key = e.target.value as SortKey;
+              applySort({ key, asc: DEFAULT_ASC[key] });
+            }}
+          >
+            {SORTS.map(([label, key]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            className="sort-dir"
+            title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
+            aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
+            onClick={() => applySort({ ...sort, asc: !sort.asc })}
+          >
+            {sort.asc ? "▲" : "▼"}
+          </button>
+        </label>
       )}
 
       {selected && (

@@ -228,7 +228,7 @@ Keep adding entries as the build evolves. This file is the interview.
   the slot is generic and swaps to the hunted-spark score in the scoring
   milestone), the mark badge top-left and a rank-tier badge top-right,
   mirroring the game's own veteran list (tier derived from `rank_score`
-  via the community breakpoint sheet by u/TokuHer0 — G 0 … SS+ 19,200 …
+  via the community-documented breakpoints — G 0 … SS+ 19,200 …
   US 63,400 — since the dump's `rank` field is a raw id, not the
   displayed tier). Under the **Sparks sort**, the score line swaps to
   the game-style own-spark strip: labeled star triplets for the blue,

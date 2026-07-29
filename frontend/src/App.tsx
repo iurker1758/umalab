@@ -44,8 +44,8 @@ const COLUMNS: [label: string, key: SortKey][] = [
 ];
 
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
-// Art comes from `python scripts/extract_fav_icons.py` (gitignored); without it
-// the <MarkIcon> fallback renders the mark number instead.
+// Art comes from an out-of-repo extraction tool (DECISIONS.md #10) and is
+// gitignored; without it the <MarkIcon> fallback renders the mark number instead.
 const MARK_IDS = Array.from({ length: 15 }, (_, i) => `mark_${String(i + 1).padStart(2, "0")}`);
 
 // One 404 per mark id is enough — remember which ids lack art so later

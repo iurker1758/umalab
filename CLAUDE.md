@@ -11,10 +11,10 @@ Raspberry Pi behind Cloudflare Tunnel, Cloudflare Access in front of both.
 Local hosting in the interim — don't add cloud-specific config until that
 work starts.
 
-Planned next milestones: hunted-skill spark scoring (port of the pure math in
-`../uma/uma_keeper.py` — `expected_sparks`, before/after reroll) and an
-English inheritance-blueprint designer modeled on design.u-ma.org. Leave room
-for both; don't build either early.
+Planned next milestones: hunted-skill spark scoring (port of the pure
+`expected_sparks` before/after-reroll math from the predecessor local tool)
+and an English inheritance-blueprint designer modeled on design.u-ma.org.
+Leave room for both; don't build either early.
 
 ## Commands
 
@@ -27,16 +27,13 @@ Backend (from `backend/`, venv in `.venv/`):
 - Test: `pytest` · Lint: `ruff check .` · Types: `pyright` (strict; run with the
   venv active so it resolves site-packages)
 - Reference data: `python scripts/build_reference_data.py` (uma.moe key from
-  `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it; the old
-  tkinter app keeps its own copy at `../../uma/uma_api_key.txt`)
+  `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it)
 - Character icons: `python scripts/fetch_icons.py` (no key) →
   `frontend/public/icons/` — gitignored game art, fetched per clone/update,
   never committed (DECISIONS.md #10)
-- Favorite-mark icons (tag badges): `uv run scripts/extract_fav_icons.py`
-  (PEP-723 inline deps, not in pyproject; excluded from pyright) — extracts
-  from the installed Global client's asset bundles into `icons/marks/`;
-  needs the game on the machine. Tag ids live in `app/data/tag_icons.json`
-  (committed) and must stay in sync with `MARK_IDS` in `frontend/src/App.tsx`
+- Favorite-mark icons (tag badges): extracted into `icons/marks/`. Tag ids live in
+  `app/data/tag_icons.json` (committed) and must stay in sync with
+  `MARK_IDS` in `frontend/src/App.tsx`
 
 Frontend (from `frontend/`):
 

@@ -68,13 +68,16 @@ class Veteran(Base):
 
 
 class VeteranTag(Base):
-    """A user-assigned organizational tag (the game's own tags aren't in the
+    """A user-assigned mark tag (the game's own assignments aren't in the
     extractor dump). Keyed by trained_chara_id — NOT veterans.id — so tags
     survive full-replace imports (DECISIONS.md #9). Rows whose veteran is
-    gone from the current snapshot are simply never displayed.
+    gone from the current snapshot are simply never displayed. At most one
+    mark per veteran, matching the game's single favorite mark.
     """
     __tablename__ = "veteran_tags"
-    __table_args__ = (UniqueConstraint("trained_chara_id", "tag", name="uq_veteran_tag"),)
+    __table_args__ = (
+        UniqueConstraint("trained_chara_id", name="uq_veteran_tag_trained_chara_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     trained_chara_id: Mapped[int]

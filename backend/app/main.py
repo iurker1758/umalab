@@ -93,7 +93,10 @@ class VeteranOut(BaseModel):
     factors: list[FactorOut]
     skills: list[SkillOut]
     lineage: list[LineageMemberOut]
-    tags: list[str] = []  # filled from veteran_tags, not a Veteran column
+    # Filled from veteran_tags, not a Veteran column. Kept a list even though
+    # a veteran carries at most one mark — widening back to multiple is then
+    # an app-level change, not an API break.
+    tags: list[str] = []
     model_config = {"from_attributes": True}
 
 
@@ -176,7 +179,9 @@ async def add_tag(
     body: TagIn,
     session: AsyncSession = Depends(get_session),
 ):
-    """Idempotent: tagging the same veteran with the same tag twice succeeds."""
+    """Replace semantics: a veteran carries at most one mark, so assigning a
+    new one displaces the old. Idempotent for repeats of the same mark.
+    """
     tag = body.tag.strip()
     if tag not in VALID_TAGS:
         raise HTTPException(400, f"unknown tag id {tag!r} — tags are fixed mark ids")
@@ -188,7 +193,9 @@ async def add_tag(
     stmt = (
         pg_insert(VeteranTag)
         .values(trained_chara_id=trained_chara_id, tag=tag)
-        .on_conflict_do_nothing(constraint="uq_veteran_tag")
+        .on_conflict_do_update(
+            constraint="uq_veteran_tag_trained_chara_id", set_={"tag": tag}
+        )
     )
     await session.execute(stmt)
     await session.commit()

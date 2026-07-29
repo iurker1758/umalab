@@ -91,8 +91,11 @@ function LineageSlot({ member, label }: { member: LineageMember; label: string }
 }
 
 function TagEditor({ v, onChanged }: { v: Veteran; onChanged: () => Promise<void> }) {
-  const toggle = async (id: string) => {
-    if (v.tags.includes(id)) {
+  // Single-select: a veteran carries at most one mark. Clicking another mark
+  // moves the selection (the backend replaces), clicking the active one clears.
+  const current = v.tags[0];
+  const pick = async (id: string) => {
+    if (id === current) {
       await api.removeTag(v.trained_chara_id, id);
     } else {
       await api.addTag(v.trained_chara_id, id);
@@ -105,9 +108,9 @@ function TagEditor({ v, onChanged }: { v: Veteran; onChanged: () => Promise<void
       {MARK_IDS.map((id) => (
         <button
           key={id}
-          className={v.tags.includes(id) ? "mark-toggle active" : "mark-toggle"}
-          title={v.tags.includes(id) ? "Remove mark" : "Assign mark"}
-          onClick={() => void toggle(id)}
+          className={id === current ? "mark-toggle active" : "mark-toggle"}
+          title={id === current ? "Remove mark" : "Set mark"}
+          onClick={() => void pick(id)}
         >
           <MarkIcon id={id} />
         </button>

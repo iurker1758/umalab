@@ -43,6 +43,39 @@ const COLUMNS: [label: string, key: SortKey][] = [
   ["Trained", "register_time"],
 ];
 
+// The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
+// Art comes from `python scripts/extract_fav_icons.py` (gitignored); without it
+// the <MarkIcon> fallback renders the mark number instead.
+const MARK_IDS = Array.from({ length: 15 }, (_, i) => `mark_${String(i + 1).padStart(2, "0")}`);
+
+// One 404 per mark id is enough — remember which ids lack art so later
+// MarkIcon mounts go straight to the numbered fallback instead of re-firing
+// the same requests on every row expansion. Per-id, not a single flag: the
+// extraction script can leave a partial set (sprites missing from the atlas
+// are skipped with a warning), and one absent PNG must not suppress the rest.
+const missingMarkArt = new Set<string>();
+
+function MarkIcon({ id }: { id: string }) {
+  const [failed, setFailed] = useState(missingMarkArt.has(id));
+  const label = `Mark ${Number(id.slice(-2))}`;
+  return failed ? (
+    <span className="mark-fallback" title={label}>
+      {Number(id.slice(-2))}
+    </span>
+  ) : (
+    <img
+      className="mark-icon"
+      src={`/icons/marks/${id}.png`}
+      alt={label}
+      title={label}
+      onError={() => {
+        missingMarkArt.add(id);
+        setFailed(true);
+      }}
+    />
+  );
+}
+
 function FactorChips({ factors }: { factors: Factor[] }) {
   return (
     <span className="chips">
@@ -69,69 +102,55 @@ function LineageSlot({ member, label }: { member: LineageMember; label: string }
 
 function TagEditor({
   v,
-  allTags,
   onChanged,
+  onError,
 }: {
   v: Veteran;
-  allTags: string[];
   onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
-
-  const add = async () => {
-    const tag = draft.trim();
-    if (!tag) return;
-    await api.addTag(v.trained_chara_id, tag);
-    setDraft("");
-    await onChanged();
-  };
-
-  const remove = async (tag: string) => {
-    await api.removeTag(v.trained_chara_id, tag);
-    await onChanged();
+  // Single-select: a veteran carries at most one mark. Clicking another mark
+  // moves the selection (the backend replaces), clicking the active one clears.
+  const current = v.tags[0];
+  const pick = async (id: string) => {
+    let failure: string | null = null;
+    try {
+      if (id === current) {
+        await api.removeTag(v.trained_chara_id, id);
+      } else {
+        await api.addTag(v.trained_chara_id, id);
+      }
+    } catch (e) {
+      failure = `Mark update failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    await onChanged(); // refresh even after a failure — it corrects stale state
+    if (failure) onError(failure);
   };
 
   return (
-    <div className="tag-editor">
-      <span className="chips">
-        {v.tags.map((tag) => (
-          <span key={tag} className="chip tag">
-            {tag}
-            <button className="chip-x" title="Remove tag" onClick={() => void remove(tag)}>
-              ×
-            </button>
-          </span>
-        ))}
-      </span>
-      <input
-        list="all-tags"
-        value={draft}
-        placeholder="Add tag"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void add();
-        }}
-      />
-      <datalist id="all-tags">
-        {allTags.map((tag) => (
-          <option key={tag} value={tag} />
-        ))}
-      </datalist>
-      <button onClick={() => void add()} disabled={!draft.trim()}>
-        Add
-      </button>
+    <div className="mark-row">
+      {MARK_IDS.map((id) => (
+        <button
+          key={id}
+          className={id === current ? "mark-toggle active" : "mark-toggle"}
+          title={id === current ? "Remove mark" : "Set mark"}
+          onClick={() => void pick(id)}
+        >
+          <MarkIcon id={id} />
+        </button>
+      ))}
     </div>
   );
 }
 
 function VeteranDetail({
   v,
-  allTags,
   onChanged,
+  onError,
 }: {
   v: Veteran;
-  allTags: string[];
   onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
 }) {
   const parents = v.lineage.filter((m) => m.relation === "parent");
   const grandparentsOf = (parent: LineageMember) =>
@@ -143,7 +162,7 @@ function VeteranDetail({
 
   return (
     <div className="detail">
-      <TagEditor v={v} allTags={allTags} onChanged={onChanged} />
+      <TagEditor v={v} onChanged={onChanged} onError={onError} />
       <div className="apt-grid">
         {APTITUDES.map(([label, key]) => (
           <span key={key} className="apt">
@@ -183,6 +202,11 @@ export default function App() {
       const [vets, imp] = await Promise.all([api.veterans(), api.latestImport()]);
       setVeterans(vets);
       setLatest(imp);
+      // A filter whose mark lost its last carrier is cleared, not masked —
+      // masking would let it silently reactivate when the mark returns.
+      setTagFilter((prev) =>
+        prev && !vets.some((v) => v.tags.includes(prev)) ? "" : prev
+      );
       setError(null);
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
@@ -219,14 +243,17 @@ export default function App() {
     }
   };
 
-  const allTags = useMemo(
+  const usedMarks = useMemo(
     () => [...new Set(veterans.flatMap((v) => v.tags))].sort(),
     [veterans]
   );
 
   const sorted = useMemo(() => {
+    // The expanded veteran is pinned into the view even if a mark change just
+    // dropped it out of the active filter — re-categorizing mid-edit must not
+    // yank the panel away. Collapsing it lets the filter apply normally.
     const rows = tagFilter
-      ? veterans.filter((v) => v.tags.includes(tagFilter))
+      ? veterans.filter((v) => v.tags.includes(tagFilter) || v.id === expandedId)
       : [...veterans];
     rows.sort((a, b) => {
       const av = a[sortKey];
@@ -238,7 +265,7 @@ export default function App() {
       return sortAsc ? cmp : -cmp;
     });
     return rows;
-  }, [veterans, sortKey, sortAsc, tagFilter]);
+  }, [veterans, sortKey, sortAsc, tagFilter, expandedId]);
 
   return (
     <div className="app">
@@ -255,15 +282,19 @@ export default function App() {
             hidden
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
-          {allTags.length > 0 && (
-            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
-              <option value="">All tags</option>
-              {allTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
+          {usedMarks.length > 0 && (
+            <div className="mark-row">
+              {usedMarks.map((id) => (
+                <button
+                  key={id}
+                  className={tagFilter === id ? "mark-toggle active" : "mark-toggle"}
+                  title={tagFilter === id ? "Show all" : "Filter by mark"}
+                  onClick={() => setTagFilter(tagFilter === id ? "" : id)}
+                >
+                  <MarkIcon id={id} />
+                </button>
               ))}
-            </select>
+            </div>
           )}
           {latest && (
             <span className="import-info">
@@ -302,8 +333,8 @@ export default function App() {
                 v={v}
                 expanded={expandedId === v.id}
                 onToggle={() => setExpandedId(expandedId === v.id ? null : v.id)}
-                allTags={allTags}
                 onChanged={refresh}
+                onError={setError}
               />
             ))}
           </tbody>
@@ -317,14 +348,14 @@ function VeteranRow({
   v,
   expanded,
   onToggle,
-  allTags,
   onChanged,
+  onError,
 }: {
   v: Veteran;
   expanded: boolean;
   onToggle: () => void;
-  allTags: string[];
   onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
 }) {
   return (
     <>
@@ -347,11 +378,9 @@ function VeteranRow({
           T{apt(v.proper_ground_turf)} D{apt(v.proper_ground_dirt)}
         </td>
         <td>
-          <span className="chips">
-            {v.tags.map((tag) => (
-              <span key={tag} className="chip tag">
-                {tag}
-              </span>
+          <span className="mark-badges">
+            {v.tags.map((id) => (
+              <MarkIcon key={id} id={id} />
             ))}
           </span>
         </td>
@@ -359,7 +388,7 @@ function VeteranRow({
       {expanded && (
         <tr className="detail-row">
           <td colSpan={COLUMNS.length + 2}>
-            <VeteranDetail v={v} allTags={allTags} onChanged={onChanged} />
+            <VeteranDetail v={v} onChanged={onChanged} onError={onError} />
           </td>
         </tr>
       )}

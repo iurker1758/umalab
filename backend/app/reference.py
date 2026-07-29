@@ -32,8 +32,16 @@ def _load_factors() -> dict[int, FactorInfo]:
     return {int(key): info for key, info in raw.items()}
 
 
+def _load_tag_icons() -> list[str]:
+    raw = json.loads((DATA_DIR / "tag_icons.json").read_text(encoding="utf-8"))
+    return list(raw)
+
+
 CARDS: dict[int, Card] = _load_cards()
 FACTORS: dict[int, FactorInfo] = _load_factors()
+# The fixed set of assignable tag ids (favorite-mark icons; DECISIONS.md #9).
+# Ids only — the art itself is extracted locally by scripts/extract_fav_icons.py.
+TAG_ICONS: list[str] = _load_tag_icons()
 
 # uma.moe's `type` field -> the kind label stored on decoded factors.
 FACTOR_TYPE_KINDS: dict[int, str] = {

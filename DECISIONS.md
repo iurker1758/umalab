@@ -142,26 +142,48 @@ Keep adding entries as the build evolves. This file is the interview.
   approach returns as the fallback, now checkable against this table's
   snapshot.
 
-## 9. Tags: app-side, keyed by trained_chara_id
+## 9. Tags: app-side, keyed by trained_chara_id, fixed mark-icon ids
 
 - **Requirements:** organize veterans with user-defined tags (the in-game
   tag/favorite marks don't appear anywhere in the extractor dump — every
   candidate field is either constant or something else, e.g. `is_locked` is
-  just the 0/1 padlock); tags must survive imports.
-- **Choice:** a `veteran_tags` table — `(trained_chara_id, tag)` unique,
-  free-text tag names, edited in the web UI. Keyed by the game's
+  just the 0/1 padlock); tags must survive imports; the roster-grid redesign
+  wants tags as at-a-glance badges on cards, mirroring the game's own
+  favorite-mark UI.
+- **Choice:** a `veteran_tags` table — unique on `trained_chara_id` (**one
+  mark per veteran**), edited in the web UI. Keyed by the game's
   `trained_chara_id` rather than the local `veterans.id` FK precisely so
   full-replace imports (#3) can't touch them. Tags whose veteran is absent
   from the current snapshot simply don't display; they're not pruned, so a
   re-import that brings the uma back (e.g. re-uploading an older file)
-  restores its tags.
-- **Rejected:** mirroring the in-game tags — not exported, so there's nothing
-  to mirror; surfacing `is_locked` instead — it's a different, single-bit
-  concept and wasn't what the organizational need was; tag colors/ordering —
-  free-text names cover the need until proven otherwise.
+  restores its tags. Tag values are a **fixed set of ids**
+  (`mark_01`–`mark_15`, the game's 15 favorite marks; committed as
+  `app/data/tag_icons.json`, validated in `add_tag`, art extracted locally
+  per #10) — amended 2026-07-29 from the original free-text tags, which
+  shipped first but read poorly as card badges and duplicated what the game
+  already has a familiar visual language for. The free-text rows that
+  existed were throwaway and were purged by a data migration rather than
+  mapped. The one-mark limit (amended same day, before any real multi-mark
+  use) mirrors the game — a trained uma has a single favorite mark — and
+  keeps the roster-grid card to one clean badge; `add_tag` has replace
+  semantics, so picking a new mark displaces the old in one call. The API
+  still returns `tags` as a list, so widening back to multiple would be an
+  app-level change, not an API break.
+- **Rejected:** mirroring the in-game tag *assignments* — not exported, so
+  there's nothing to mirror (the icons are extractable; which uma carries
+  which mark is not); surfacing `is_locked` instead — it's a different,
+  single-bit concept and wasn't what the organizational need was; keeping
+  free text alongside the icons — two tag vocabularies to filter and render
+  for one organizational need; multiple marks per veteran — built first,
+  but the PR 3 card badge would need stacking or a "+n" overflow, and the
+  game's own model (one mark) is the mental model users already have.
 - **Would change my mind:** a future extractor version exporting the game's
   tag assignments — then an import-time sync (game tags → app tags) becomes
-  the obvious bridge.
+  the obvious bridge; an organizational need the 15 marks can't express —
+  free text returns as a second, non-badge field rather than widening this
+  one; needing orthogonal labels (e.g. "front-runner project" and "keeper")
+  — the table still supports multiples, so only the constraint and replace
+  semantics would need relaxing.
 
 ## 10. Game image assets: fetched locally, never committed
 
@@ -173,9 +195,17 @@ Keep adding entries as the build evolves. This file is the interview.
   which is gitignored — the repo stays a *client* of the art, never a
   redistribution point. Character icons come from uma.moe's frontend assets
   (`chara_stand_{card_id}.webp`, the exact 128×128 in-game icon) with
-  GameTora's thumbnails as fallback; a committed-free `index.json` maps
-  card_id → filename. A fresh clone runs the fetch script once
-  (documented in README/CLAUDE.md).
+  GameTora's thumbnails as fallback; an uncommitted `index.json` maps
+  card_id → filename. The index is gitignored with the art (it's derived
+  from whatever landed on disk), which sets the frontend contract: a fresh
+  clone has neither icons nor index, so the UI must always tolerate a
+  missing index or missing keys and fall back to a placeholder. The
+  favorite-mark icons exist only inside the client's UI asset bundles — on
+  no CDN or fan site — so `scripts/extract_fav_icons.py` pulls them from
+  your own installed Global client (meta-DB and bundle decryption adapted
+  from Vali-98/umamusu-utils, MIT; credited in README) into
+  `icons/marks/`, same posture: read-only against the game, local only.
+  A fresh clone runs the scripts once (documented in README/CLAUDE.md).
 - **Rejected:** hotlinking uma.moe/GameTora — their asset paths are
   deploy artifacts that can move silently, uma.moe sends no CORS header,
   and it spends their bandwidth per page load; committing the images —

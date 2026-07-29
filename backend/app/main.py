@@ -20,6 +20,9 @@ from .models import Import, Veteran, VeteranTag
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # ~100 veterans ≈ 1.7 MB; 25 MB is generous headroom
 
+# Tags are a fixed set of favorite-mark icon ids, not free text (DECISIONS.md #9).
+VALID_TAGS = frozenset(reference.TAG_ICONS)
+
 app = FastAPI(title="UmaLab")
 
 app.add_middleware(
@@ -90,7 +93,10 @@ class VeteranOut(BaseModel):
     factors: list[FactorOut]
     skills: list[SkillOut]
     lineage: list[LineageMemberOut]
-    tags: list[str] = []  # filled from veteran_tags, not a Veteran column
+    # Filled from veteran_tags, not a Veteran column. Kept a list even though
+    # a veteran carries at most one mark — widening back to multiple is then
+    # an app-level change, not an API break.
+    tags: list[str] = []
     model_config = {"from_attributes": True}
 
 
@@ -173,10 +179,12 @@ async def add_tag(
     body: TagIn,
     session: AsyncSession = Depends(get_session),
 ):
-    """Idempotent: tagging the same veteran with the same tag twice succeeds."""
+    """Replace semantics: a veteran carries at most one mark, so assigning a
+    new one displaces the old. Idempotent for repeats of the same mark.
+    """
     tag = body.tag.strip()
-    if not tag:
-        raise HTTPException(400, "tag is blank")
+    if tag not in VALID_TAGS:
+        raise HTTPException(400, f"unknown tag id {tag!r} — tags are fixed mark ids")
     known = await session.scalar(
         select(Veteran.id).where(Veteran.trained_chara_id == trained_chara_id)
     )
@@ -185,7 +193,9 @@ async def add_tag(
     stmt = (
         pg_insert(VeteranTag)
         .values(trained_chara_id=trained_chara_id, tag=tag)
-        .on_conflict_do_nothing(constraint="uq_veteran_tag")
+        .on_conflict_do_update(
+            constraint="uq_veteran_tag_trained_chara_id", set_={"tag": tag}
+        )
     )
     await session.execute(stmt)
     await session.commit()
@@ -198,10 +208,13 @@ async def remove_tag(
     tag: str,
     session: AsyncSession = Depends(get_session),
 ):
+    """Clear the veteran's mark. Under the one-mark model the path's {tag} is
+    advisory only — a stale client naming the old mark must still clear the
+    current one, so we delete whatever the veteran carries.
+    """
+    del tag
     row = await session.scalar(
-        select(VeteranTag).where(
-            VeteranTag.trained_chara_id == trained_chara_id, VeteranTag.tag == tag
-        )
+        select(VeteranTag).where(VeteranTag.trained_chara_id == trained_chara_id)
     )
     if row:
         await session.delete(row)

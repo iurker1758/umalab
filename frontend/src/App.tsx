@@ -227,7 +227,8 @@ type SparkFilter = { names: string[]; stars: StarMode; legacy: boolean };
 type Filters = {
   blue: SparkFilter;
   pink: SparkFilter;
-  unique: { stars: number[]; legacy: boolean };
+  // Every veteran has a unique spark, so "all" means the section is inactive.
+  unique: { stars: StarMode; legacy: boolean };
   marks: string[];
   cards: number[];
 };
@@ -235,10 +236,13 @@ type Filters = {
 const defaultFilters: Filters = {
   blue: { names: [], stars: "all", legacy: false },
   pink: { names: [], stars: "all", legacy: false },
-  unique: { stars: [], legacy: false },
+  unique: { stars: "all", legacy: false },
   marks: [],
   cards: [],
 };
+
+const STAR_MODES: StarMode[] = ["all", "2plus", "3"];
+const starModeLabel = (m: StarMode) => (m === "all" ? "All" : m === "2plus" ? "2★+" : "3★");
 
 const FILTER_STORE = "umalab.filters";
 
@@ -247,11 +251,11 @@ function loadFilters(): Filters {
     const raw = localStorage.getItem(FILTER_STORE);
     if (raw) {
       const p = JSON.parse(raw) as Filters;
-      // Shallow shape check; anything off falls back wholesale.
+      // Shallow shape check; anything off (incl. older formats) falls back.
       if (
         Array.isArray(p.blue?.names) &&
         Array.isArray(p.pink?.names) &&
-        Array.isArray(p.unique?.stars) &&
+        STAR_MODES.includes(p.unique?.stars) &&
         Array.isArray(p.marks) &&
         Array.isArray(p.cards)
       ) {
@@ -270,7 +274,7 @@ const starOk = (star: number, mode: StarMode) =>
 const countFilters = (f: Filters) =>
   f.blue.names.length +
   f.pink.names.length +
-  f.unique.stars.length +
+  (f.unique.stars !== "all" ? 1 : 0) +
   f.marks.length +
   f.cards.length;
 
@@ -297,9 +301,9 @@ function matchesFilters(v: Veteran, f: Filters): boolean {
     return false;
   }
   if (
-    f.unique.stars.length > 0 &&
+    f.unique.stars !== "all" &&
     !pool(f.unique.legacy).some(
-      (fa) => fa.kind === "unique" && f.unique.stars.includes(fa.star)
+      (fa) => fa.kind === "unique" && starOk(fa.star, f.unique.stars)
     )
   ) {
     return false;
@@ -627,14 +631,14 @@ function SparkSection({
       ))}
       <div className="filter-opts">
         <span className="seg-group" role="radiogroup" aria-label={`${title} star level`}>
-          {(["all", "2plus", "3"] as const).map((m) => (
+          {STAR_MODES.map((m) => (
             <button
               key={m}
               className={value.stars === m ? "seg active" : "seg"}
               aria-pressed={value.stars === m}
               onClick={() => onChange({ ...value, stars: m })}
             >
-              {m === "all" ? "All" : m === "2plus" ? "2★+" : "3★"}
+              {starModeLabel(m)}
             </button>
           ))}
         </span>
@@ -785,23 +789,21 @@ function FilterPanel({
 
         <div className="filter-section">
           <div className="filter-heading">Unique spark</div>
-          <div className="filter-chips">
-            {[1, 2, 3].map((s) => (
-              <button
-                key={s}
-                className={`fchip unique${filters.unique.stars.includes(s) ? " active" : ""}`}
-                onClick={() =>
-                  onChange({
-                    ...filters,
-                    unique: { ...filters.unique, stars: toggleIn(filters.unique.stars, s) },
-                  })
-                }
-              >
-                {s}★
-              </button>
-            ))}
-          </div>
           <div className="filter-opts">
+            <span className="seg-group" role="radiogroup" aria-label="Unique spark star level">
+              {STAR_MODES.map((m) => (
+                <button
+                  key={m}
+                  className={filters.unique.stars === m ? "seg active" : "seg"}
+                  aria-pressed={filters.unique.stars === m}
+                  onClick={() =>
+                    onChange({ ...filters, unique: { ...filters.unique, stars: m } })
+                  }
+                >
+                  {starModeLabel(m)}
+                </button>
+              ))}
+            </span>
             <button
               className={filters.unique.legacy ? "legacy-toggle active" : "legacy-toggle"}
               title="Also match unique sparks carried by parents and grandparents"

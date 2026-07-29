@@ -167,12 +167,24 @@ function FactorChips({ factors }: { factors: Factor[] }) {
   );
 }
 
-function LineageSlot({ member, label }: { member: LineageMember; label: string }) {
+// Lineage rows are icon-identified like the cards — names live in tooltips.
+const memberTitle = (m: LineageMember) =>
+  `${m.name}${m.outfit && m.outfit !== "Original" ? ` (${m.outfit})` : ""}`;
+
+function LineageSlot({
+  member,
+  label,
+  icon,
+}: {
+  member: LineageMember;
+  label: string;
+  icon: string | undefined;
+}) {
   return (
     <div className="lineage-slot">
-      <div className="lineage-title">
-        <span className="lineage-label">{label}</span> {member.name}
-        {member.outfit && member.outfit !== "Original" ? ` (${member.outfit})` : ""}
+      <div className="lineage-head" title={memberTitle(member)}>
+        <span className="lineage-label">{label}</span>
+        <LineageIcon icon={icon} name={member.name} />
       </div>
       <FactorChips factors={member.factors} />
     </div>
@@ -199,12 +211,12 @@ function ParentSection({
   parent,
   grandparents,
   label,
-  icon,
+  iconIndex,
 }: {
   parent: LineageMember;
   grandparents: LineageMember[];
   label: string;
-  icon: string | undefined;
+  iconIndex: Record<string, string>;
 }) {
   // Grandparent sparks are noise for the usual "what does this parent pass
   // on" glance — they stay collapsed until the parent row is clicked.
@@ -213,15 +225,14 @@ function ParentSection({
     <div className="detail-section">
       <button
         className="lineage-parent"
+        title={memberTitle(parent)}
         onClick={() => setOpen(!open)}
         aria-expanded={open}
+        aria-label={`${label}: ${memberTitle(parent)}`}
         disabled={grandparents.length === 0}
       >
-        <LineageIcon icon={icon} name={parent.name} />
-        <span className="lineage-title">
-          <span className="lineage-label">{label}</span> {parent.name}
-          {parent.outfit && parent.outfit !== "Original" ? ` (${parent.outfit})` : ""}
-        </span>
+        <span className="lineage-label">{label}</span>
+        <LineageIcon icon={iconIndex[String(parent.card_id)]} name={parent.name} />
         {grandparents.length > 0 && (
           <span className="lineage-caret">{open ? "▾" : "▸"}</span>
         )}
@@ -229,7 +240,12 @@ function ParentSection({
       <FactorChips factors={parent.factors} />
       {open &&
         grandparents.map((gp, j) => (
-          <LineageSlot key={gp.position_id} member={gp} label={`Grandparent ${j + 1}`} />
+          <LineageSlot
+            key={gp.position_id}
+            member={gp}
+            label={`Grandparent ${j + 1}`}
+            icon={iconIndex[String(gp.card_id)]}
+          />
         ))}
     </div>
   );
@@ -317,7 +333,7 @@ function VeteranDetail({
           parent={parent}
           grandparents={grandparentsOf(parent)}
           label={`Parent ${i + 1}`}
-          icon={iconIndex[String(parent.card_id)]}
+          iconIndex={iconIndex}
         />
       ))}
     </div>
@@ -472,7 +488,6 @@ function VeteranModal({
                 {tier}
               </span>
             </span>
-            <span className="rarity">★{v.rarity}</span>
           </span>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×

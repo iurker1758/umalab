@@ -42,8 +42,6 @@ button:disabled { opacity: 0.6; cursor: default; }
 .spark-group.blue .star.filled { color: #4da3ff; }
 .spark-group.pink .star.filled { color: #ff7fb8; }
 .spark-group.unique .star.filled { color: #7ecb52; }
-.outfit { font-weight: 400; opacity: 0.7; font-size: 0.85rem; }
-.rarity { font-weight: 400; opacity: 0.6; font-size: 0.85rem; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: flex-start; justify-content: center; padding: 3rem 1rem; overflow-y: auto; z-index: 10; }
 .modal { background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 1rem 1.25rem 1.25rem; max-width: 720px; width: 100%; }
@@ -63,6 +61,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .detail-heading, .lineage-title { font-size: 0.95rem; margin-bottom: 0.35rem; }
 .lineage-label { opacity: 0.6; font-size: 0.85rem; margin-right: 0.25rem; }
 .lineage-slot { margin: 0.4rem 0; }
+.lineage-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
 .lineage-parent { display: flex; align-items: center; gap: 0.5rem; background: none; border: 0; padding: 0; margin-bottom: 0.35rem; color: inherit; font-size: 1rem; text-align: left; }
 .lineage-parent:disabled { cursor: default; opacity: 1; }
 .lineage-parent .lineage-title { margin-bottom: 0; }

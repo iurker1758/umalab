@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
 import { api, type ImportInfo, type Veteran } from "./api";
 import { FILTER_STORE, loadFilters, reconcileFilters, type Filters } from "./filters";
+import { DesignerPage } from "./pages/DesignerPage";
 import { RosterPage } from "./pages/RosterPage";
 
 export default function App() {
@@ -147,7 +148,14 @@ export default function App() {
         />
         <Route
           path="/designer"
-          element={<p className="empty">The blueprint designer is coming soon.</p>}
+          element={
+            <DesignerPage
+              veterans={veterans}
+              loaded={loaded}
+              iconIndex={iconIndex}
+              onError={setError}
+            />
+          }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

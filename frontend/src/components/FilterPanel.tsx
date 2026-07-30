@@ -211,7 +211,8 @@ export function FilterPanel({
               .map((c) => (
                 <UmaCardChip
                   key={c.card_id}
-                  card={c}
+                  name={c.name}
+                  outfit={c.outfit}
                   icon={iconIndex[String(c.card_id)]}
                   active
                   onToggle={() => toggleCard(c.card_id)}
@@ -337,7 +338,8 @@ export function FilterPanel({
               {queried.map((c) => (
                 <UmaCardChip
                   key={c.card_id}
-                  card={c}
+                  name={c.name}
+                  outfit={c.outfit}
                   icon={iconIndex[String(c.card_id)]}
                   active={filters.cards.includes(c.card_id)}
                   onToggle={() => toggleCard(c.card_id)}

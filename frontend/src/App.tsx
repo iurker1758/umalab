@@ -1,36 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NavLink, Navigate, Route, Routes } from "react-router";
 import { api, type ImportInfo, type Veteran } from "./api";
-import { FilterPanel } from "./components/FilterPanel";
-import { VeteranCard } from "./components/VeteranCard";
-import { VeteranModal } from "./components/VeteranModal";
-import {
-  DEFAULT_ASC,
-  SORTS,
-  SORT_STORE,
-  blueSparkRank,
-  loadSortPref,
-  type SortKey,
-  type SortPref,
-} from "./domain";
-import {
-  FILTER_STORE,
-  countFilters,
-  isCommonKind,
-  loadFilters,
-  matchesFilters,
-  reconcileFilters,
-  type Filters,
-} from "./filters";
+import { FILTER_STORE, loadFilters, reconcileFilters, type Filters } from "./filters";
+import { RosterPage } from "./pages/RosterPage";
 
 export default function App() {
   const [veterans, setVeterans] = useState<Veteran[]>([]);
   const [latest, setLatest] = useState<ImportInfo | null>(null);
+  // Distinguishes "fetch hasn't succeeded yet" from a legitimately empty
+  // roster — gates the "No roster yet" empty state so it can't flash at a
+  // stocked roster's owner during the initial fetch.
+  const [loaded, setLoaded] = useState(false);
+  // Filters live in the shell, not RosterPage, so reconciliation stays tied
+  // to the fetch — once per new roster. Page-local state would redo it on
+  // every Roster remount, wiping selections that currently match nothing
+  // (e.g. a favorite mark no veteran carries yet).
+  const [filters, setFilters] = useState<Filters>(loadFilters);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sort, setSort] = useState<SortPref>(loadSortPref);
-  const [filters, setFilters] = useState<Filters>(loadFilters);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -39,12 +26,25 @@ export default function App() {
       const [vets, imp] = await Promise.all([api.veterans(), api.latestImport()]);
       setVeterans(vets);
       setLatest(imp);
+      setLoaded(true);
       setError(null);
+      // Filters whose targets left the roster are cleared on every load
+      // (see reconcileFilters).
       setFilters((prev) => reconcileFilters(prev, vets));
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
     }
   }, []);
+
+  // Persisted as an effect so every write path — panel edits AND the
+  // refresh-time reconciliation — lands in storage.
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_STORE, JSON.stringify(filters));
+    } catch {
+      // storage full/blocked — the choice still applies for this session
+    }
+  }, [filters]);
 
   useEffect(() => {
     // initial data load; the setState happens after the fetch resolves
@@ -79,8 +79,10 @@ export default function App() {
     setBusy(true);
     try {
       await api.importDump(file);
+      // refresh() reports its own outcome: it clears the toast on success and
+      // sets the backend-unreachable message on failure — an extra
+      // setError(null) here would erase that report.
       await refresh();
-      setError(null);
     } catch (e) {
       setError(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -89,75 +91,16 @@ export default function App() {
     }
   };
 
-  const applySort = (next: SortPref) => {
-    setSort(next);
-    try {
-      localStorage.setItem(SORT_STORE, JSON.stringify(next));
-    } catch {
-      // storage full/blocked — the choice still applies for this session
-    }
-  };
-
-  // Persisted as an effect so every write path — panel edits AND the
-  // reconciliation inside refresh() — lands in storage.
-  useEffect(() => {
-    try {
-      localStorage.setItem(FILTER_STORE, JSON.stringify(filters));
-    } catch {
-      // storage full/blocked — the choice still applies for this session
-    }
-  }, [filters]);
-
-  // One entry per distinct card in the roster, for the Umas filter section.
-  const rosterCards = useMemo(() => {
-    const seen = new Map<number, Veteran>();
-    for (const v of veterans) {
-      if (!seen.has(v.card_id)) seen.set(v.card_id, v);
-    }
-    return [...seen.values()].sort(
-      (a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id
-    );
-  }, [veterans]);
-
-  // Every common-spark (white skill / race / scenario) name present anywhere
-  // in the roster (own + lineage) — the searchable vocabulary for the filter.
-  const commonSparkNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const v of veterans) {
-      for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
-      for (const m of v.lineage) {
-        for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
-      }
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [veterans]);
-
-  const sorted = useMemo(() => {
-    const cards = veterans.filter((v) => matchesFilters(v, filters));
-    const val = (v: Veteran) =>
-      sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key];
-    cards.sort((a, b) => {
-      const av = val(a);
-      const bv = val(b);
-      // register_time is ISO, so string compare doubles as date order.
-      const cmp =
-        typeof av === "string" && typeof bv === "string"
-          ? av.localeCompare(bv)
-          : Number(av) - Number(bv);
-      return sort.asc ? cmp : -cmp;
-    });
-    return cards;
-  }, [veterans, sort, filters]);
-
-  // Derived from the roster, not stored: a refresh (tag edit, re-import)
-  // updates the open modal in place, and an import that drops the veteran
-  // closes it instead of showing stale data.
-  const selected = veterans.find((v) => v.id === selectedId);
-
   return (
     <div className="app">
       <header>
         <h1>UmaLab</h1>
+        <nav className="nav">
+          <NavLink to="/" end>
+            Roster
+          </NavLink>
+          <NavLink to="/designer">Designer</NavLink>
+        </nav>
         <div className="toolbar">
           <button onClick={() => fileInput.current?.click()} disabled={busy}>
             {busy ? "Importing…" : "Import data.json"}
@@ -186,88 +129,28 @@ export default function App() {
         </p>
       )}
 
-      {veterans.length === 0 ? (
-        // With the backend unreachable the error toast is the whole story —
-        // blaming the filters here sent people hunting through the panel.
-        !error && (
-          <p className="empty">
-            No roster yet. Run UmaExtractor on the game's Veteran List screen, then import the
-            <code> data.json</code> it produces.
-          </p>
-        )
-      ) : sorted.length === 0 ? (
-        <p className="empty">No veterans match the filters.</p>
-      ) : (
-        <div className="grid">
-          {sorted.map((v) => (
-            <VeteranCard
-              key={v.id}
-              v={v}
-              icon={iconIndex[String(v.card_id)]}
-              showSparks={sort.key === "blue_spark"}
-              onOpen={() => setSelectedId(v.id)}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <RosterPage
+              veterans={veterans}
+              loaded={loaded}
+              hasError={error !== null}
+              iconIndex={iconIndex}
+              filters={filters}
+              onFiltersChange={setFilters}
+              onChanged={refresh}
+              onError={setError}
             />
-          ))}
-        </div>
-      )}
-
-      {veterans.length > 0 && (
-        <div className="pill-dock">
-          <button className="filter-float" onClick={() => setFilterOpen(true)}>
-            Filters
-            {countFilters(filters) > 0 && (
-              <span className="filter-count">{countFilters(filters)}</span>
-            )}
-          </button>
-          <label className="sort-float">
-            <select
-              aria-label="Sort by"
-              value={sort.key}
-              onChange={(e) => {
-                const key = e.target.value as SortKey;
-                applySort({ key, asc: DEFAULT_ASC[key] });
-              }}
-            >
-              {SORTS.map(([label, key]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
-              className="sort-dir"
-              title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
-              aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
-              onClick={() => applySort({ ...sort, asc: !sort.asc })}
-            >
-              {sort.asc ? "▲" : "▼"}
-            </button>
-          </label>
-        </div>
-      )}
-
-      {filterOpen && (
-        <FilterPanel
-          filters={filters}
-          cards={rosterCards}
-          whiteNames={commonSparkNames}
-          iconIndex={iconIndex}
-          matchCount={sorted.length}
-          total={veterans.length}
-          onChange={setFilters}
-          onClose={() => setFilterOpen(false)}
+          }
         />
-      )}
-
-      {selected && (
-        <VeteranModal
-          v={selected}
-          iconIndex={iconIndex}
-          onClose={() => setSelectedId(null)}
-          onChanged={refresh}
-          onError={setError}
+        <Route
+          path="/designer"
+          element={<p className="empty">The blueprint designer is coming soon.</p>}
         />
-      )}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </div>
   );
 }

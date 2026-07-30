@@ -482,3 +482,44 @@ Keep adding entries as the build evolves. This file is the interview.
   of scores per keystroke — then the relation table ships to the client
   (or the ranker endpoint batches server-side) and this entry gets
   revisited.
+
+## 18. react-router once the second view exists
+
+- **Requirements:** the blueprint designer is a full second page beside
+  the roster, sharing the app chrome (import flow, error toast, icon
+  index); the two views should be separately addressable/bookmarkable,
+  and deep links like `/designer/:id` must stay possible later even
+  though they're out of v1.
+- **Choice:** react-router in **library mode** — `<BrowserRouter>` in
+  main.tsx, `<Routes>` plus `<NavLink>` nav in App.tsx, nothing from
+  framework mode. Pinned to **v7**: v8 requires React ≥19 and the app
+  is on 18; the library-mode API is identical, so the eventual React
+  upgrade makes this a version bump. App.tsx is now the shell (shared
+  fetch/import/toast state) and the roster body lives in
+  `pages/RosterPage.tsx`; sort state and the localStorage keys move with
+  it unchanged. **Filter state stays in the shell**: reconciliation
+  (clearing filters whose targets left the roster) must run once per
+  fetched roster, and a page owning that state re-runs it on every
+  Roster remount — wiping selections that currently match nothing, like
+  a favorite mark no veteran carries yet. A `loaded` flag distinguishes
+  "fetch hasn't succeeded" from a truly empty roster so the "No roster
+  yet" onboarding text can't flash during the initial request. Shared
+  state reaches pages by prop drilling — one shell passing to two pages
+  doesn't earn a context. `UmaCardChip` moves out of FilterPanel into
+  its own file ahead of its second consumer, the designer's SlotPicker.
+- **Rejected:** wouter or hand-rolled `location.pathname` matching —
+  saves ~30 kB now, then reimplements nested routes and path params the
+  moment the designer grows deep links; tab state in `useState` — no
+  URLs, so no bookmarks, dead back button, and PR 4's designer becomes
+  unlinkable; react-router framework mode (loaders/actions) — the data
+  flow already exists and works, and rewriting it isn't this refactor's
+  job; page-local filter state with a mount-scoped reconcile marker —
+  the remount-wipe above, caught in review.
+- **Would change my mind:** on server-side data needs (loaders), a
+  framework-mode migration; if v1's two flat routes are still all there
+  is when the router next causes friction, wouter's argument improves.
+- **Deploy note:** real URLs mean the eventual static host must serve
+  `index.html` for unknown paths (SPA history fallback). The dev/preview
+  servers and the planned Cloudflare Pages target (no `404.html` → auto
+  fallback) all do; revisit when deployment work starts — no host config
+  in the repo until then.

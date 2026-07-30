@@ -32,6 +32,7 @@ export function VeteranCard({
   icon,
   showSparks,
   selectMode = false,
+  selectDisabled = false,
   selected = false,
   onOpen,
 }: {
@@ -40,7 +41,10 @@ export function VeteranCard({
   showSparks: boolean;
   // In selection mode a click toggles membership instead of opening the
   // modal; the caller owns that branch — the card just renders the state.
+  // selectDisabled = the batch target wouldn't change this veteran (it
+  // already carries the mark, or has nothing to clear): dimmed, no ring.
   selectMode?: boolean;
+  selectDisabled?: boolean;
   selected?: boolean;
   onOpen: () => void;
 }) {
@@ -49,10 +53,13 @@ export function VeteranCard({
   const tier = rankTier(v.rank_score);
   return (
     <button
-      className={selected ? "card selected" : "card"}
+      className={
+        selected ? "card selected" : selectDisabled ? "card select-disabled" : "card"
+      }
       title={title}
       aria-label={title}
-      aria-pressed={selectMode ? selected : undefined}
+      aria-pressed={selectMode && !selectDisabled ? selected : undefined}
+      aria-disabled={selectMode && selectDisabled ? true : undefined}
       onClick={onOpen}
     >
       <span className="card-art">
@@ -82,9 +89,10 @@ export function VeteranCard({
         >
           {tier}
         </span>
-        {selectMode && (
-          // Every card grows the ring in selection mode so unmarked cards
-          // still read as selectable targets; only selected ones fill it.
+        {selectMode && !selectDisabled && (
+          // Every eligible card grows the ring in selection mode so it reads
+          // as a selectable target; only selected ones fill it. Ineligible
+          // cards get the dim instead — no ring to invite a dead tap.
           <span className="card-check" aria-hidden="true">
             ✓
           </span>

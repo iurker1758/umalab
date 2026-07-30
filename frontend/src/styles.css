@@ -152,8 +152,13 @@ button:disabled { opacity: 0.6; cursor: default; }
    bottom padding — reserve the difference only while selecting. */
 .grid.selecting { padding-bottom: 3.5rem; }
 
-/* Selection ring on every card while selecting; filled once picked. */
+/* Selection ring on every eligible card while selecting; filled once
+   picked. Ineligible cards (already carrying the batch target) dim out. */
 .card.selected { border-color: #2a76c9; background: #16283d; }
+.card.select-disabled { opacity: 0.4; cursor: default; }
+.card.select-disabled:hover { background: #161c23; border-color: #1f2833; }
+/* The dock chip showing which mark the batch will apply (✕ = clearing). */
+.target-chip { display: inline-flex; align-items: center; padding: 0.4rem 0.55rem; }
 .card-check { position: absolute; bottom: -5px; right: -5px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #161c23; border: 1px solid #4a5462; color: transparent; font-size: 0.7rem; line-height: 1; }
 .card.selected .card-check { background: #2a76c9; border-color: #2a76c9; color: #fff; }
 

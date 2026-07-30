@@ -130,8 +130,9 @@ export function lineageGpSlots(v: Veteran): [SlotValue | null, SlotValue | null]
 //   (overriding whatever was there — the pick means "this pair");
 // - clearing a parent clears its GPs (they described that parent's side);
 // - a catalog pick drops auto-filled lineage GPs (they belonged to the
-//   previous roster parent) and any manual GP the new parent makes illegal,
-//   but keeps legal manual picks.
+//   previous roster parent) but keeps manual picks — a parent pick that
+//   would conflict with one is unpickable via slotConflicts, so nothing
+//   here ever silently empties a slot the user filled.
 export function setParentSlot(
   design: Design,
   parentId: ParentId,
@@ -147,10 +148,7 @@ export function setParentSlot(
     [slots[ga], slots[gb]] = lineageGpSlots(veteran);
   } else {
     for (const g of [ga, gb]) {
-      const cur = slots[g];
-      if (cur && (cur.source === "lineage" || cur.chara_id === value.chara_id)) {
-        slots[g] = null;
-      }
+      if (slots[g]?.source === "lineage") slots[g] = null;
     }
   }
   return { ...design, slots };
@@ -175,8 +173,10 @@ export function slotConflicts(
   if (target === "p1" || target === "p2") {
     if (design.trainee === charaId) return "A parent can't be the trainee's own character";
     const other = target === "p1" ? s.p2 : s.p1;
-    return other?.chara_id === charaId
-      ? "The two parents must be different characters"
+    if (other?.chara_id === charaId) return "The two parents must be different characters";
+    const [ga, gb] = GP_OF[target];
+    return s[ga]?.chara_id === charaId || s[gb]?.chara_id === charaId
+      ? "Already one of this parent's grandparents — a grandparent can't repeat its parent"
       : null;
   }
   const parentId: ParentId = target === "g11" || target === "g12" ? "p1" : "p2";
@@ -201,6 +201,16 @@ export function resolveVeteran(slot: SlotValue, veterans: Veteran[]): Veteran | 
 }
 
 export const slotWinSaddles = (slot: SlotValue): number[] => slot.win_saddle_ids;
+
+// Display name straight from the roster snapshot's backing veteran — the
+// tile fallback when the catalog (a separate fetch) is unavailable.
+export function slotDisplayName(slot: SlotValue, veterans: Veteran[]): string | null {
+  if (slot.source === "catalog") return null;
+  const v = resolveVeteran(slot, veterans);
+  if (v === null) return null;
+  if (slot.source === "roster") return v.name;
+  return v.lineage.find((m) => m.position_id === slot.position_id)?.name ?? null;
+}
 
 // Sparks a slot contributes to the designed lineage: a roster pick brings
 // its own factors, a lineage pick the stored member's; catalog picks and
@@ -341,19 +351,27 @@ function slotFromApi(raw: BlueprintSlot | null | undefined): SlotValue | null {
   }
 }
 
-export const fromApi = (bp: Blueprint): Design => ({
-  id: bp.id,
-  name: bp.name,
-  trainee: bp.trainee_chara_id,
-  slots: {
-    p1: slotFromApi(bp.slots?.p1),
-    p2: slotFromApi(bp.slots?.p2),
-    g11: slotFromApi(bp.slots?.g11),
-    g12: slotFromApi(bp.slots?.g12),
-    g21: slotFromApi(bp.slots?.g21),
-    g22: slotFromApi(bp.slots?.g22),
-  },
-});
+export const fromApi = (bp: Blueprint): Design => {
+  const slots: Partial<typeof bp.slots> | null = bp.slots;
+  // Same strictness as the per-slot checks: a body missing `slots` must
+  // throw, not parse as a legitimately blank design.
+  if (slots === null || typeof slots !== "object") {
+    throw new Error("blueprint without slots");
+  }
+  return {
+    id: bp.id,
+    name: bp.name,
+    trainee: bp.trainee_chara_id,
+    slots: {
+      p1: slotFromApi(slots.p1),
+      p2: slotFromApi(slots.p2),
+      g11: slotFromApi(slots.g11),
+      g12: slotFromApi(slots.g12),
+      g21: slotFromApi(slots.g21),
+      g22: slotFromApi(slots.g22),
+    },
+  };
+};
 
 export function toAffinityRequest(design: Design): AffinityRequest {
   const req: AffinityRequest = { trainee_chara_id: design.trainee };

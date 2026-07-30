@@ -9,11 +9,24 @@ const SYMBOL_CLASS: Record<string, string> = {
   "◎": "aff-best",
 };
 
-export function AffinityPanel({ affinity }: { affinity: AffinityResult | null }) {
+export function AffinityPanel({
+  affinity,
+  failed = false,
+}: {
+  affinity: AffinityResult | null;
+  // The last scoring request failed — shown inline instead of a toast so a
+  // downed backend doesn't spam one error per edit.
+  failed?: boolean;
+}) {
   return (
     <div className="designer-panel">
       <div className="filter-heading">Affinity</div>
-      {affinity === null ? (
+      {failed ? (
+        <p className="designer-hint aff-error">
+          Couldn't score this design — is the backend running? It retries on
+          the next change.
+        </p>
+      ) : affinity === null ? (
         <p className="designer-hint">
           Pick a trainee and at least one parent to score the pairing.
         </p>

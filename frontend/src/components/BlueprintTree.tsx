@@ -4,6 +4,7 @@ import {
   SLOT_LABELS,
   SLOT_LINK,
   resolveVeteran,
+  slotDisplayName,
   type Design,
   type SlotId,
   type SlotValue,
@@ -88,7 +89,9 @@ export function BlueprintTree({
   design: Design;
   veterans: Veteran[];
   loaded: boolean;
-  charaName: (charaId: number) => string;
+  // null when the catalog fetch failed — tiles then fall back to the
+  // slot's backing veteran's name before showing a numeric id.
+  charaName: (charaId: number) => string | null;
   traineeIcon: string | undefined;
   iconIndex: Record<string, string>;
   // null while below the scoring threshold — hides the per-link chips.
@@ -111,7 +114,12 @@ export function BlueprintTree({
     return {
       gridClass: `slot-${id}`,
       label: SLOT_LABELS[id],
-      name: slot === null ? null : charaName(slot.chara_id),
+      name:
+        slot === null
+          ? null
+          : charaName(slot.chara_id) ??
+            slotDisplayName(slot, veterans) ??
+            `Chara ${slot.chara_id}`,
       icon: slot === null ? undefined : iconIndex[String(slot.card_id)],
       source: slot?.source ?? null,
       // Only flag once the roster fetch finished — before that every
@@ -130,7 +138,7 @@ export function BlueprintTree({
       <SlotTile
         gridClass="slot-t"
         label="Trainee"
-        name={design.trainee === null ? null : charaName(design.trainee)}
+        name={design.trainee === null ? null : charaName(design.trainee) ?? `Chara ${design.trainee}`}
         icon={traineeIcon}
         source={null}
         missing={false}

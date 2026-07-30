@@ -241,6 +241,7 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 .designer-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
 .designer-panel { box-sizing: border-box; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; }
 .designer-hint { margin: 0; opacity: 0.65; font-size: 0.9rem; }
+.aff-error { color: #ff8a80; opacity: 1; }
 .aff-total { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.2rem; }
 .aff-symbol { font-size: 1.6rem; line-height: 1; }
 .aff-low { color: #9aa1ab; }
@@ -261,8 +262,10 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 
 .picker-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
 .picker-head .filter-title { margin-right: auto; }
-.card-chip:disabled { opacity: 0.2; cursor: default; }
-.card-chip:disabled:hover { opacity: 0.2; }
+/* aria-disabled chips stay interactive for hover/title (a natively disabled
+   button never shows the tooltip explaining why the pick is illegal). */
+.card-chip.disabled { opacity: 0.2; cursor: default; }
+.card-chip.disabled:hover { opacity: 0.2; }
 
 /* Phones: trainee gets its own row, each parent stacks over its GPs. */
 @media (max-width: 640px) {

@@ -12,19 +12,24 @@ export function UmaCardChip({
   outfit?: string;
   icon: string | undefined;
   active: boolean;
-  // Set ⇒ the chip is unpickable and the reason becomes its tooltip.
+  // Set ⇒ the chip is unpickable and the reason joins its tooltip.
   disabledReason?: string;
   onToggle: () => void;
 }) {
-  const title =
-    disabledReason ?? `${name}${outfit && outfit !== "Original" ? ` (${outfit})` : ""}`;
+  const identity = `${name}${outfit && outfit !== "Original" ? ` (${outfit})` : ""}`;
+  // aria-disabled + no-op, not the disabled attribute: Chromium/WebKit
+  // don't dispatch pointer events to natively disabled controls, so the
+  // `title` explaining WHY a pick is illegal would never show. The reason
+  // augments the accessible name rather than replacing it.
+  const blocked = disabledReason !== undefined;
+  const title = blocked ? `${identity} — ${disabledReason}` : identity;
   return (
     <button
-      className={active ? "card-chip active" : "card-chip"}
+      className={`card-chip${active ? " active" : ""}${blocked ? " disabled" : ""}`}
       title={title}
       aria-label={title}
-      disabled={disabledReason !== undefined}
-      onClick={onToggle}
+      aria-disabled={blocked || undefined}
+      onClick={blocked ? undefined : onToggle}
     >
       {icon ? (
         <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />

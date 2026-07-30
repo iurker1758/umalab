@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   api,
   type AffinityResult,
@@ -32,22 +32,31 @@ export function DesignerPage({
   veterans,
   loaded,
   iconIndex,
+  design,
+  setDesign,
+  savedJson,
+  setSavedJson,
   onError,
 }: {
   veterans: Veteran[];
   loaded: boolean;
   iconIndex: Record<string, string>;
+  // design + savedJson live in the App shell so a route change can't
+  // discard an unsaved design (see App.tsx). savedJson is the toApi()
+  // JSON at the last save/load — the unsaved-changes hint compares
+  // against it; null ⇒ nothing saved/loaded yet.
+  design: Design;
+  setDesign: Dispatch<SetStateAction<Design>>;
+  savedJson: string | null;
+  setSavedJson: (json: string | null) => void;
   onError: (msg: string) => void;
 }) {
-  const [design, setDesign] = useState<Design>(emptyDesign);
   const [saved, setSaved] = useState<Blueprint[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [affinity, setAffinity] = useState<AffinityResult | null>(null);
+  const [scoreFailed, setScoreFailed] = useState(false);
   const [pickerFor, setPickerFor] = useState<"trainee" | SlotId | null>(null);
   const [busy, setBusy] = useState(false);
-  // toApi() JSON at the last save/load — the unsaved-changes hint compares
-  // against it. null ⇒ nothing saved/loaded yet this visit.
-  const [savedJson, setSavedJson] = useState<string | null>(null);
 
   useEffect(() => {
     // Both fetches are page-scoped (catalog is static reference data, the
@@ -82,12 +91,19 @@ export function DesignerPage({
       api
         .scoreAffinity(JSON.parse(affinityKey), ctrl.signal)
         .then((result) => {
-          if (!ctrl.signal.aborted) setAffinity(result);
-        })
-        .catch((e: unknown) => {
-          // Aborts are ours (a newer edit superseded this request).
           if (!ctrl.signal.aborted) {
-            onError(`Scoring failed: ${e instanceof Error ? e.message : String(e)}`);
+            setAffinity(result);
+            setScoreFailed(false);
+          }
+        })
+        .catch(() => {
+          // Aborts are ours (a newer edit superseded this request). Real
+          // failures clear the result — the old design's numbers must not
+          // keep masquerading as current — and report inline in the panel
+          // rather than toasting once per edit while the backend is down.
+          if (!ctrl.signal.aborted) {
+            setAffinity(null);
+            setScoreFailed(true);
           }
         });
     }, AFFINITY_DEBOUNCE_MS);
@@ -95,7 +111,7 @@ export function DesignerPage({
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [affinityKey, onError]);
+  }, [affinityKey]);
 
   // Below the threshold the last result is simply not shown — gating at
   // render time avoids a synchronous setState-in-effect just to clear it.
@@ -105,8 +121,9 @@ export function DesignerPage({
     () => new Map(catalog.map((e) => [e.chara_id, e])),
     [catalog]
   );
-  const charaName = (charaId: number) =>
-    charaById.get(charaId)?.name ?? `Chara ${charaId}`;
+  // null when the catalog is unavailable — BlueprintTree then falls back
+  // to the slot's backing veteran before resorting to a numeric id.
+  const charaName = (charaId: number) => charaById.get(charaId)?.name ?? null;
   const traineeEntry = design.trainee === null ? undefined : charaById.get(design.trainee);
   const traineeIcon = traineeEntry
     ? iconIndex[String(traineeEntry.card_ids[0])]
@@ -149,17 +166,27 @@ export function DesignerPage({
 
   const onSave = async () => {
     const body = toApi(design);
+    const priorId = design.id;
     setBusy(true);
     try {
       const bp =
-        design.id === null
+        priorId === null
           ? await api.createBlueprint(body)
-          : await api.updateBlueprint(design.id, body);
+          : await api.updateBlueprint(priorId, body);
       setDesign((d) => ({ ...d, id: bp.id, name: bp.name }));
       setSaved((prev) => [bp, ...prev.filter((b) => b.id !== bp.id)]);
       setSavedJson(JSON.stringify({ ...body, name: bp.name }));
     } catch (e) {
-      onError(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (priorId !== null && msg.includes("no blueprint with that id")) {
+        // Deleted elsewhere (another tab, a DB reset): unbind the id so
+        // the work can be re-created instead of every retry re-404ing.
+        setDesign((d) => ({ ...d, id: null }));
+        setSaved((prev) => prev.filter((b) => b.id !== priorId));
+        onError(`"${body.name}" was deleted elsewhere — Save again to re-create it.`);
+      } else {
+        onError(`Save failed: ${msg}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -204,12 +231,16 @@ export function DesignerPage({
   return (
     <div className="designer">
       <div className="designer-save">
+        {/* The whole bar gates on `busy`: loading or renaming while a save
+            is in flight would let the save's continuation stamp its id/name
+            onto a different design. */}
         <input
           className="designer-name"
           type="text"
           placeholder="Blueprint name…"
           maxLength={80}
           value={design.name}
+          disabled={busy}
           onChange={(e) => setDesign((d) => ({ ...d, name: e.target.value }))}
         />
         {dirty && (
@@ -227,6 +258,7 @@ export function DesignerPage({
           <select
             aria-label="Load a saved blueprint"
             value=""
+            disabled={busy}
             onChange={(e) => {
               if (e.target.value !== "") onLoad(Number(e.target.value));
             }}
@@ -264,7 +296,7 @@ export function DesignerPage({
       />
 
       <div className="designer-panels">
-        <AffinityPanel affinity={shownAffinity} />
+        <AffinityPanel affinity={shownAffinity} failed={affinityKey !== null && scoreFailed} />
         <SparkTotals totals={sparkTotals} />
       </div>
 

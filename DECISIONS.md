@@ -570,12 +570,16 @@ Keep adding entries as the build evolves. This file is the interview.
   (a half-marked selection after a failure is worse than a clean retry)
   and cheap enough to run against a Raspberry Pi backend.
 - **Choice:** `POST /api/veterans/tags/bulk` taking
-  `{trained_chara_ids, tag}` where `tag: null` means clear. One
+  `{trained_chara_ids, tag}` where `tag: null` means clear. `tag` is
+  required with no default: clears are destructive and marks aren't in
+  the extractor dump, so only an explicit null selects that branch — a
+  body that omits or misspells the key 422s (review finding). One
   transaction: a multi-row upsert on the existing one-mark-per-veteran
-  constraint (#9), or a single `DELETE ... IN` for clears. Any id
-  missing from the current roster 404s the whole request — the client
-  refreshes and retries against fresh state, mirroring the single-tag
-  endpoint's contract.
+  constraint (#9), or a single `DELETE ... IN` for clears; `updated`
+  reports rows actually touched, not the request size. Any id missing
+  from the current roster 404s the whole request — the client refreshes
+  and retries against fresh state, mirroring the single-tag endpoint's
+  contract.
 - **Rejected:** looping the per-veteran `POST /tags` from the client —
   N round-trips with no atomicity, partial failure leaves the roster
   half-marked with no honest way to report it, and each response would

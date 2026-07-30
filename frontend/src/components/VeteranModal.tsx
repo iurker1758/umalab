@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, type LineageMember, type Veteran } from "../api";
-import { APT_GROUPS, MARK_IDS, apt, gradeClass, rankTier, statGrade } from "../domain";
+import { APT_GROUPS, apt, gradeClass, rankTier, statGrade } from "../domain";
 import { FactorChips, SkillChips } from "./FactorChips";
 import { MarkIcon } from "./MarkIcon";
+import { MarkPicker } from "./MarkPicker";
 
 // Lineage rows lead with the icon, but the name stays in the DOM as a muted
 // caption — tooltips alone never fire on touch, and without icon art (a
@@ -259,39 +260,25 @@ export function VeteranModal({
                 )}
               </button>
               {markOpen && (
-                <>
-                  {/* invisible click-away layer; the modal's own onClick
-                      already stops propagation, so this never closes it */}
-                  <span
-                    className="mark-popup-backdrop"
-                    onMouseDown={() => setMarkOpen(false)}
-                  />
-                  <span className="mark-popup" role="dialog" aria-label="Choose mark">
-                    {/* 4×4: the deselect tile leads, then the 15 marks. */}
-                    <button
-                      className={currentMark ? "mark-toggle mark-clear" : "mark-toggle mark-clear active"}
-                      title="No mark"
-                      aria-label="No mark"
-                      onClick={() =>
-                        void (currentMark ? pickMark(currentMark) : setMarkOpen(false))
-                      }
-                    >
-                      <span className="mark-none" aria-hidden="true">
-                        ✕
-                      </span>
-                    </button>
-                    {MARK_IDS.map((id) => (
-                      <button
-                        key={id}
-                        className={id === currentMark ? "mark-toggle active" : "mark-toggle"}
-                        title={id === currentMark ? "Remove mark" : "Set mark"}
-                        onClick={() => void pickMark(id)}
-                      >
-                        <MarkIcon id={id} />
-                      </button>
-                    ))}
-                  </span>
-                </>
+                <MarkPicker
+                  activeId={currentMark ?? null}
+                  clearTitle="No mark"
+                  tileTitle="Set mark"
+                  activeTileTitle="Remove mark"
+                  ariaLabel="Choose mark"
+                  onPick={(id) => {
+                    // Single-select semantics: picking the active mark (or the
+                    // clear tile while marked) removes; clear while unmarked
+                    // just closes.
+                    if (id === null) {
+                      if (currentMark) void pickMark(currentMark);
+                      else setMarkOpen(false);
+                    } else {
+                      void pickMark(id);
+                    }
+                  }}
+                  onClose={() => setMarkOpen(false)}
+                />
               )}
             </span>
             <span className="modal-names">

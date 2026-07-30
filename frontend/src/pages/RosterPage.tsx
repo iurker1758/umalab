@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Veteran } from "../api";
 import { FilterPanel } from "../components/FilterPanel";
-import { MarkIcon } from "../components/MarkIcon";
+import { MarkPicker } from "../components/MarkPicker";
 import { VeteranCard } from "../components/VeteranCard";
 import { VeteranModal } from "../components/VeteranModal";
 import {
   DEFAULT_ASC,
-  MARK_IDS,
   SORTS,
   SORT_STORE,
   blueSparkRank,
@@ -111,6 +110,13 @@ export function RosterPage({
     [sorted, selectedIds]
   );
 
+  // Current-state feedback for the bulk picker: highlight the mark the whole
+  // selection already shares (the clear tile when uniformly unmarked), and
+  // count how many picks an apply would overwrite.
+  const selectionMarks = new Set(visibleSelected.map((v) => v.tags[0] ?? null));
+  const commonMark = selectionMarks.size === 1 ? [...selectionMarks][0] : undefined;
+  const alreadyMarked = visibleSelected.filter((v) => v.tags.length > 0).length;
+
   const exitSelectMode = () => {
     setSelecting(false);
     setSelectedIds(new Set());
@@ -126,11 +132,14 @@ export function RosterPage({
   };
 
   // Escape backs out one layer at a time, matching the modal's convention:
-  // first the mark popup, then selection mode itself.
+  // first the mark popup, then selection mode itself. While the filter panel
+  // is open it owns Escape (it has its own layered handler); and while a
+  // bulk apply is in flight nothing backs out — the selection must still be
+  // there for the failure path's retry.
   useEffect(() => {
     if (!selecting) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || filterOpen || bulkBusy) return;
       if (bulkMarkOpen) {
         setBulkMarkOpen(false);
       } else {
@@ -140,7 +149,7 @@ export function RosterPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selecting, bulkMarkOpen]);
+  }, [selecting, bulkMarkOpen, filterOpen, bulkBusy]);
 
   // Apply one mark to (tag) or clear the marks of (null) every visible
   // selected veteran. Mirrors the modal's pickMark: refresh even after a
@@ -187,7 +196,9 @@ export function RosterPage({
       ) : sorted.length === 0 ? (
         <p className="empty">No veterans match the filters.</p>
       ) : (
-        <div className="grid">
+        // The extra class reserves scroll room under the select dock, which
+        // can wrap to two rows and outgrow the app shell's fixed padding.
+        <div className={selecting ? "grid selecting" : "grid"}>
           {sorted.map((v) => (
             <VeteranCard
               key={v.id}
@@ -196,9 +207,15 @@ export function RosterPage({
               showSparks={sort.key === "blue_spark"}
               selectMode={selecting}
               selected={selecting && selectedIds.has(v.trained_chara_id)}
-              onOpen={() =>
-                selecting ? toggleSelected(v.trained_chara_id) : setSelectedId(v.id)
-              }
+              onOpen={() => {
+                // Frozen while a bulk apply is in flight: a pick made now
+                // would silently miss the already-sent request.
+                if (selecting) {
+                  if (!bulkBusy) toggleSelected(v.trained_chara_id);
+                } else {
+                  setSelectedId(v.id);
+                }
+              }}
             />
           ))}
         </div>
@@ -206,7 +223,11 @@ export function RosterPage({
 
       {veterans.length > 0 && selecting && (
         <div className="pill-dock select-dock">
-          <button className="filter-float" onClick={exitSelectMode}>
+          {/* Everything except Mark freezes while an apply is in flight —
+              Cancel can't pretend to back out a request that's already on
+              the wire, and All/None/Filters would desync the sent payload
+              from what the dock shows. */}
+          <button className="filter-float" disabled={bulkBusy} onClick={exitSelectMode}>
             Cancel
           </button>
           <span className="select-count" role="status">
@@ -214,14 +235,28 @@ export function RosterPage({
           </span>
           <button
             className="filter-float"
+            disabled={bulkBusy}
             onClick={() =>
               setSelectedIds(new Set(sorted.map((v) => v.trained_chara_id)))
             }
           >
             All
           </button>
-          <button className="filter-float" onClick={() => setSelectedIds(new Set())}>
+          <button
+            className="filter-float"
+            disabled={bulkBusy}
+            onClick={() => setSelectedIds(new Set())}
+          >
             None
+          </button>
+          {/* Filters stay reachable mid-selection: hidden picks go inert via
+              the visibleSelected overlap, and the badge keeps an active
+              filter from silently narrowing what "All" means. */}
+          <button className="filter-float" disabled={bulkBusy} onClick={() => setFilterOpen(true)}>
+            Filters
+            {countFilters(filters) > 0 && (
+              <span className="filter-count">{countFilters(filters)}</span>
+            )}
           </button>
           <span className="bulk-mark-anchor">
             <button
@@ -233,36 +268,19 @@ export function RosterPage({
               {bulkBusy ? "Applying…" : "Mark"}
             </button>
             {bulkMarkOpen && (
-              <>
-                <span
-                  className="mark-popup-backdrop"
-                  onMouseDown={() => setBulkMarkOpen(false)}
-                />
-                {/* Same 4×4 grid as the modal's picker; here the leading ✕
-                    means "clear the selection's marks", not deselect. */}
-                <span className="mark-popup dock-popup" role="dialog" aria-label="Apply mark">
-                  <button
-                    className="mark-toggle mark-clear"
-                    title="Clear marks"
-                    aria-label="Clear marks"
-                    onClick={() => void applyBulk(null)}
-                  >
-                    <span className="mark-none" aria-hidden="true">
-                      ✕
-                    </span>
-                  </button>
-                  {MARK_IDS.map((id) => (
-                    <button
-                      key={id}
-                      className="mark-toggle"
-                      title="Apply mark"
-                      onClick={() => void applyBulk(id)}
-                    >
-                      <MarkIcon id={id} />
-                    </button>
-                  ))}
-                </span>
-              </>
+              // Same 4×4 grid as the modal's picker; here the leading ✕
+              // means "clear the selection's marks", not deselect.
+              <MarkPicker
+                activeId={commonMark}
+                caption={`${visibleSelected.length} selected · ${alreadyMarked} already marked`}
+                clearTitle="Clear marks"
+                tileTitle="Apply mark"
+                activeTileTitle="Apply mark"
+                popupClassName="mark-popup dock-popup"
+                ariaLabel="Apply mark"
+                onPick={(id) => void applyBulk(id)}
+                onClose={() => setBulkMarkOpen(false)}
+              />
             )}
           </span>
         </div>

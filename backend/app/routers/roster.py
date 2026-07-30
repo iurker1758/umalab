@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,7 +110,7 @@ async def bulk_tag(
             "refresh and try again",
         )
     if tag is None:
-        await session.execute(
+        result = await session.execute(
             delete(VeteranTag).where(VeteranTag.trained_chara_id.in_(ids))
         )
     else:
@@ -120,9 +121,12 @@ async def bulk_tag(
             constraint="uq_veteran_tag_trained_chara_id",
             set_={"tag": stmt.excluded.tag},
         )
-        await session.execute(stmt)
+        result = await session.execute(stmt)
     await session.commit()
-    return {"updated": len(ids), "tag": tag}
+    # Rows actually touched, not len(ids): clearing an unmarked selection
+    # honestly reports 0. DML executes return CursorResult at runtime; the
+    # session.execute() stubs only promise Result, hence the cast.
+    return {"updated": cast("CursorResult[Any]", result).rowcount, "tag": tag}
 
 
 @router.post("/veterans/{trained_chara_id}/tags", status_code=201)

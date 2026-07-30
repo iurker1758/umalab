@@ -591,3 +591,34 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** free-text tags or multi-tag veterans (#9
   reversal) — the body shape and upsert both assume one fixed mark id
   per veteran.
+
+## 21. Batch favorite runs target-first, in its own dock
+
+- **Requirements:** bulk marking should feel like the game's own batch
+  screen (Jason's call after using the select-first version); the
+  destructive cases — overwriting hand-assigned marks, clearing en
+  masse — need visibility before the write; the controls must not
+  crowd the Filters/sort dock.
+- **Choice:** the game's order — Batch Favorite opens the 16-tile
+  picker first (✕ = clear mode), then a selection pass over the grid,
+  then Confirm. The effective selection is `picked ∩ current filter ∩
+  eligible`, where eligible means the confirm would change the row
+  (doesn't carry the target; in clear mode, carries anything);
+  ineligible cards dim and ignore taps. The dock's count pill doubles
+  as the safety readout — "replaces N" when picks carry other marks,
+  and a plain-language line when nothing is eligible (an all-dimmed
+  grid otherwise reads as a broken page). The target chip re-opens the
+  picker with the selection kept, so a wrong target never costs a
+  hand-built selection. The controls live in a sticky top-right row
+  (pointer-events pass-through outside the pills) apart from the
+  Filters/sort dock, which stays usable mid-selection but freezes with
+  everything else during the in-flight confirm.
+- **Rejected:** select-first with the mark chosen at confirm time —
+  built, then replaced for game parity; a blocking confirm dialog —
+  the readout puts the same information in view without a modal in a
+  single-user tool; letting ineligible cards toggle anyway — a pick
+  that provably changes nothing only pads the payload.
+- **Would change my mind:** an undo/history feature would soften the
+  destructive-overwrite concern enough to drop the replaces readout;
+  multi-mark veterans (#9 reversal) would invalidate the eligibility
+  rule outright.

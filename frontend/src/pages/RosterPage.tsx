@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Veteran } from "../api";
 import { FilterPanel } from "../components/FilterPanel";
 import { MarkIcon } from "../components/MarkIcon";
@@ -11,6 +11,7 @@ import {
   SORT_STORE,
   blueSparkRank,
   loadSortPref,
+  markLabel,
   type SortKey,
   type SortPref,
 } from "../domain";
@@ -49,6 +50,18 @@ export function RosterPage({
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const selecting = bulkTarget !== undefined;
+
+  // Entering/leaving selection mode unmounts the control that held focus
+  // (the picker tile / the whole batch row) — hand focus to its successor
+  // so keyboard users aren't dropped to <body>.
+  const chipRef = useRef<HTMLButtonElement>(null);
+  const batchBtnRef = useRef<HTMLButtonElement>(null);
+  const wasSelecting = useRef(false);
+  useEffect(() => {
+    if (selecting && !wasSelecting.current) chipRef.current?.focus();
+    if (!selecting && wasSelecting.current) batchBtnRef.current?.focus();
+    wasSelecting.current = selecting;
+  }, [selecting]);
 
   // Eligible = the confirm would change this veteran: it doesn't already
   // carry the target mark (any other mark gets replaced), or in clear mode
@@ -122,6 +135,12 @@ export function RosterPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- isEligible only reads bulkTarget
     [sorted, selectedIds, bulkTarget]
   );
+
+  // Dock readouts: an all-ineligible view needs explaining (the grid dims
+  // wholesale), and a confirm that would overwrite other marks must say so
+  // before the write — eligibility alone hides only same-target repeats.
+  const eligibleCount = selecting ? sorted.filter(isEligible).length : 0;
+  const replacesCount = visibleSelected.filter((v) => v.tags.length > 0).length;
 
   const exitSelectMode = () => {
     setBulkTarget(undefined);
@@ -198,22 +217,61 @@ export function RosterPage({
                   prominent right edge (dialog convention). Everything except
                   Confirm freezes while the request is in flight — Cancel
                   can't pretend to back out a request that's already on the
-                  wire, and All/None would desync the sent payload from what
+                  wire, and the toggles (cards, All/None, chip, the other
+                  dock's Filters) would desync the sent payload from what
                   the dock shows. */}
-              <span
-                className="select-count target-chip"
-                title={bulkTarget ? "Batch-applying this mark" : "Batch-clearing marks"}
-              >
-                {bulkTarget ? (
-                  <MarkIcon id={bulkTarget} />
-                ) : (
-                  <span className="mark-none" aria-hidden="true">
-                    ✕
-                  </span>
+              <span className="bulk-mark-anchor">
+                {/* The chip re-opens the picker with the selection KEPT —
+                    a wrong target mustn't cost 30 hand-picked cards. */}
+                <button
+                  ref={chipRef}
+                  className="select-count target-chip"
+                  disabled={bulkBusy}
+                  aria-expanded={targetPickerOpen}
+                  title="Change the batch mark"
+                  aria-label={
+                    bulkTarget
+                      ? `Batch mark: ${markLabel(bulkTarget)} — change`
+                      : "Batch clearing marks — change"
+                  }
+                  onClick={() => setTargetPickerOpen(!targetPickerOpen)}
+                >
+                  {bulkTarget ? (
+                    <MarkIcon id={bulkTarget} />
+                  ) : (
+                    <span className="mark-none" aria-hidden="true">
+                      ✕
+                    </span>
+                  )}
+                </button>
+                {targetPickerOpen && (
+                  <MarkPicker
+                    activeId={bulkTarget}
+                    caption="Switch the batch mark — selection is kept"
+                    clearTitle="Clear marks"
+                    tileTitle="Batch apply"
+                    activeTileTitle="Current target"
+                    popupClassName="mark-popup dock-popup"
+                    ariaLabel="Change mark to batch apply"
+                    onPick={(id) => {
+                      setTargetPickerOpen(false);
+                      setBulkTarget(id);
+                    }}
+                    onClose={() => setTargetPickerOpen(false)}
+                  />
                 )}
               </span>
               <span className="select-count" role="status">
-                {visibleSelected.length} selected
+                {/* The count doubles as the safety readout: how many picks
+                    carry a different mark Confirm would overwrite, and why
+                    the grid dimmed when nothing at all is eligible. */}
+                {eligibleCount === 0
+                  ? bulkTarget === null
+                    ? "Nothing to clear"
+                    : "All already marked"
+                  : bulkTarget !== null && replacesCount > 0
+                    ? `${visibleSelected.length} selected · replaces ${replacesCount}`
+                    : `${visibleSelected.length} selected`}
               </span>
               <button
                 className="filter-float"
@@ -247,6 +305,7 @@ export function RosterPage({
           ) : (
             <span className="bulk-mark-anchor">
               <button
+                ref={batchBtnRef}
                 className="filter-float"
                 aria-expanded={targetPickerOpen}
                 onClick={() => setTargetPickerOpen(!targetPickerOpen)}
@@ -323,8 +382,11 @@ export function RosterPage({
           {/* Filters and sort keep their own dock, live through selection
               mode too: hidden picks go inert via the visibleSelected
               overlap, and the badge keeps an active filter from silently
-              narrowing what the batch dock's "All" means. */}
-          <button className="filter-float" onClick={() => setFilterOpen(true)}>
+              narrowing what the batch dock's "All" means. Frozen during an
+              in-flight confirm like every other selection input — widening
+              the filter mid-request would grow visibleSelected past the
+              payload already on the wire. */}
+          <button className="filter-float" disabled={bulkBusy} onClick={() => setFilterOpen(true)}>
             Filters
             {countFilters(filters) > 0 && (
               <span className="filter-count">{countFilters(filters)}</span>

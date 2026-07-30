@@ -42,11 +42,18 @@ can use synthetic fixtures, mirroring ingest.py.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import NewType, TypedDict
 
 from .reference import RankBand, SaddleInfo
 
 WIN_POINTS_PER_SHARED_G1 = 3
+
+# Won G1 races as CANONICAL race ids — the output of g1_wins(), never raw
+# saddle ids. The distinct type keeps a caller from wiring a dump's
+# win_saddle_id_array straight into a Slot: both are int sets, but saddle ids
+# intersected as race ids score garbage in both directions.
+WinSet = NewType("WinSet", frozenset[int])
+EMPTY_WINS = WinSet(frozenset())
 
 # Relation links scored from the group tables, and win links scored from
 # shared G1s. Cross-family links (e.g. p1 with p2's parents) never score.
@@ -64,11 +71,11 @@ class RelationTable:
 
 @dataclass(frozen=True)
 class Slot:
-    """One filled blueprint slot: a chara plus its won G1 races (already
-    expanded from saddle ids; empty for catalog/theoretical picks)."""
+    """One filled blueprint slot: a chara plus its won G1 races (a WinSet
+    from g1_wins(); empty for catalog/theoretical picks)."""
 
     chara_id: int
-    wins: frozenset[int] = frozenset()
+    wins: WinSet = EMPTY_WINS
 
 
 class LinkScore(TypedDict):
@@ -107,16 +114,25 @@ def _relations_of(table: RelationTable, chara_id: int) -> frozenset[int]:
 
 
 def rel2(table: RelationTable, a: int, b: int) -> int:
+    # A chara never scores affinity with itself — without this, a duplicate
+    # slot would sum every group the chara belongs to.
+    if a == b:
+        return 0
     shared = _relations_of(table, a) & _relations_of(table, b)
     return sum(table.points.get(rt, 0) for rt in shared)
 
 
 def rel3(table: RelationTable, a: int, b: int, c: int) -> int:
+    # Any repeated chara zeroes the triple. This includes the in-game
+    # verified exclusion (a grandparent repeating the trainee or its own
+    # parent; see module docstring) as the c == a / c == b cases.
+    if len({a, b, c}) < 3:
+        return 0
     shared = _relations_of(table, a) & _relations_of(table, b) & _relations_of(table, c)
     return sum(table.points.get(rt, 0) for rt in shared)
 
 
-def g1_wins(saddle_ids: list[int], saddles: dict[int, SaddleInfo]) -> frozenset[int]:
+def g1_wins(saddle_ids: list[int], saddles: dict[int, SaddleInfo]) -> WinSet:
     """Expand won saddles to the set of won G1 race ids.
 
     The union makes composite saddles safe: holding both "Classic Triple
@@ -128,7 +144,7 @@ def g1_wins(saddle_ids: list[int], saddles: dict[int, SaddleInfo]) -> frozenset[
         info = saddles.get(saddle_id)
         if info is not None:
             won.update(info["g1_race_ids"])
-    return frozenset(won)
+    return WinSet(frozenset(won))
 
 
 def symbol_for(total: int, ranks: list[RankBand]) -> str:
@@ -138,12 +154,6 @@ def symbol_for(total: int, ranks: list[RankBand]) -> str:
         if total <= band["max"]:
             return band["symbol"]
     return ranks[-1]["symbol"] if ranks else "?"
-
-
-def _shared_win_points(a: Slot | None, b: Slot | None) -> int:
-    if a is None or b is None:
-        return 0
-    return WIN_POINTS_PER_SHARED_G1 * len(a.wins & b.wins)
 
 
 def score_blueprint(
@@ -157,7 +167,15 @@ def score_blueprint(
     g22: Slot | None = None,
 ) -> AffinityResult:
     """Score a (possibly partial) blueprint. Unset slots contribute 0, so the
-    designer can show a live score while slots are being filled."""
+    designer can show a live score while slots are being filled.
+
+    Configurations the game outright rejects score nothing rather than
+    garbage: same-chara pair links dedupe to 0 (rel2), a grandparent
+    repeating its SIBLING slot is voided entirely (relations and wins), and
+    a same-chara p1/p2 pair scores no win overlap. The one LEGAL duplicate —
+    a grandparent repeating the trainee or its own parent — keeps its wins
+    (chara-blind, in-game verified) and loses only its relation triple
+    (rel3 dedupes it)."""
     slots: dict[str, Slot | None] = {
         "p1": p1, "p2": p2, "g11": g11, "g12": g12, "g21": g21, "g22": g22,
     }
@@ -166,26 +184,41 @@ def score_blueprint(
         slot = slots[slot_id]
         return slot.chara_id if slot is not None else None
 
+    def repeats_sibling(gp_id: str, sibling_id: str) -> bool:
+        gp, sibling = slots[gp_id], slots[sibling_id]
+        return gp is not None and sibling is not None and gp.chara_id == sibling.chara_id
+
+    void_slots = {
+        gp for gp, sibling in (("g12", "g11"), ("g22", "g21"))
+        if repeats_sibling(gp, sibling)
+    }
+
     def relation_points(link: str) -> int:
+        parts = link.split("-")
+        if parts[-1] in void_slots:
+            return 0
         charas: list[int] = []
-        for part in link.split("-"):
+        for part in parts:
             resolved = trainee if part == "t" else chara(part)
             if resolved is None:
                 return 0
             charas.append(resolved)
         if len(charas) == 2:
             return rel2(table, charas[0], charas[1])
-        # Triple exclusion (in-game verified; see module docstring): a
-        # grandparent that repeats the trainee's chara or its own parent's
-        # chara scores nothing on this link.
-        if charas[2] in (charas[0], charas[1]):
-            return 0
         return rel3(table, charas[0], charas[1], charas[2])
 
-    win_by_link = {
-        link: _shared_win_points(slots[link.split("-")[0]], slots[link.split("-")[1]])
-        for link in WIN_LINKS
-    }
+    def win_points_for(link: str) -> int:
+        a_id, b_id = link.split("-")
+        if b_id in void_slots:
+            return 0
+        a, b = slots[a_id], slots[b_id]
+        if a is None or b is None:
+            return 0
+        if link == "p1-p2" and a.chara_id == b.chara_id:
+            return 0
+        return WIN_POINTS_PER_SHARED_G1 * len(a.wins & b.wins)
+
+    win_by_link = {link: win_points_for(link) for link in WIN_LINKS}
 
     links: list[LinkScore] = []
     for link in RELATION_LINKS:

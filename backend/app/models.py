@@ -78,9 +78,10 @@ class Blueprint(Base):
     lineage slot ids (p1/p2/g11/g12/g21/g22, absent or null when unfilled) to
     slot objects. Roster slots reference veterans by trained_chara_id — stable
     across full-replace imports, same reasoning as veteran_tags (#9) — and
-    every slot snapshots chara_id/card_id, so a slot whose veteran left the
-    roster still displays, degraded to a catalog-theoretical pick. Slots are
-    never pruned to match the current roster.
+    every slot snapshots chara_id/card_id plus its won-saddle ids, so a slot
+    whose veteran left the roster still displays AND keeps its win bonus when
+    re-scored, degraded to a catalog-theoretical pick. Slots are never pruned
+    to match the current roster.
     """
     __tablename__ = "blueprints"
 

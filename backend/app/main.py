@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -175,7 +175,9 @@ class AffinitySlotIn(BaseModel):
 
 
 class AffinityIn(BaseModel):
-    trainee_chara_id: int
+    # Optional to mirror BlueprintIn: a saved trainee-less draft must be
+    # scorable when reopened. Trainee links score 0 until one is chosen.
+    trainee_chara_id: int | None = None
     p1: AffinitySlotIn | None = None
     p2: AffinitySlotIn | None = None
     g11: AffinitySlotIn | None = None
@@ -202,18 +204,26 @@ class AffinityOut(BaseModel):
 
 class BlueprintSlotIn(BaseModel):
     """One designed lineage slot (DECISIONS.md #16). Every slot snapshots
-    chara_id/card_id; roster and lineage slots additionally reference the
-    backing veteran by trained_chara_id (survives full-replace imports), with
-    position_id saying which lineage member a `lineage` slot came from."""
+    chara_id/card_id AND the pick's won-saddle ids — the wins must ride in
+    the snapshot so a slot whose veteran left the roster keeps its win bonus
+    when re-scored, not just its portrait. Roster and lineage slots
+    additionally reference the backing veteran by trained_chara_id (survives
+    full-replace imports), with position_id saying which lineage member a
+    `lineage` slot came from."""
 
     source: Literal["catalog", "roster", "lineage"]
     chara_id: int
     card_id: int
+    win_saddle_ids: list[int] = []
     trained_chara_id: int | None = None
     position_id: int | None = None
 
     @model_validator(mode="after")
-    def _require_refs(self) -> BlueprintSlotIn:
+    def _check_slot(self) -> BlueprintSlotIn:
+        if ingest.derive_chara_id(self.card_id) != self.chara_id:
+            raise ValueError(
+                f"card {self.card_id} does not belong to chara {self.chara_id}"
+            )
         if self.source != "catalog" and self.trained_chara_id is None:
             raise ValueError(f"a {self.source} slot needs a trained_chara_id")
         if self.source == "lineage" and self.position_id is None:
@@ -233,7 +243,9 @@ class BlueprintSlotsIn(BaseModel):
 class BlueprintIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     trainee_chara_id: int | None = None
-    slots: BlueprintSlotsIn = BlueprintSlotsIn()
+    # Required: PUT is full-document replace, so a body that forgot `slots`
+    # must 422 rather than silently wipe a saved design.
+    slots: BlueprintSlotsIn
 
     @model_validator(mode="after")
     def _validate(self) -> BlueprintIn:
@@ -479,6 +491,9 @@ async def update_blueprint(
     blueprint.name = body.name
     blueprint.trainee_chara_id = body.trainee_chara_id
     blueprint.slots = body.slots.model_dump()
+    # Explicit: onupdate only fires when a column changed, but the saved-list
+    # is ordered by updated_at, so an identical re-save must still rise.
+    blueprint.updated_at = func.now()
     await session.commit()
     await session.refresh(blueprint)
     return blueprint

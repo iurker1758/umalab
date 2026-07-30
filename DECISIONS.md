@@ -438,9 +438,10 @@ Keep adding entries as the build evolves. This file is the interview.
   JSONB `slots` keyed p1/p2/g11/g12/g21/g22). Roster and lineage slots
   reference their backing veteran by **trained_chara_id** — the same
   import-stable key veteran_tags uses (#9) — and every slot additionally
-  snapshots `chara_id`/`card_id`, so a slot whose veteran left the
-  current snapshot still renders and scores, degraded to a
-  catalog-theoretical pick with a "not in current roster" badge. Slots
+  snapshots `chara_id`/`card_id` and the pick's won-saddle ids, so a
+  slot whose veteran left the current snapshot still renders and scores
+  — win bonus included — degraded to a catalog-theoretical pick with a
+  "not in current roster" badge. Slots
   are never pruned to match the roster. Saves are validated against the
   game's slot rules (parent ≠ trainee's chara, p1 ≠ p2, grandparent ≠
   its own parent or its sibling slot) so a stored design is always one

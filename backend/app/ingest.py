@@ -103,6 +103,14 @@ def _require(record: dict[str, Any], field: str, context: str) -> Any:
     return record[field]
 
 
+def _require_int(record: dict[str, Any], field: str, context: str) -> int:
+    value = _require(record, field, context)
+    # JSON booleans satisfy isinstance(int); they are never valid ids/stats.
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise IngestError(f"{context} has a non-integer '{field}'")
+    return value
+
+
 def _decode_factor_list(
     record: dict[str, Any],
     cards: dict[int, Card],
@@ -124,13 +132,17 @@ def _decode_factor_list(
 
 
 def _parse_win_saddles(record: dict[str, Any], context: str) -> list[int]:
-    # Missing/None degrades to no wins (risk noted in the plan: a dump
-    # variant without the field just loses win bonuses, not the import).
-    entries: Any = record.get(WIN_SADDLE_FIELD) or []
+    # Only truly absent win data degrades to no wins (risk noted in the plan:
+    # a dump variant without the field loses win bonuses, not the import).
+    # Any other shape — falsy ones like {} or 0 included — is a dump-format
+    # change that must fail loudly, not import a winless roster.
+    entries: Any = record.get(WIN_SADDLE_FIELD)
+    if entries is None:
+        return []
     if not isinstance(entries, list):
         raise IngestError(f"{context} has a malformed '{WIN_SADDLE_FIELD}'")
     for entry in cast("list[Any]", entries):
-        if not isinstance(entry, int):
+        if not isinstance(entry, int) or isinstance(entry, bool):
             raise IngestError(f"{context} has a non-integer won-saddle id")
     return cast("list[int]", entries)
 
@@ -144,8 +156,8 @@ def _parse_lineage_member(
     if not isinstance(member, dict):
         raise IngestError(f"{context} has a malformed lineage member")
     member = cast("dict[str, Any]", member)
-    position_id = _require(member, "position_id", context)
-    card_id = _require(member, "card_id", context)
+    position_id = _require_int(member, "position_id", context)
+    card_id = _require_int(member, "card_id", context)
     name, outfit = card_label(card_id, cards)
     return {
         "position_id": position_id,
@@ -171,10 +183,7 @@ def parse_veteran(
     context = f"veteran (trained_chara_id={raw.get('trained_chara_id', '?')})"
     fields: dict[str, Any] = {}
     for field in VETERAN_INT_FIELDS:
-        value = _require(raw, field, context)
-        if not isinstance(value, int):
-            raise IngestError(f"{context} has a non-integer '{field}'")
-        fields[field] = value
+        fields[field] = _require_int(raw, field, context)
 
     fields["chara_id"] = derive_chara_id(fields["card_id"])
     fields["name"], fields["outfit"] = card_label(fields["card_id"], cards)

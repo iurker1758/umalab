@@ -151,6 +151,21 @@ def test_trainee_only_scores_zero() -> None:
     assert result["p2_affinity"] is None
 
 
+def test_no_trainee_scores_trainee_independent_links() -> None:
+    # A saved draft can lack a trainee: every t-link is 0, but the p1-p2
+    # relation and the (trainee-blind) win links still score.
+    result = score_blueprint(
+        TABLE, None,
+        p1=Slot(100, wins=_w(10)),
+        p2=Slot(200, wins=_w(10)),
+    )
+    assert result["relation_total"] == 15  # rel2(100, 200); all t-links 0
+    assert result["win_total"] == WIN_POINTS_PER_SHARED_G1
+    assert result["total"] == 15 + WIN_POINTS_PER_SHARED_G1
+    assert result["p1_affinity"] == 0  # set parent, but no t-links or GP wins
+    assert result["p2_affinity"] == 0
+
+
 def test_shared_wins_score_on_parent_links() -> None:
     result = score_blueprint(
         TABLE, 100,

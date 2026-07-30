@@ -216,10 +216,54 @@ def test_parse_veteran_malformed_win_saddles_raises():
         parse_veteran(raw, CARDS, FACTORS)
 
 
+@pytest.mark.parametrize("bad", [{}, 0, "", False])
+def test_parse_veteran_falsy_win_saddles_still_raises(bad: object):
+    # only absent/null degrades to []; a falsy wrong shape must not slip
+    # past the malformed guard via a truthiness short-circuit
+    raw = make_veteran()
+    raw["win_saddle_id_array"] = bad
+    with pytest.raises(IngestError, match="malformed 'win_saddle_id_array'"):
+        parse_veteran(raw, CARDS, FACTORS)
+
+
 def test_parse_veteran_non_integer_win_saddle_raises():
     raw = make_veteran()
     raw["win_saddle_id_array"] = [63, "105"]
     with pytest.raises(IngestError, match="non-integer won-saddle id"):
+        parse_veteran(raw, CARDS, FACTORS)
+
+
+def test_parse_veteran_boolean_win_saddle_raises():
+    # bools satisfy isinstance(int) but saddle id 1 is a real saddle —
+    # JSON true must not import as a won race
+    raw = make_veteran()
+    raw["win_saddle_id_array"] = [True]
+    with pytest.raises(IngestError, match="non-integer won-saddle id"):
+        parse_veteran(raw, CARDS, FACTORS)
+
+
+def test_parse_lineage_member_non_integer_card_id_raises():
+    member = make_lineage_member(10)
+    member["card_id"] = "100101"
+    raw = make_veteran()
+    raw["succession_chara_array"] = [member]
+    with pytest.raises(IngestError, match="non-integer 'card_id'"):
+        parse_veteran(raw, CARDS, FACTORS)
+
+
+def test_parse_lineage_member_non_integer_position_id_raises():
+    member = make_lineage_member(10)
+    member["position_id"] = "10"
+    raw = make_veteran()
+    raw["succession_chara_array"] = [member]
+    with pytest.raises(IngestError, match="non-integer 'position_id'"):
+        parse_veteran(raw, CARDS, FACTORS)
+
+
+def test_parse_veteran_boolean_stat_raises():
+    raw = make_veteran()
+    raw["wins"] = True
+    with pytest.raises(IngestError, match="non-integer 'wins'"):
         parse_veteran(raw, CARDS, FACTORS)
 
 

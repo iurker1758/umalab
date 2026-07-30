@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
 import { api, type ImportInfo, type Veteran } from "./api";
+import { FILTER_STORE, loadFilters, reconcileFilters, type Filters } from "./filters";
 import { RosterPage } from "./pages/RosterPage";
 
 export default function App() {
   const [veterans, setVeterans] = useState<Veteran[]>([]);
   const [latest, setLatest] = useState<ImportInfo | null>(null);
   // Distinguishes "fetch hasn't succeeded yet" from a legitimately empty
-  // roster — RosterPage only reconciles persisted filters once this is true.
+  // roster — gates the "No roster yet" empty state so it can't flash at a
+  // stocked roster's owner during the initial fetch.
   const [loaded, setLoaded] = useState(false);
+  // Filters live in the shell, not RosterPage, so reconciliation stays tied
+  // to the fetch — once per new roster. Page-local state would redo it on
+  // every Roster remount, wiping selections that currently match nothing
+  // (e.g. a favorite mark no veteran carries yet).
+  const [filters, setFilters] = useState<Filters>(loadFilters);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
@@ -21,10 +28,23 @@ export default function App() {
       setLatest(imp);
       setLoaded(true);
       setError(null);
+      // Filters whose targets left the roster are cleared on every load
+      // (see reconcileFilters).
+      setFilters((prev) => reconcileFilters(prev, vets));
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
     }
   }, []);
+
+  // Persisted as an effect so every write path — panel edits AND the
+  // refresh-time reconciliation — lands in storage.
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_STORE, JSON.stringify(filters));
+    } catch {
+      // storage full/blocked — the choice still applies for this session
+    }
+  }, [filters]);
 
   useEffect(() => {
     // initial data load; the setState happens after the fetch resolves
@@ -59,8 +79,10 @@ export default function App() {
     setBusy(true);
     try {
       await api.importDump(file);
+      // refresh() reports its own outcome: it clears the toast on success and
+      // sets the backend-unreachable message on failure — an extra
+      // setError(null) here would erase that report.
       await refresh();
-      setError(null);
     } catch (e) {
       setError(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -116,6 +138,8 @@ export default function App() {
               loaded={loaded}
               hasError={error !== null}
               iconIndex={iconIndex}
+              filters={filters}
+              onFiltersChange={setFilters}
               onChanged={refresh}
               onError={setError}
             />

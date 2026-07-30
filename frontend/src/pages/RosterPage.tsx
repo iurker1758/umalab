@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Veteran } from "../api";
 import { FilterPanel } from "../components/FilterPanel";
 import { VeteranCard } from "../components/VeteranCard";
@@ -12,21 +12,15 @@ import {
   type SortKey,
   type SortPref,
 } from "../domain";
-import {
-  FILTER_STORE,
-  countFilters,
-  isCommonKind,
-  loadFilters,
-  matchesFilters,
-  reconcileFilters,
-  type Filters,
-} from "../filters";
+import { countFilters, isCommonKind, matchesFilters, type Filters } from "../filters";
 
 export function RosterPage({
   veterans,
   loaded,
   hasError,
   iconIndex,
+  filters,
+  onFiltersChange,
   onChanged,
   onError,
 }: {
@@ -34,44 +28,24 @@ export function RosterPage({
   loaded: boolean;
   hasError: boolean;
   iconIndex: Record<string, string>;
+  filters: Filters;
+  onFiltersChange: (f: Filters) => void;
   onChanged: () => Promise<void>;
   onError: (msg: string) => void;
 }) {
   const [sort, setSort] = useState<SortPref>(loadSortPref);
-  const [filters, setFilters] = useState<Filters>(loadFilters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-
-  // Filters whose targets left the roster are cleared on every roster load
-  // (see reconcileFilters). Adjusted during render — not in an effect — so
-  // the reconciled filters land in the same render pass as the new roster.
-  // Gated on `loaded` so the pre-fetch empty roster doesn't wipe persisted
-  // filters at startup; also covers remounting after an import happened
-  // while another page was showing.
-  const [reconciledFor, setReconciledFor] = useState<Veteran[] | null>(null);
-  if (loaded && veterans !== reconciledFor) {
-    setReconciledFor(veterans);
-    setFilters((prev) => reconcileFilters(prev, veterans));
-  }
 
   const applySort = (next: SortPref) => {
     setSort(next);
     try {
       localStorage.setItem(SORT_STORE, JSON.stringify(next));
     } catch {
-      // storage full/blocked — the choice still applies for this session
+      // storage full/blocked — the choice still applies while the roster
+      // stays mounted (navigating away discards page state)
     }
   };
-
-  // Persisted as an effect so every write path — panel edits AND the
-  // reconciliation above — lands in storage.
-  useEffect(() => {
-    try {
-      localStorage.setItem(FILTER_STORE, JSON.stringify(filters));
-    } catch {
-      // storage full/blocked — the choice still applies for this session
-    }
-  }, [filters]);
 
   // One entry per distinct card in the roster, for the Umas filter section.
   const rosterCards = useMemo(() => {
@@ -122,8 +96,12 @@ export function RosterPage({
   return (
     <>
       {veterans.length === 0 ? (
-        // With the backend unreachable the error toast is the whole story —
-        // blaming the filters here sent people hunting through the panel.
+        // Gated on `loaded` so the initial fetch renders nothing here — a
+        // stocked roster's owner shouldn't be told to go run the extractor
+        // while the request is in flight. With the backend unreachable the
+        // error toast is the whole story — blaming the filters here sent
+        // people hunting through the panel.
+        loaded &&
         !hasError && (
           <p className="empty">
             No roster yet. Run UmaExtractor on the game's Veteran List screen, then import the
@@ -189,7 +167,7 @@ export function RosterPage({
           iconIndex={iconIndex}
           matchCount={sorted.length}
           total={veterans.length}
-          onChange={setFilters}
+          onChange={onFiltersChange}
           onClose={() => setFilterOpen(false)}
         />
       )}

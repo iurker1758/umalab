@@ -289,7 +289,7 @@ export function RosterPage({
       {veterans.length > 0 && !selecting && (
         <div className="pill-dock">
           <button className="filter-float" onClick={() => setSelecting(true)}>
-            Select
+            Batch Favorite
           </button>
           <button className="filter-float" onClick={() => setFilterOpen(true)}>
             Filters

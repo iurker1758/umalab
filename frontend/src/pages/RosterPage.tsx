@@ -186,6 +186,92 @@ export function RosterPage({
 
   return (
     <>
+      {veterans.length > 0 && (
+        // Batch Favorite lives apart from the Filters/sort dock: a sticky
+        // row at the roster's top right, so Cancel/Confirm stay reachable
+        // however far the grid has scrolled.
+        <div className={selecting ? "batch-dock select-dock" : "batch-dock"}>
+          {selecting ? (
+            <>
+              {/* Everything except Confirm freezes while the request is in
+                  flight — Cancel can't pretend to back out a request that's
+                  already on the wire, and All/None would desync the sent
+                  payload from what the dock shows. */}
+              <button className="filter-float" disabled={bulkBusy} onClick={exitSelectMode}>
+                Cancel
+              </button>
+              <span
+                className="select-count target-chip"
+                title={bulkTarget ? "Batch-applying this mark" : "Batch-clearing marks"}
+              >
+                {bulkTarget ? (
+                  <MarkIcon id={bulkTarget} />
+                ) : (
+                  <span className="mark-none" aria-hidden="true">
+                    ✕
+                  </span>
+                )}
+              </span>
+              <span className="select-count" role="status">
+                {visibleSelected.length} selected
+              </span>
+              <button
+                className="filter-float"
+                disabled={bulkBusy}
+                onClick={() =>
+                  setSelectedIds(
+                    new Set(sorted.filter(isEligible).map((v) => v.trained_chara_id))
+                  )
+                }
+              >
+                All
+              </button>
+              <button
+                className="filter-float"
+                disabled={bulkBusy}
+                onClick={() => setSelectedIds(new Set())}
+              >
+                None
+              </button>
+              <button
+                className="filter-float"
+                disabled={visibleSelected.length === 0 || bulkBusy}
+                onClick={() => void confirmBulk()}
+              >
+                {bulkBusy ? "Applying…" : "Confirm"}
+              </button>
+            </>
+          ) : (
+            <span className="bulk-mark-anchor">
+              <button
+                className="filter-float"
+                aria-expanded={targetPickerOpen}
+                onClick={() => setTargetPickerOpen(!targetPickerOpen)}
+              >
+                Batch Favorite
+              </button>
+              {targetPickerOpen && (
+                // Game-order flow: the mark comes first. ✕ enters clear mode.
+                <MarkPicker
+                  activeId={undefined}
+                  caption="Pick a mark, then select veterans"
+                  clearTitle="Clear marks"
+                  tileTitle="Batch apply"
+                  activeTileTitle="Batch apply"
+                  popupClassName="mark-popup dock-popup"
+                  ariaLabel="Choose mark to batch apply"
+                  onPick={(id) => {
+                    setTargetPickerOpen(false);
+                    setBulkTarget(id);
+                  }}
+                  onClose={() => setTargetPickerOpen(false)}
+                />
+              )}
+            </span>
+          )}
+        </div>
+      )}
+
       {veterans.length === 0 ? (
         // Gated on `loaded` so the initial fetch renders nothing here — a
         // stocked roster's owner shouldn't be told to go run the extractor
@@ -202,9 +288,7 @@ export function RosterPage({
       ) : sorted.length === 0 ? (
         <p className="empty">No veterans match the filters.</p>
       ) : (
-        // The extra class reserves scroll room under the select dock, which
-        // can wrap to two rows and outgrow the app shell's fixed padding.
-        <div className={selecting ? "grid selecting" : "grid"}>
+        <div className="grid">
           {sorted.map((v) => (
             <VeteranCard
               key={v.id}
@@ -231,95 +315,12 @@ export function RosterPage({
         </div>
       )}
 
-      {veterans.length > 0 && selecting && (
-        <div className="pill-dock select-dock">
-          {/* Everything except Confirm freezes while the request is in
-              flight — Cancel can't pretend to back out a request that's
-              already on the wire, and All/None/Filters would desync the
-              sent payload from what the dock shows. */}
-          <button className="filter-float" disabled={bulkBusy} onClick={exitSelectMode}>
-            Cancel
-          </button>
-          <span
-            className="select-count target-chip"
-            title={bulkTarget ? "Batch-applying this mark" : "Batch-clearing marks"}
-          >
-            {bulkTarget ? (
-              <MarkIcon id={bulkTarget} />
-            ) : (
-              <span className="mark-none" aria-hidden="true">
-                ✕
-              </span>
-            )}
-          </span>
-          <span className="select-count" role="status">
-            {visibleSelected.length} selected
-          </span>
-          <button
-            className="filter-float"
-            disabled={bulkBusy}
-            onClick={() =>
-              setSelectedIds(
-                new Set(sorted.filter(isEligible).map((v) => v.trained_chara_id))
-              )
-            }
-          >
-            All
-          </button>
-          <button
-            className="filter-float"
-            disabled={bulkBusy}
-            onClick={() => setSelectedIds(new Set())}
-          >
-            None
-          </button>
-          {/* Filters stay reachable mid-selection: hidden picks go inert via
-              the visibleSelected overlap, and the badge keeps an active
-              filter from silently narrowing what "All" means. */}
-          <button className="filter-float" disabled={bulkBusy} onClick={() => setFilterOpen(true)}>
-            Filters
-            {countFilters(filters) > 0 && (
-              <span className="filter-count">{countFilters(filters)}</span>
-            )}
-          </button>
-          <button
-            className="filter-float"
-            disabled={visibleSelected.length === 0 || bulkBusy}
-            onClick={() => void confirmBulk()}
-          >
-            {bulkBusy ? "Applying…" : "Confirm"}
-          </button>
-        </div>
-      )}
-
-      {veterans.length > 0 && !selecting && (
+      {veterans.length > 0 && (
         <div className="pill-dock">
-          <span className="bulk-mark-anchor">
-            <button
-              className="filter-float"
-              aria-expanded={targetPickerOpen}
-              onClick={() => setTargetPickerOpen(!targetPickerOpen)}
-            >
-              Batch Favorite
-            </button>
-            {targetPickerOpen && (
-              // Game-order flow: the mark comes first. ✕ enters clear mode.
-              <MarkPicker
-                activeId={undefined}
-                caption="Pick a mark, then select veterans"
-                clearTitle="Clear marks"
-                tileTitle="Batch apply"
-                activeTileTitle="Batch apply"
-                popupClassName="mark-popup dock-popup"
-                ariaLabel="Choose mark to batch apply"
-                onPick={(id) => {
-                  setTargetPickerOpen(false);
-                  setBulkTarget(id);
-                }}
-                onClose={() => setTargetPickerOpen(false)}
-              />
-            )}
-          </span>
+          {/* Filters and sort keep their own dock, live through selection
+              mode too: hidden picks go inert via the visibleSelected
+              overlap, and the badge keeps an active filter from silently
+              narrowing what the batch dock's "All" means. */}
           <button className="filter-float" onClick={() => setFilterOpen(true)}>
             Filters
             {countFilters(filters) > 0 && (

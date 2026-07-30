@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
 import { api, type ImportInfo, type Veteran } from "./api";
+import { emptyDesign, type Design } from "./blueprint";
 import { FILTER_STORE, loadFilters, reconcileFilters, type Filters } from "./filters";
+import { DesignerPage } from "./pages/DesignerPage";
 import { RosterPage } from "./pages/RosterPage";
 
 export default function App() {
@@ -16,7 +18,17 @@ export default function App() {
   // every Roster remount, wiping selections that currently match nothing
   // (e.g. a favorite mark no veteran carries yet).
   const [filters, setFilters] = useState<Filters>(loadFilters);
+  // The working design lives in the shell for the same reason filters do:
+  // the page unmounts on every route change, and an unsaved design (up to
+  // 10+ picks, no autosave by scope decision) must survive a trip to the
+  // roster. savedJson is its explicit-save snapshot (see DesignerPage).
+  const [design, setDesign] = useState<Design>(emptyDesign);
+  const [designSavedJson, setDesignSavedJson] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Roster-fetch failure, tracked apart from the shared toast: RosterPage
+  // gates its "No roster yet" onboarding on it, and a designer error
+  // writing the toast must not suppress that copy.
+  const [fetchFailed, setFetchFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
@@ -28,11 +40,13 @@ export default function App() {
       setLatest(imp);
       setLoaded(true);
       setError(null);
+      setFetchFailed(false);
       // Filters whose targets left the roster are cleared on every load
       // (see reconcileFilters).
       setFilters((prev) => reconcileFilters(prev, vets));
     } catch {
       setError("Can't reach the backend — is uvicorn running?");
+      setFetchFailed(true);
     }
   }, []);
 
@@ -136,7 +150,7 @@ export default function App() {
             <RosterPage
               veterans={veterans}
               loaded={loaded}
-              hasError={error !== null}
+              hasError={fetchFailed}
               iconIndex={iconIndex}
               filters={filters}
               onFiltersChange={setFilters}
@@ -147,7 +161,18 @@ export default function App() {
         />
         <Route
           path="/designer"
-          element={<p className="empty">The blueprint designer is coming soon.</p>}
+          element={
+            <DesignerPage
+              veterans={veterans}
+              loaded={loaded}
+              iconIndex={iconIndex}
+              design={design}
+              setDesign={setDesign}
+              savedJson={designSavedJson}
+              setSavedJson={setDesignSavedJson}
+              onError={setError}
+            />
+          }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -523,3 +523,42 @@ Keep adding entries as the build evolves. This file is the interview.
   servers and the planned Cloudflare Pages target (no `404.html` → auto
   fallback) all do; revisit when deployment work starts — no host config
   in the repo until then.
+
+## 19. Designer scores server-side, saves explicitly
+
+- **Requirements:** the `/designer` page needs live affinity feedback
+  while slots change, spark star totals across the designed lineage,
+  and durable saved designs -- with the scoring milestone (hunted-skill
+  spark math) landing next in Python.
+- **Choice:** every score comes from the stateless `POST /api/affinity`
+  (DECISIONS.md #17), debounced ~250 ms behind slot edits with an
+  `AbortController` guarding out-of-order responses; below the scoring
+  threshold (trainee + at least one parent) the page just hides the last
+  result rather than clearing state in an effect, and a failed request
+  clears the result and reports inline in the panel (a toast per edit
+  would spam while the backend is down, and stale numbers must not pose
+  as current). Designs persist only through the explicit Save button
+  (POST new / PUT full-replace), with a small unsaved-changes dot -- no
+  autosave; the working design lives in the App shell (like filters,
+  #18) so a route change can't silently discard unsaved work. The
+  picker mirrors the server's game rules client-side (`slotConflicts`
+  in `blueprint.ts`) purely to grey out dead picks; the server stays
+  the authority and a 422 on save still surfaces in the toast. Parent
+  picks own their grandparent slots: a roster parent auto-fills both
+  from its lineage positions 10/20, clearing a parent clears them, and
+  a catalog re-pick drops auto-filled lineage grandparents while
+  keeping manual ones. A parent pick that would repeat a filled
+  grandparent is greyed out like any other illegal pick (review
+  reversal -- the earlier "parent wins, dependent slots yield" rule
+  silently emptied a slot the user had filled).
+- **Rejected:** client-side affinity math -- forking the verified
+  formula (#14) across two languages right before the scoring milestone
+  needs it in Python, for a saving of one debounced 24 us request;
+  autosave and localStorage drafts -- Postgres is the single store by
+  scope decision, and autosaving partially-edited designs turns every
+  misclick into a persisted state; letting a parent pick displace a
+  conflicting filled grandparent -- silent deletion of work, and
+  greying out is consistent with every other illegal pick.
+- **Would change my mind:** an offline/PWA designer story would revive
+  client-side scoring (as a port kept in lockstep by shared test
+  vectors); multi-device editing would earn drafts a home.

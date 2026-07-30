@@ -1,28 +1,40 @@
-import type { Veteran } from "../api";
-
+// Minimal identity shape so both roster veterans and catalog entries fit
+// (PR 3 flagged the old `card: Veteran` prop ahead of this second consumer).
 export function UmaCardChip({
-  card,
+  name,
+  outfit,
   icon,
   active,
+  disabledReason,
   onToggle,
 }: {
-  card: Veteran;
+  name: string;
+  outfit?: string;
   icon: string | undefined;
   active: boolean;
+  // Set ⇒ the chip is unpickable and the reason joins its tooltip.
+  disabledReason?: string;
   onToggle: () => void;
 }) {
-  const title = `${card.name}${card.outfit && card.outfit !== "Original" ? ` (${card.outfit})` : ""}`;
+  const identity = `${name}${outfit && outfit !== "Original" ? ` (${outfit})` : ""}`;
+  // aria-disabled + no-op, not the disabled attribute: Chromium/WebKit
+  // don't dispatch pointer events to natively disabled controls, so the
+  // `title` explaining WHY a pick is illegal would never show. The reason
+  // augments the accessible name rather than replacing it.
+  const blocked = disabledReason !== undefined;
+  const title = blocked ? `${identity} — ${disabledReason}` : identity;
   return (
     <button
-      className={active ? "card-chip active" : "card-chip"}
+      className={`card-chip${active ? " active" : ""}${blocked ? " disabled" : ""}`}
       title={title}
       aria-label={title}
-      onClick={onToggle}
+      aria-disabled={blocked || undefined}
+      onClick={blocked ? undefined : onToggle}
     >
       {icon ? (
         <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />
       ) : (
-        <span className="lineage-icon-fallback">{card.name.charAt(0)}</span>
+        <span className="lineage-icon-fallback">{name.charAt(0)}</span>
       )}
     </button>
   );

@@ -1,0 +1,911 @@
+{
+  "race_names": {
+    "1001": "February Stakes",
+    "1002": "Takamatsunomiya Kinen",
+    "1003": "Osaka Hai",
+    "1004": "Oka Sho",
+    "1005": "Satsuki Sho",
+    "1006": "Tenno Sho (Spring)",
+    "1007": "NHK Mile Cup",
+    "1008": "Victoria Mile",
+    "1009": "Japanese Oaks",
+    "1010": "Tokyo Yushun (Japanese Derby)",
+    "1011": "Yasuda Kinen",
+    "1012": "Takarazuka Kinen",
+    "1013": "Sprinters Stakes",
+    "1014": "Shuka Sho",
+    "1015": "Kikuka Sho",
+    "1016": "Tenno Sho (Autumn)",
+    "1017": "Queen Elizabeth II Cup",
+    "1018": "Mile Championship",
+    "1019": "Japan Cup",
+    "1020": "Champions Cup",
+    "1021": "Hanshin Juvenile Fillies",
+    "1022": "Asahi Hai Futurity Stakes",
+    "1023": "Arima Kinen",
+    "1024": "Hopeful Stakes",
+    "1101": "Teio Sho",
+    "1102": "Japan Dirt Derby",
+    "1103": "JBC Ladies’ Classic",
+    "1104": "JBC Sprint",
+    "1105": "JBC Classic",
+    "1106": "Tokyo Daishoten",
+    "1107": "Kawasaki Kinen",
+    "1108": "Zen-Nippon Junior Yushun",
+    "1109": "Kashiwa Kinen",
+    "1110": "Mile Championship Nambu Hai"
+  },
+  "saddles": {
+    "1": {
+      "g1_race_ids": [
+        1005,
+        1010,
+        1015
+      ],
+      "name": "Classic Triple Crown"
+    },
+    "10": {
+      "g1_race_ids": [
+        1023
+      ],
+      "name": "Arima Kinen"
+    },
+    "100": {
+      "g1_race_ids": [],
+      "name": "Fukushima Umamusume S."
+    },
+    "101": {
+      "g1_race_ids": [],
+      "name": "Niigata Daishoten"
+    },
+    "102": {
+      "g1_race_ids": [],
+      "name": "Heian S."
+    },
+    "103": {
+      "g1_race_ids": [],
+      "name": "Naruo Kinen"
+    },
+    "104": {
+      "g1_race_ids": [],
+      "name": "Mermaid S."
+    },
+    "105": {
+      "g1_race_ids": [],
+      "name": "Epsom C."
+    },
+    "106": {
+      "g1_race_ids": [],
+      "name": "Unicorn S."
+    },
+    "107": {
+      "g1_race_ids": [],
+      "name": "Hakodate Sprint S."
+    },
+    "108": {
+      "g1_race_ids": [],
+      "name": "CBC Sho"
+    },
+    "109": {
+      "g1_race_ids": [],
+      "name": "Radio Nikkei Sho"
+    },
+    "11": {
+      "g1_race_ids": [
+        1019
+      ],
+      "name": "Japan C."
+    },
+    "110": {
+      "g1_race_ids": [],
+      "name": "Procyon S."
+    },
+    "111": {
+      "g1_race_ids": [],
+      "name": "Tanabata Sho"
+    },
+    "112": {
+      "g1_race_ids": [],
+      "name": "Hakodate Kinen"
+    },
+    "113": {
+      "g1_race_ids": [],
+      "name": "Chukyo Kinen"
+    },
+    "114": {
+      "g1_race_ids": [],
+      "name": "Hakodate Junior S."
+    },
+    "115": {
+      "g1_race_ids": [],
+      "name": "Ibis Summer D."
+    },
+    "116": {
+      "g1_race_ids": [],
+      "name": "Queen S."
+    },
+    "117": {
+      "g1_race_ids": [],
+      "name": "Kokura Kinen"
+    },
+    "118": {
+      "g1_race_ids": [],
+      "name": "Leopard S."
+    },
+    "119": {
+      "g1_race_ids": [],
+      "name": "Sekiya Kinen"
+    },
+    "12": {
+      "g1_race_ids": [
+        1010
+      ],
+      "name": "Japanese Derby"
+    },
+    "120": {
+      "g1_race_ids": [],
+      "name": "Elm S."
+    },
+    "121": {
+      "g1_race_ids": [],
+      "name": "Kitakyushu Kinen"
+    },
+    "122": {
+      "g1_race_ids": [],
+      "name": "Niigata Junior S."
+    },
+    "123": {
+      "g1_race_ids": [],
+      "name": "Keeneland C."
+    },
+    "124": {
+      "g1_race_ids": [],
+      "name": "Sapporo Junior S."
+    },
+    "125": {
+      "g1_race_ids": [],
+      "name": "Kokura Junior S."
+    },
+    "126": {
+      "g1_race_ids": [],
+      "name": "Niigata Kinen"
+    },
+    "127": {
+      "g1_race_ids": [],
+      "name": "Shion S."
+    },
+    "128": {
+      "g1_race_ids": [],
+      "name": "Keisei Hai A.H."
+    },
+    "129": {
+      "g1_race_ids": [],
+      "name": "Sirius S."
+    },
+    "13": {
+      "g1_race_ids": [
+        1006
+      ],
+      "name": "Tenno Sho (Spring)"
+    },
+    "130": {
+      "g1_race_ids": [],
+      "name": "Saudi Arabia R.C."
+    },
+    "131": {
+      "g1_race_ids": [],
+      "name": "Fuji S."
+    },
+    "132": {
+      "g1_race_ids": [],
+      "name": "Artemis S."
+    },
+    "133": {
+      "g1_race_ids": [],
+      "name": "Fantasy S."
+    },
+    "134": {
+      "g1_race_ids": [],
+      "name": "Miyako S."
+    },
+    "135": {
+      "g1_race_ids": [],
+      "name": "Musashino S."
+    },
+    "136": {
+      "g1_race_ids": [],
+      "name": "Fukushima Kinen"
+    },
+    "137": {
+      "g1_race_ids": [],
+      "name": "Tokyo Sports Hai Junior S."
+    },
+    "138": {
+      "g1_race_ids": [],
+      "name": "Kyoto Junior S."
+    },
+    "139": {
+      "g1_race_ids": [],
+      "name": "Keihan Hai"
+    },
+    "14": {
+      "g1_race_ids": [
+        1012
+      ],
+      "name": "Takarazuka Kinen"
+    },
+    "140": {
+      "g1_race_ids": [],
+      "name": "Challenge C."
+    },
+    "141": {
+      "g1_race_ids": [],
+      "name": "Chunichi Shimbun Hai"
+    },
+    "142": {
+      "g1_race_ids": [],
+      "name": "Capella S."
+    },
+    "143": {
+      "g1_race_ids": [],
+      "name": "Turquoise S."
+    },
+    "144": {
+      "g1_race_ids": [
+        1005,
+        1010,
+        1015
+      ],
+      "name": "Classic Triple Crown"
+    },
+    "145": {
+      "g1_race_ids": [
+        1003,
+        1006,
+        1012
+      ],
+      "name": "Senior Spring Triple Crown"
+    },
+    "146": {
+      "g1_race_ids": [
+        1012,
+        1023
+      ],
+      "name": "Dual Grand Prix"
+    },
+    "147": {
+      "g1_race_ids": [
+        1012
+      ],
+      "name": "Takarazuka Kinen"
+    },
+    "148": {
+      "g1_race_ids": [
+        1015
+      ],
+      "name": "Kikuka Sho"
+    },
+    "149": {
+      "g1_race_ids": [],
+      "name": "Spring S."
+    },
+    "15": {
+      "g1_race_ids": [
+        1016
+      ],
+      "name": "Tenno Sho (Autumn)"
+    },
+    "150": {
+      "g1_race_ids": [],
+      "name": "Aoi S."
+    },
+    "151": {
+      "g1_race_ids": [
+        1003,
+        1006,
+        1012
+      ],
+      "name": "Senior Spring Triple Crown"
+    },
+    "152": {
+      "g1_race_ids": [
+        1006,
+        1016
+      ],
+      "name": "Tenno Sweep"
+    },
+    "153": {
+      "g1_race_ids": [
+        1006
+      ],
+      "name": "Tenno Sho (Spring)"
+    },
+    "154": {
+      "g1_race_ids": [
+        1005,
+        1010,
+        1015
+      ],
+      "name": "Classic Triple Crown"
+    },
+    "155": {
+      "g1_race_ids": [
+        1005
+      ],
+      "name": "Satsuki Sho"
+    },
+    "156": {
+      "g1_race_ids": [
+        1103
+      ],
+      "name": "JBC L. Classic"
+    },
+    "157": {
+      "g1_race_ids": [
+        1104
+      ],
+      "name": "JBC Sprint"
+    },
+    "158": {
+      "g1_race_ids": [
+        1105
+      ],
+      "name": "JBC Classic"
+    },
+    "159": {
+      "g1_race_ids": [
+        1103
+      ],
+      "name": "JBC L. Classic"
+    },
+    "16": {
+      "g1_race_ids": [
+        1015
+      ],
+      "name": "Kikuka Sho"
+    },
+    "160": {
+      "g1_race_ids": [
+        1104
+      ],
+      "name": "JBC Sprint"
+    },
+    "161": {
+      "g1_race_ids": [
+        1105
+      ],
+      "name": "JBC Classic"
+    },
+    "162": {
+      "g1_race_ids": [
+        1103
+      ],
+      "name": "JBC L. Classic"
+    },
+    "163": {
+      "g1_race_ids": [
+        1104
+      ],
+      "name": "JBC Sprint"
+    },
+    "164": {
+      "g1_race_ids": [
+        1105
+      ],
+      "name": "JBC Classic"
+    },
+    "165": {
+      "g1_race_ids": [
+        1107
+      ],
+      "name": "Kawasaki Kinen"
+    },
+    "166": {
+      "g1_race_ids": [
+        1108
+      ],
+      "name": "Zen-Nippon Junior Yushun"
+    },
+    "167": {
+      "g1_race_ids": [
+        1109
+      ],
+      "name": "Kashiwa Kinen"
+    },
+    "168": {
+      "g1_race_ids": [
+        1110
+      ],
+      "name": "M.C. Nambu Hai"
+    },
+    "169": {
+      "g1_race_ids": [],
+      "name": "Ladies' Prelude"
+    },
+    "17": {
+      "g1_race_ids": [
+        1003
+      ],
+      "name": "Osaka Hai"
+    },
+    "170": {
+      "g1_race_ids": [],
+      "name": "Tokyo Hai"
+    },
+    "171": {
+      "g1_race_ids": [],
+      "name": "Empress Hai"
+    },
+    "172": {
+      "g1_race_ids": [],
+      "name": "Kanto Oaks"
+    },
+    "173": {
+      "g1_race_ids": [],
+      "name": "Diolite Kinen"
+    },
+    "174": {
+      "g1_race_ids": [],
+      "name": "Sazanka TV Hai"
+    },
+    "175": {
+      "g1_race_ids": [],
+      "name": "TCK Jo-o Hai"
+    },
+    "176": {
+      "g1_race_ids": [],
+      "name": "Tokyo Sprint"
+    },
+    "177": {
+      "g1_race_ids": [],
+      "name": "Sparking Lady Cup"
+    },
+    "178": {
+      "g1_race_ids": [],
+      "name": "Marine Cup"
+    },
+    "179": {
+      "g1_race_ids": [],
+      "name": "Queen Sho"
+    },
+    "18": {
+      "g1_race_ids": [
+        1005
+      ],
+      "name": "Satsuki Sho"
+    },
+    "180": {
+      "g1_race_ids": [],
+      "name": "Mercury Cup"
+    },
+    "181": {
+      "g1_race_ids": [],
+      "name": "Cluster Cup"
+    },
+    "19": {
+      "g1_race_ids": [
+        1009
+      ],
+      "name": "Japanese Oaks"
+    },
+    "2": {
+      "g1_race_ids": [
+        1016,
+        1019,
+        1023
+      ],
+      "name": "Senior Autumn Triple Crown"
+    },
+    "20": {
+      "g1_race_ids": [
+        1002
+      ],
+      "name": "Takamatsunomiya Kinen"
+    },
+    "21": {
+      "g1_race_ids": [
+        1011
+      ],
+      "name": "Yasuda Kinen"
+    },
+    "22": {
+      "g1_race_ids": [
+        1013
+      ],
+      "name": "Sprinters S."
+    },
+    "23": {
+      "g1_race_ids": [
+        1018
+      ],
+      "name": "Mile Ch."
+    },
+    "24": {
+      "g1_race_ids": [
+        1004
+      ],
+      "name": "Oka Sho"
+    },
+    "25": {
+      "g1_race_ids": [
+        1008
+      ],
+      "name": "Victoria Mile"
+    },
+    "26": {
+      "g1_race_ids": [
+        1017
+      ],
+      "name": "Queen Elizabeth II Cup"
+    },
+    "27": {
+      "g1_race_ids": [
+        1007
+      ],
+      "name": "NHK Mile C."
+    },
+    "28": {
+      "g1_race_ids": [
+        1014
+      ],
+      "name": "Shuka Sho"
+    },
+    "29": {
+      "g1_race_ids": [
+        1020
+      ],
+      "name": "Champions C."
+    },
+    "3": {
+      "g1_race_ids": [
+        1004,
+        1009,
+        1014
+      ],
+      "name": "Triple Tiara"
+    },
+    "30": {
+      "g1_race_ids": [
+        1001
+      ],
+      "name": "February S."
+    },
+    "31": {
+      "g1_race_ids": [
+        1105
+      ],
+      "name": "JBC Classic"
+    },
+    "32": {
+      "g1_race_ids": [
+        1106
+      ],
+      "name": "Tokyo Daishoten"
+    },
+    "33": {
+      "g1_race_ids": [
+        1022
+      ],
+      "name": "Asahi Hai F.S."
+    },
+    "34": {
+      "g1_race_ids": [
+        1024
+      ],
+      "name": "Hopeful S."
+    },
+    "35": {
+      "g1_race_ids": [
+        1021
+      ],
+      "name": "Hanshin J.F."
+    },
+    "36": {
+      "g1_race_ids": [
+        1101
+      ],
+      "name": "Teio Sho"
+    },
+    "37": {
+      "g1_race_ids": [
+        1104
+      ],
+      "name": "JBC Sprint"
+    },
+    "38": {
+      "g1_race_ids": [
+        1102
+      ],
+      "name": "J.D. Derby"
+    },
+    "39": {
+      "g1_race_ids": [
+        1103
+      ],
+      "name": "JBC L. Classic"
+    },
+    "4": {
+      "g1_race_ids": [
+        1003,
+        1006,
+        1012
+      ],
+      "name": "Senior Spring Triple Crown"
+    },
+    "40": {
+      "g1_race_ids": [],
+      "name": "Nikkei Shinshun Hai"
+    },
+    "41": {
+      "g1_race_ids": [],
+      "name": "Tokai S."
+    },
+    "42": {
+      "g1_race_ids": [],
+      "name": "American JCC"
+    },
+    "43": {
+      "g1_race_ids": [],
+      "name": "Kyoto Kinen"
+    },
+    "44": {
+      "g1_race_ids": [],
+      "name": "Nakayama Kinen"
+    },
+    "45": {
+      "g1_race_ids": [],
+      "name": "Yayoi Sho"
+    },
+    "46": {
+      "g1_race_ids": [],
+      "name": "Kinko Sho"
+    },
+    "47": {
+      "g1_race_ids": [],
+      "name": "Fillies' Revue"
+    },
+    "48": {
+      "g1_race_ids": [],
+      "name": "Hanshin Daishoten"
+    },
+    "49": {
+      "g1_race_ids": [],
+      "name": "Spring S."
+    },
+    "5": {
+      "g1_race_ids": [
+        1006,
+        1016
+      ],
+      "name": "Tenno Sweep"
+    },
+    "50": {
+      "g1_race_ids": [],
+      "name": "Nikkei Sho"
+    },
+    "51": {
+      "g1_race_ids": [],
+      "name": "Hanshin Umamusume S."
+    },
+    "52": {
+      "g1_race_ids": [],
+      "name": "New Zealand T."
+    },
+    "53": {
+      "g1_race_ids": [],
+      "name": "Yomiuri Milers C."
+    },
+    "54": {
+      "g1_race_ids": [],
+      "name": "Flora S."
+    },
+    "55": {
+      "g1_race_ids": [],
+      "name": "Aoba Sho"
+    },
+    "56": {
+      "g1_race_ids": [],
+      "name": "Kyoto Shimbun Hai"
+    },
+    "57": {
+      "g1_race_ids": [],
+      "name": "Keio Hai Spring C."
+    },
+    "58": {
+      "g1_race_ids": [],
+      "name": "Meguro Kinen"
+    },
+    "59": {
+      "g1_race_ids": [],
+      "name": "Sapporo Kinen"
+    },
+    "6": {
+      "g1_race_ids": [
+        1012,
+        1023
+      ],
+      "name": "Dual Grand Prix"
+    },
+    "60": {
+      "g1_race_ids": [],
+      "name": "Centaur S."
+    },
+    "61": {
+      "g1_race_ids": [],
+      "name": "Rose S."
+    },
+    "62": {
+      "g1_race_ids": [],
+      "name": "St. Lite Kinen"
+    },
+    "63": {
+      "g1_race_ids": [],
+      "name": "Kobe Shimbun Hai"
+    },
+    "64": {
+      "g1_race_ids": [],
+      "name": "All Comers"
+    },
+    "65": {
+      "g1_race_ids": [],
+      "name": "Mainichi Okan"
+    },
+    "66": {
+      "g1_race_ids": [],
+      "name": "Kyoto Daishoten"
+    },
+    "67": {
+      "g1_race_ids": [],
+      "name": "Fuchu Umamusume S."
+    },
+    "68": {
+      "g1_race_ids": [],
+      "name": "Swan S."
+    },
+    "69": {
+      "g1_race_ids": [],
+      "name": "Keio Hai Junior S."
+    },
+    "7": {
+      "g1_race_ids": [
+        1011,
+        1018
+      ],
+      "name": "Dual Miles"
+    },
+    "70": {
+      "g1_race_ids": [],
+      "name": "Copa Republica Argentina"
+    },
+    "71": {
+      "g1_race_ids": [],
+      "name": "Daily Hai Junior S."
+    },
+    "72": {
+      "g1_race_ids": [],
+      "name": "Stayers S."
+    },
+    "73": {
+      "g1_race_ids": [],
+      "name": "Hanshin C."
+    },
+    "74": {
+      "g1_race_ids": [],
+      "name": "Kyoto Kimpai"
+    },
+    "75": {
+      "g1_race_ids": [],
+      "name": "Nakayama Kimpai"
+    },
+    "76": {
+      "g1_race_ids": [],
+      "name": "Shinzan Kinen"
+    },
+    "77": {
+      "g1_race_ids": [],
+      "name": "Fairy S."
+    },
+    "78": {
+      "g1_race_ids": [],
+      "name": "Aichi Hai"
+    },
+    "79": {
+      "g1_race_ids": [],
+      "name": "Keisei Hai"
+    },
+    "8": {
+      "g1_race_ids": [
+        1002,
+        1013
+      ],
+      "name": "Dual Sprints"
+    },
+    "80": {
+      "g1_race_ids": [],
+      "name": "Silk Road S."
+    },
+    "81": {
+      "g1_race_ids": [],
+      "name": "Negishi S."
+    },
+    "82": {
+      "g1_race_ids": [],
+      "name": "Kisaragi Sho"
+    },
+    "83": {
+      "g1_race_ids": [],
+      "name": "Tokyo Shimbun Hai"
+    },
+    "84": {
+      "g1_race_ids": [],
+      "name": "Queen C."
+    },
+    "85": {
+      "g1_race_ids": [],
+      "name": "Kyodo News Hai"
+    },
+    "86": {
+      "g1_race_ids": [],
+      "name": "Kyoto Umamusume S."
+    },
+    "87": {
+      "g1_race_ids": [],
+      "name": "Diamond S."
+    },
+    "88": {
+      "g1_race_ids": [],
+      "name": "Kokura Daishoten"
+    },
+    "89": {
+      "g1_race_ids": [],
+      "name": "Arlington C."
+    },
+    "9": {
+      "g1_race_ids": [
+        1001,
+        1020
+      ],
+      "name": "Dual Dirts"
+    },
+    "90": {
+      "g1_race_ids": [],
+      "name": "Hankyu Hai"
+    },
+    "91": {
+      "g1_race_ids": [],
+      "name": "Tulip Sho"
+    },
+    "92": {
+      "g1_race_ids": [],
+      "name": "Ocean S."
+    },
+    "93": {
+      "g1_race_ids": [],
+      "name": "Nakayama Umamusume S."
+    },
+    "94": {
+      "g1_race_ids": [],
+      "name": "Falcon S."
+    },
+    "95": {
+      "g1_race_ids": [],
+      "name": "Flower C."
+    },
+    "96": {
+      "g1_race_ids": [],
+      "name": "Mainichi Hai"
+    },
+    "97": {
+      "g1_race_ids": [],
+      "name": "March S."
+    },
+    "98": {
+      "g1_race_ids": [],
+      "name": "Lord Derby C.T."
+    },
+    "99": {
+      "g1_race_ids": [],
+      "name": "Antares S."
+    }
+  }
+}

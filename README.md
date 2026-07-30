@@ -72,6 +72,8 @@ Run the tests: `cd backend && pytest`
 Reference data (`backend/app/data/`) is committed; regenerate it when the game
 adds characters: `python scripts/build_reference_data.py` (needs a
 [uma.moe](https://uma.moe) API key in `backend/.env` as `UMA_MOE_API_KEY`).
+The affinity tables (`relations.json`, `races.json`) come from the local game
+client's own database; `--mdb-only` refreshes just those, no key needed.
 
 Game art is **not** committed (DECISIONS.md entry 10); fetch it once per
 clone or game update:
@@ -101,6 +103,10 @@ characters and game data are the property of Cygames, Inc.
   local game client.
 - [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — the inspiration
   for the planned inheritance-blueprint designer.
+- [ayaliz/hakuraku](https://github.com/ayaliz/hakuraku) (MIT) — the
+  inheritance-affinity algorithm structure in `app/affinity.py` is adapted
+  from its `VeteransHelper.ts` (with constants updated for the 2026 Global
+  affinity rework).
 
 ## How this was built
 

@@ -20,6 +20,20 @@ the game's own names/rarities) and, for gameless regenerations, from the
 factor table and the previous committed file — see the pass comments in
 main(). The unique flag is normalized locally (uma.moe's is inconsistent).
 
+relations.json: the succession affinity tables (relation groups, their
+points, and the rank bands behind the in-game △/○/◎ symbols) — these exist
+on no fan API, so they come straight from the local client's master.mdb
+(succession_relation, succession_relation_member, succession_relation_rank).
+
+races.json: win-saddle id -> {name, g1_race_ids} plus race_id -> name, for
+the shared-G1-win affinity bonus (single_mode_wins_saddle expanded through
+race_instance to race, G1 = grade 100; names from text_data categories 111
+and 32). Composite saddles (e.g. Classic Triple Crown) expand to all their
+component races.
+
+relations.json and races.json are skipped (previous committed files kept)
+when the game isn't installed, like card titles.
+
 All outputs are committed; rerun this manually when the game updates
 (DECISIONS.md #6).
 
@@ -27,8 +41,12 @@ Usage:
     python scripts/build_reference_data.py
     # key comes from UMA_MOE_API_KEY in backend/.env (or the env var,
     # or --api-key-file <path>)
+    python scripts/build_reference_data.py --mdb-only
+    # regenerate only relations.json/races.json from the local client —
+    # no API key or network needed
 
-Needs a uma.moe API key (sent as X-API-Key; anonymous requests get 403).
+Needs a uma.moe API key (sent as X-API-Key; anonymous requests get 403),
+except with --mdb-only.
 """
 import argparse
 import gzip
@@ -37,6 +55,8 @@ import os
 import sqlite3
 import sys
 import urllib.request
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -46,6 +66,17 @@ MASTER_MDB = (
     Path(os.path.expanduser("~"))
     / "AppData/LocalLow/Cygames/Umamusume/master/master.mdb"
 )
+
+
+@contextmanager
+def open_mdb() -> Generator[sqlite3.Connection]:
+    """Read-only connection to the local client's master.mdb. Callers check
+    MASTER_MDB.exists() themselves — their fallbacks differ."""
+    con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
+    try:
+        yield con
+    finally:
+        con.close()
 
 
 def load_card_titles() -> dict[str, str]:
@@ -64,13 +95,10 @@ def load_card_titles() -> dict[str, str]:
             if isinstance(c.get("title"), str) and c["title"]
         }
     if MASTER_MDB.exists():
-        con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
-        try:
+        with open_mdb() as con:
             rows = con.execute(
                 'SELECT "index", text FROM text_data WHERE category = 5'
             ).fetchall()
-        finally:
-            con.close()
         titles.update({str(cid): text for cid, text in rows if text})
         print(f"card titles: {len(rows)} from local master.mdb")
     else:
@@ -84,19 +112,155 @@ def load_mdb_skills() -> dict[str, dict[str, Any]]:
     Empty on a machine without the game."""
     if not MASTER_MDB.exists():
         return {}
-    con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
-    try:
+    with open_mdb() as con:
         rows = con.execute(
             'SELECT s.id, t.text, s.rarity FROM skill_data s'
             ' JOIN text_data t ON t.category = 47 AND t."index" = s.id'
         ).fetchall()
-    finally:
-        con.close()
     return {
         str(sid): {"name": " ".join(str(text).split()), "rarity": rarity}
         for sid, text, rarity in rows
         if text
     }
+
+
+def build_relations() -> dict[str, Any] | None:
+    """The succession affinity tables, verbatim from the local client.
+
+    None when the game isn't installed — the caller keeps the committed
+    file, same posture as card titles: a gameless regeneration never wipes
+    data only the client can provide.
+    """
+    if not MASTER_MDB.exists():
+        print("relations.json: master.mdb not found, kept committed file")
+        return None
+    with open_mdb() as con:
+        points = {
+            str(rt): pt
+            for rt, pt in con.execute(
+                "SELECT relation_type, relation_point FROM succession_relation"
+            )
+        }
+        members: dict[str, list[int]] = {}
+        for rt, cid in con.execute(
+            "SELECT relation_type, chara_id FROM succession_relation_member"
+            " ORDER BY relation_type, chara_id"
+        ):
+            members.setdefault(str(rt), []).append(cid)
+        rank_rows = con.execute(
+            "SELECT relation_rank, rank_value_max FROM succession_relation_rank"
+            " ORDER BY relation_rank"
+        ).fetchall()
+    # An mdb that exists but reads empty (stub file mid-update) must not
+    # overwrite committed data the client alone can supply — same posture
+    # as the card-title carry-over.
+    if not points or not members or not rank_rows:
+        print("relations.json: master.mdb succession tables empty, kept committed file")
+        return None
+    # relation_rank 1/2/3 are the game's △/○/◎ bands; the symbols themselves
+    # aren't in the DB, only on screen. Unknown ranks mean the game changed
+    # the band system — keep the committed file and say so loudly rather
+    # than crash after all the network work or guess a symbol.
+    symbols = {1: "△", 2: "○", 3: "◎"}
+    unknown = [rank for rank, _ in rank_rows if rank not in symbols]
+    if unknown:
+        print(
+            f"relations.json: WARNING unknown relation_rank rows {unknown} —"
+            " update this script's symbol map; kept committed file"
+        )
+        return None
+    ranks = [{"max": mx, "symbol": symbols[rank]} for rank, mx in rank_rows]
+    return {"ranks": ranks, "points": points, "members": members}
+
+
+def build_races() -> dict[str, Any] | None:
+    """Win-saddle -> G1 races mapping for the shared-win affinity bonus.
+
+    Saddles are what a dump's win_saddle_id_array holds; composites expand to
+    every component race. Non-G1 components are dropped (grade 100 = G1 —
+    only shared G1 wins score points under the 2026-06-24 Global system),
+    which can leave a saddle's g1_race_ids empty; it's kept for its name.
+
+    Venue variants (the same G1 run at an alternate track — Kyoto-renovation
+    reroutes, the rotating JBC hosts) are separate race rows with the same
+    name; the game matches wins across them (in-game verified 2026-07-30:
+    two cross-venue checks both scored the +3), so every variant group is
+    canonicalized to its lowest race id here. race.\"group\" can't do this —
+    it's 1 for every race.
+    None when the game isn't installed (committed file kept).
+    """
+    if not MASTER_MDB.exists():
+        print("races.json: master.mdb not found, kept committed file")
+        return None
+    with open_mdb() as con:
+        saddle_names = {
+            idx: " ".join(str(text).split())
+            for idx, text in con.execute(
+                'SELECT "index", text FROM text_data WHERE category = 111'
+            )
+            if text
+        }
+        instance_race = dict(
+            con.execute("SELECT id, race_id FROM race_instance").fetchall()
+        )
+        g1_ids = {
+            rid for (rid,) in con.execute("SELECT id FROM race WHERE grade = 100")
+        }
+        all_race_names = {
+            idx: " ".join(str(text).split())
+            for idx, text in con.execute(
+                'SELECT "index", text FROM text_data WHERE category = 32'
+            )
+            if text
+        }
+        instance_cols = ", ".join(f"race_instance_id_{i}" for i in range(1, 9))
+        saddle_rows = con.execute(
+            f"SELECT id, {instance_cols} FROM single_mode_wins_saddle"
+        ).fetchall()
+    # Empty reads must not clobber committed data (see build_relations).
+    if not saddle_rows or not instance_race or not g1_ids:
+        print("races.json: master.mdb race tables empty, kept committed file")
+        return None
+    # Canonical id per G1: lowest race id among same-named rows.
+    by_race_name: dict[str, list[int]] = {}
+    for rid in g1_ids:
+        by_race_name.setdefault(all_race_names.get(rid, f"Race {rid}"), []).append(rid)
+    canonical = {rid: min(ids) for ids in by_race_name.values() for rid in ids}
+
+    saddles: dict[str, dict[str, Any]] = {}
+    used_race_ids: set[int] = set()
+    for row in saddle_rows:
+        saddle_id, instances = row[0], row[1:]
+        race_ids = sorted(
+            {
+                canonical[instance_race[inst]]
+                for inst in instances
+                if inst and instance_race.get(inst) in g1_ids
+            }
+        )
+        used_race_ids.update(race_ids)
+        saddles[str(saddle_id)] = {
+            "name": saddle_names.get(saddle_id, f"Saddle {saddle_id}"),
+            "g1_race_ids": race_ids,
+        }
+    # Names only for races some saddle can actually reference — display data
+    # for the shared-win breakdown, not a full race catalog.
+    race_names = {
+        str(rid): all_race_names.get(rid, f"Race {rid}") for rid in sorted(used_race_ids)
+    }
+    # Canonicalization keys on the race NAME, so an unnamed grade-100 row
+    # (e.g. a new venue variant shipped before its localized text) can't
+    # collapse into its group and would silently under-count cross-venue
+    # wins. The committed-data test can't see this — fallback names are
+    # unique by construction — so the regen operator is the tripwire.
+    unnamed = sorted(rid for rid in used_race_ids if rid not in all_race_names)
+    if unnamed:
+        print(
+            f"races.json: WARNING saddle-referenced G1 race ids {unnamed} have no"
+            " category-32 name — check for un-localized venue variants that"
+            " should collapse with an existing race"
+        )
+    return {"saddles": saddles, "race_names": race_names}
 
 
 def fetch(url: str, api_key: str) -> bytes:
@@ -134,10 +298,57 @@ def load_api_key(args: argparse.Namespace) -> str:
     sys.exit("No API key: set UMA_MOE_API_KEY in backend/.env or pass --api-key-file")
 
 
+def collect_mdb_outputs() -> list[tuple[str, Any]]:
+    """The master.mdb-only files. Builders keep the committed copy (and
+    print why) whenever the client or its tables aren't usable."""
+    return [
+        (filename, payload)
+        for filename, payload in (
+            ("relations.json", build_relations()),
+            ("races.json", build_races()),
+        )
+        if payload is not None
+    ]
+
+
+def payload_summary(filename: str, payload: Any) -> str:
+    """The two mdb files are nested wrappers — count their real contents so
+    a truncated build can't print the same line as a healthy one."""
+    if filename == "relations.json":
+        return f"{len(payload['points'])} relation groups"
+    if filename == "races.json":
+        return f"{len(payload['saddles'])} saddles"
+    return f"{len(payload)} entries"
+
+
+def write_outputs(outputs: list[tuple[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for filename, payload in outputs:
+        out = DATA_DIR / filename
+        out.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(f"wrote {payload_summary(filename, payload)} -> {out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key-file", help="path to a file holding the uma.moe API key")
-    api_key = load_api_key(parser.parse_args())
+    parser.add_argument(
+        "--mdb-only",
+        action="store_true",
+        help="regenerate only the master.mdb-sourced files; no API key or network",
+    )
+    args = parser.parse_args()
+
+    # relations.json/races.json never touch the network — a game-patch
+    # affinity refresh must not be gated on a uma.moe key being configured.
+    if args.mdb_only:
+        write_outputs(collect_mdb_outputs())
+        return
+
+    api_key = load_api_key(args)
 
     manifest = fetch_json(f"{BASE_URL}/manifest.json", api_key)
     print(f"manifest version: {manifest.get('version')}")
@@ -272,18 +483,14 @@ def main() -> None:
             cast(int, entry["rarity"] or 0) >= 3 or 900000 <= int(sid) <= 999999
         )
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    for filename, payload in (
-        ("cards.json", cards),
-        ("factors.json", factors),
-        ("skills.json", skills),
-    ):
-        out = DATA_DIR / filename
-        out.write_text(
-            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        print(f"wrote {len(payload)} entries -> {out}")
+    write_outputs(
+        [
+            ("cards.json", cards),
+            ("factors.json", factors),
+            ("skills.json", skills),
+            *collect_mdb_outputs(),
+        ]
+    )
 
 
 if __name__ == "__main__":

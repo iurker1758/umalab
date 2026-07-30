@@ -119,6 +119,18 @@ class TagIn(BaseModel):
     tag: str = Field(min_length=1, max_length=40)
 
 
+class BulkTagIn(BaseModel):
+    """One mark assignment applied to many veterans (DECISIONS.md #20).
+    `tag` is required: an explicit null means clear — the selection's marks
+    are removed. No default, so a body that omits (or misspells) the key
+    422s instead of silently selecting the destructive clear branch."""
+
+    # 5000 is far beyond any roster the game can hold, even fully expanded —
+    # the bound only exists to stop a runaway request body.
+    trained_chara_ids: list[int] = Field(min_length=1, max_length=5000)
+    tag: str | None = Field(min_length=1, max_length=40)
+
+
 class CatalogEntryOut(BaseModel):
     chara_id: int
     name: str

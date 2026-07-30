@@ -132,14 +132,49 @@ button:disabled { opacity: 0.6; cursor: default; }
 .mark-icon { width: 24px; height: 24px; object-fit: contain; vertical-align: middle; }
 .mark-fallback { display: inline-block; min-width: 20px; text-align: center; font-size: 0.8rem; opacity: 0.8; }
 
-/* Bottom-right dock holding the Filters pill and the sort pill. */
-.pill-dock { position: fixed; bottom: 1rem; right: 1rem; z-index: 5; display: flex; align-items: center; gap: 0.5rem; }
+/* Bottom-right dock holding the Filters pill and the sort pill. Wraps
+   right-aligned when it outgrows the viewport (the select dock's six pills
+   on a phone) instead of running off-screen. */
+/* right aligns to the grid column's edge on wide screens (the .app column
+   is 1100px content + centered), falling back to the viewport corner when
+   the column fills the screen — keeps the dock beside the cards it filters,
+   matching the batch dock's in-column alignment. */
+.pill-dock { position: fixed; bottom: 1rem; right: max(1rem, calc((100% - 1100px) / 2)); z-index: 5; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; max-width: calc(100vw - 2rem); }
 .filter-float { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; background: #161c23; color: inherit; border: 1px solid #2a3340; border-radius: 999px; padding: 0.55rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
-.filter-float:hover { border-color: #2a76c9; }
+.filter-float:not(:disabled):hover { border-color: #2a76c9; }
 .filter-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.25rem; height: 1.25rem; border-radius: 999px; background: #2a76c9; font-size: 0.75rem; font-weight: 700; padding: 0 0.3rem; }
 
+/* Batch Favorite's own home, apart from the Filters/sort dock: a sticky
+   right-aligned row above the grid. In selection mode it swaps to
+   Cancel / target chip / count / All / None / Confirm. */
+/* pointer-events: the sticky row spans the full column, so without the
+   none/auto pair its transparent box would sit over the grid and eat card
+   clicks in a ~40px band whenever the dock is stuck. top clears the fixed
+   error toast (same corner, z 30) so a failed confirm's retry controls
+   stay clickable under the message. */
+.batch-dock { position: sticky; top: 3.25rem; z-index: 6; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; pointer-events: none; }
+.batch-dock > * { pointer-events: auto; }
+.batch-dock .filter-float { padding: 0.55rem 0.8rem; }
+.select-count { font-size: 0.9rem; font-variant-numeric: tabular-nums; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.55rem 0.8rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); color: inherit; }
+button.target-chip { cursor: pointer; line-height: 0; }
+button.target-chip:not(:disabled):hover { border-color: #2a76c9; }
+.bulk-mark-anchor { position: relative; display: inline-flex; }
+/* The batch dock anchors at the top, so its picker opens downward. */
+.mark-popup.dock-popup { top: calc(100% + 0.5rem); left: auto; right: 0; }
+.mark-caption { grid-column: 1 / -1; font-size: 0.75rem; opacity: 0.75; line-height: 1.2; padding: 0.1rem 0.15rem 0.15rem; white-space: nowrap; }
+
+/* Selection ring on every eligible card while selecting; filled once
+   picked. Ineligible cards (already carrying the batch target) dim out. */
+.card.selected { border-color: #2a76c9; background: #16283d; }
+.card.select-disabled { opacity: 0.4; cursor: default; }
+.card.select-disabled:hover { background: #161c23; border-color: #1f2833; }
+/* The dock chip showing which mark the batch will apply (✕ = clearing). */
+.target-chip { display: inline-flex; align-items: center; padding: 0.4rem 0.55rem; }
+.card-check { position: absolute; bottom: -5px; right: -5px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #161c23; border: 1px solid #4a5462; color: transparent; font-size: 0.7rem; line-height: 1; }
+.card.selected .card-check { background: #2a76c9; border-color: #2a76c9; color: #fff; }
+
 .filter-backdrop { position: fixed; inset: 0; z-index: 7; }
-.filter-panel { position: fixed; right: 1rem; bottom: 4.5rem; z-index: 8; box-sizing: border-box; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
+.filter-panel { position: fixed; right: max(1rem, calc((100% - 1100px) / 2)); bottom: 4.5rem; z-index: 8; box-sizing: border-box; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
 .filter-chip-row { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
 .filter-group-label { width: 4.2rem; flex-shrink: 0; font-size: 0.8rem; opacity: 0.6; }
 .uma-popout-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.4); }
@@ -192,6 +227,10 @@ button:disabled { opacity: 0.6; cursor: default; }
   .card-rank { font-size: 0.58rem; padding: 1px 4px; top: -4px; right: -4px; }
   .card-badge { top: -3px; left: -3px; }
   .card-badge .mark-icon { width: 17px; height: 17px; }
+  .card-check { width: 16px; height: 16px; font-size: 0.6rem; bottom: -4px; right: -4px; }
+  /* Denser batch-dock pills so six of them usually hold one row. */
+  .batch-dock { gap: 0.35rem; }
+  .batch-dock .filter-float, .batch-dock .select-count { padding: 0.45rem 0.6rem; font-size: 0.8rem; }
   .card-fallback { font-size: 1.5rem; }
   .spark-strip { gap: 2px; }
   .spark-label { font-size: 0.5rem; padding: 0.5px 2.5px; }

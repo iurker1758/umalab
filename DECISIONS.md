@@ -562,3 +562,63 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** an offline/PWA designer story would revive
   client-side scoring (as a port kept in lockstep by shared test
   vectors); multi-device editing would earn drafts a home.
+
+## 20. Bulk mark assignment gets its own endpoint
+
+- **Requirements:** the roster page's selection mode marks or clears
+  dozens of veterans in one gesture; the result must be all-or-nothing
+  (a half-marked selection after a failure is worse than a clean retry)
+  and cheap enough to run against a Raspberry Pi backend.
+- **Choice:** `POST /api/veterans/tags/bulk` taking
+  `{trained_chara_ids, tag}` where `tag: null` means clear. `tag` is
+  required with no default: clears are destructive and marks aren't in
+  the extractor dump, so only an explicit null selects that branch — a
+  body that omits or misspells the key 422s (review finding). One
+  transaction: a multi-row upsert on the existing one-mark-per-veteran
+  constraint (#9), or a single `DELETE ... IN` for clears; `updated`
+  reports rows actually touched, not the request size. Any id missing
+  from the current roster 404s the whole request — the client refreshes
+  and retries against fresh state, mirroring the single-tag endpoint's
+  contract.
+- **Rejected:** looping the per-veteran `POST /tags` from the client —
+  N round-trips with no atomicity, partial failure leaves the roster
+  half-marked with no honest way to report it, and each response would
+  race the final refresh; ignore-missing semantics (apply to the
+  intersection) — silently marking fewer veterans than selected is the
+  same dishonesty in miniature, and the stale-selection case it would
+  paper over (a re-import between fetch and apply) is exactly when the
+  user should be looking at fresh data.
+- **Would change my mind:** free-text tags or multi-tag veterans (#9
+  reversal) — the body shape and upsert both assume one fixed mark id
+  per veteran.
+
+## 21. Batch favorite runs target-first, in its own dock
+
+- **Requirements:** bulk marking should feel like the game's own batch
+  screen (Jason's call after using the select-first version); the
+  destructive cases — overwriting hand-assigned marks, clearing en
+  masse — need visibility before the write; the controls must not
+  crowd the Filters/sort dock.
+- **Choice:** the game's order — Batch Favorite opens the 16-tile
+  picker first (✕ = clear mode), then a selection pass over the grid,
+  then Confirm. The effective selection is `picked ∩ current filter ∩
+  eligible`, where eligible means the confirm would change the row
+  (doesn't carry the target; in clear mode, carries anything);
+  ineligible cards dim and ignore taps. The dock's count pill doubles
+  as the safety readout — "replaces N" when picks carry other marks,
+  and a plain-language line when nothing is eligible (an all-dimmed
+  grid otherwise reads as a broken page). The target chip re-opens the
+  picker with the selection kept, so a wrong target never costs a
+  hand-built selection. The controls live in a sticky top-right row
+  (pointer-events pass-through outside the pills) apart from the
+  Filters/sort dock, which stays usable mid-selection but freezes with
+  everything else during the in-flight confirm.
+- **Rejected:** select-first with the mark chosen at confirm time —
+  built, then replaced for game parity; a blocking confirm dialog —
+  the readout puts the same information in view without a modal in a
+  single-user tool; letting ineligible cards toggle anyway — a pick
+  that provably changes nothing only pads the payload.
+- **Would change my mind:** an undo/history feature would soften the
+  destructive-overwrite concern enough to drop the replaces readout;
+  multi-mark veterans (#9 reversal) would invalidate the eligibility
+  rule outright.

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { markLabel } from "../domain";
 
 // One 404 per mark id is enough — remember which ids lack art so later
 // MarkIcon mounts go straight to the numbered fallback instead of re-firing
@@ -13,7 +14,7 @@ export function MarkIcon({ id }: { id: string }) {
   // must re-derive, or one missing PNG sticks to every mark shown after it.
   const [state, setState] = useState({ id, failed: missingMarkArt.has(id) });
   if (state.id !== id) setState({ id, failed: missingMarkArt.has(id) });
-  const label = `Mark ${Number(id.slice(-2))}`;
+  const label = markLabel(id);
   return state.failed ? (
     <span className="mark-fallback" title={label}>
       {Number(id.slice(-2))}

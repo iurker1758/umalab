@@ -188,6 +188,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag }),
     }).then((r) => json<{ trained_chara_id: number; tag: string }>(r)),
+  // tag null = clear the selection's marks. All-or-nothing on the backend
+  // (DECISIONS.md #20): a stale selection 404s instead of half-applying.
+  bulkTag: (trainedCharaIds: number[], tag: string | null) =>
+    fetch("/api/veterans/tags/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trained_chara_ids: trainedCharaIds, tag }),
+    }).then((r) => json<{ updated: number; tag: string | null }>(r)),
   removeTag: (trainedCharaId: number, tag: string) =>
     fetch(`/api/veterans/${trainedCharaId}/tags/${encodeURIComponent(tag)}`, {
       method: "DELETE",

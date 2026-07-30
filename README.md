@@ -107,6 +107,9 @@ characters and game data are the property of Cygames, Inc.
   inheritance-affinity algorithm structure in `app/affinity.py` is adapted
   from its `VeteransHelper.ts` (with constants updated for the 2026 Global
   affinity rework).
+- [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0) — most of the
+  favorite-mark icons in `frontend/src/assets/marks/` are recolored
+  derivatives of its glyphs (DECISIONS.md #22).
 
 ## How this was built
 

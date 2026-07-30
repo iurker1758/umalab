@@ -628,20 +628,29 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Requirements:** mark icons render in badges, pickers, chips and the
   modal; the eventual deployment serves the frontend publicly from
   Cloudflare; fresh clones should work without an extraction step.
-- **Choice:** hand-drawn original SVGs (one per mark, same visual
-  vocabulary as the game's set: food, card suits, shoe colors,
-  handshake) committed under `frontend/src/assets/marks/` and bundled
-  by Vite via the `MARK_ART` map. This partially reverses #10 for
-  marks only: own-made art is committable, so the extraction tool, the
-  per-id 404 tracking, and the fresh-clone fallback path all go away —
-  `MarkIcon` keeps just the numbered chip for ids outside the
-  committed set. Character portraits stay on #10's fetch-per-clone
-  model; they are the game's art and never committable.
+- **Choice:** committed SVGs under `frontend/src/assets/marks/`,
+  bundled by Vite via the `MARK_ART` map: 13 derived from Twemoji
+  (CC-BY 4.0 — attribution in each file and the README) recolored to
+  the game's mark palette (blue spade/club, five shoe colorways, blue
+  rice bowl), plus two hand-drawn originals where Twemoji has no
+  matching subject (the juice glass and the chocolate cake). Same
+  visual vocabulary as the game's set, audited tile-by-tile against
+  design.u-ma.org's badges. This partially reverses #10 for marks
+  only: committable art means the extraction tool, the per-id 404
+  tracking, and the fresh-clone fallback path all go away — `MarkIcon`
+  keeps just the numbered chip for ids outside the committed set.
+  Character portraits stay on #10's fetch-per-clone model; they are
+  the game's art and never committable.
 - **Rejected:** keeping the extracted PNGs — serving the game's
   copyrighted sprites from a public deployment is a worse legal
   posture than fan-tool local use, and the gitignored art made every
-  clone start with numbered placeholders; an icon font / sprite sheet
-  — 15 tiny files bundled by Vite need no packing infrastructure.
+  clone start with numbered placeholders; a fully hand-drawn set —
+  built first, but the organic glyphs (sneakers, clasped hands) kept
+  reading as blobs at badge size next to professionally drawn art;
+  AI-generating the set — output is raster or needs vector tracing,
+  with no quality or license guarantee over an established CC-BY set;
+  an icon font / sprite sheet — 15 tiny files bundled by Vite need no
+  packing infrastructure.
 - **Would change my mind:** the game exposing officially licensed
   assets for fan tools — parity with in-game art beats our
   approximations; dozens more marks would revisit per-file imports.

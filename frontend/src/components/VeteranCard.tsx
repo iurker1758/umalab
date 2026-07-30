@@ -31,18 +31,30 @@ export function VeteranCard({
   v,
   icon,
   showSparks,
+  selectMode = false,
+  selected = false,
   onOpen,
 }: {
   v: Veteran;
   icon: string | undefined;
   showSparks: boolean;
+  // In selection mode a click toggles membership instead of opening the
+  // modal; the caller owns that branch — the card just renders the state.
+  selectMode?: boolean;
+  selected?: boolean;
   onOpen: () => void;
 }) {
   const [artFailed, setArtFailed] = useState(false);
   const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
   const tier = rankTier(v.rank_score);
   return (
-    <button className="card" title={title} aria-label={title} onClick={onOpen}>
+    <button
+      className={selected ? "card selected" : "card"}
+      title={title}
+      aria-label={title}
+      aria-pressed={selectMode ? selected : undefined}
+      onClick={onOpen}
+    >
       <span className="card-art">
         {icon && !artFailed ? (
           <img
@@ -70,6 +82,13 @@ export function VeteranCard({
         >
           {tier}
         </span>
+        {selectMode && (
+          // Every card grows the ring in selection mode so unmarked cards
+          // still read as selectable targets; only selected ones fill it.
+          <span className="card-check" aria-hidden="true">
+            ✓
+          </span>
+        )}
       </span>
       {showSparks ? (
         <SparkStrip v={v} />

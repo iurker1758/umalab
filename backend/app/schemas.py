@@ -119,6 +119,16 @@ class TagIn(BaseModel):
     tag: str = Field(min_length=1, max_length=40)
 
 
+class BulkTagIn(BaseModel):
+    """One mark assignment applied to many veterans (DECISIONS.md #20).
+    `tag: None` means clear — the selection's marks are removed."""
+
+    # 1000 comfortably exceeds any roster (the game caps veteran storage well
+    # below it) while bounding a runaway request body.
+    trained_chara_ids: list[int] = Field(min_length=1, max_length=1000)
+    tag: str | None = Field(default=None, min_length=1, max_length=40)
+
+
 class CatalogEntryOut(BaseModel):
     chara_id: int
     name: str

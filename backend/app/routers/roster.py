@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import ingest, reference
 from ..database import get_session
 from ..models import Import, Veteran, VeteranTag
-from ..schemas import ImportOut, TagIn, VeteranOut
+from ..schemas import BulkTagIn, ImportOut, TagIn, VeteranOut
 
 router = APIRouter(prefix="/api")
 
@@ -81,6 +81,49 @@ async def list_veterans(session: AsyncSession = Depends(get_session)):
 
 
 # ---------- tags ----------
+
+@router.post("/veterans/tags/bulk")
+async def bulk_tag(
+    body: BulkTagIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Assign one mark to (or clear the marks of) many veterans in a single
+    transaction (DECISIONS.md #20). All-or-nothing: any id missing from the
+    roster fails the whole request, so a client selecting against a stale
+    snapshot can't half-apply — it refreshes and retries instead.
+    """
+    tag = body.tag.strip() if body.tag is not None else None
+    if tag is not None and tag not in VALID_TAGS:
+        raise HTTPException(400, f"unknown tag id {tag!r} — tags are fixed mark ids")
+    ids = set(body.trained_chara_ids)
+    known = set(
+        await session.scalars(
+            select(Veteran.trained_chara_id).where(Veteran.trained_chara_id.in_(ids))
+        )
+    )
+    missing = len(ids - known)
+    if missing:
+        raise HTTPException(
+            404,
+            f"{missing} selected veteran(s) are no longer in the roster — "
+            "refresh and try again",
+        )
+    if tag is None:
+        await session.execute(
+            delete(VeteranTag).where(VeteranTag.trained_chara_id.in_(ids))
+        )
+    else:
+        stmt = pg_insert(VeteranTag).values(
+            [{"trained_chara_id": i, "tag": tag} for i in sorted(ids)]
+        )
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_veteran_tag_trained_chara_id",
+            set_={"tag": stmt.excluded.tag},
+        )
+        await session.execute(stmt)
+    await session.commit()
+    return {"updated": len(ids), "tag": tag}
+
 
 @router.post("/veterans/{trained_chara_id}/tags", status_code=201)
 async def add_tag(

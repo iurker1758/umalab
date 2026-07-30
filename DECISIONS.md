@@ -562,3 +562,28 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** an offline/PWA designer story would revive
   client-side scoring (as a port kept in lockstep by shared test
   vectors); multi-device editing would earn drafts a home.
+
+## 20. Bulk mark assignment gets its own endpoint
+
+- **Requirements:** the roster page's selection mode marks or clears
+  dozens of veterans in one gesture; the result must be all-or-nothing
+  (a half-marked selection after a failure is worse than a clean retry)
+  and cheap enough to run against a Raspberry Pi backend.
+- **Choice:** `POST /api/veterans/tags/bulk` taking
+  `{trained_chara_ids, tag}` where `tag: null` means clear. One
+  transaction: a multi-row upsert on the existing one-mark-per-veteran
+  constraint (#9), or a single `DELETE ... IN` for clears. Any id
+  missing from the current roster 404s the whole request — the client
+  refreshes and retries against fresh state, mirroring the single-tag
+  endpoint's contract.
+- **Rejected:** looping the per-veteran `POST /tags` from the client —
+  N round-trips with no atomicity, partial failure leaves the roster
+  half-marked with no honest way to report it, and each response would
+  race the final refresh; ignore-missing semantics (apply to the
+  intersection) — silently marking fewer veterans than selected is the
+  same dishonesty in miniature, and the stale-selection case it would
+  paper over (a re-import between fetch and apply) is exactly when the
+  user should be looking at fresh data.
+- **Would change my mind:** free-text tags or multi-tag veterans (#9
+  reversal) — the body shape and upsert both assume one fixed mark id
+  per veteran.

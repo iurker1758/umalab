@@ -138,6 +138,20 @@ button:disabled { opacity: 0.6; cursor: default; }
 .filter-float:hover { border-color: #2a76c9; }
 .filter-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.25rem; height: 1.25rem; border-radius: 999px; background: #2a76c9; font-size: 0.75rem; font-weight: 700; padding: 0 0.3rem; }
 
+/* Selection mode: the dock swaps to Cancel / count / All / None / Mark. */
+.select-dock { flex-wrap: wrap; justify-content: flex-end; }
+.select-dock .filter-float { padding: 0.55rem 0.8rem; }
+.filter-float:disabled, .filter-float:disabled:hover { border-color: #2a3340; opacity: 0.5; cursor: default; }
+.select-count { font-size: 0.9rem; font-variant-numeric: tabular-nums; background: #161c23; border: 1px solid #2a3340; border-radius: 999px; padding: 0.55rem 0.8rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+.bulk-mark-anchor { position: relative; display: inline-flex; }
+/* The dock's picker opens upward so it never runs off the viewport bottom. */
+.mark-popup.dock-popup { top: auto; bottom: calc(100% + 0.5rem); left: auto; right: 0; }
+
+/* Selection ring on every card while selecting; filled once picked. */
+.card.selected { border-color: #2a76c9; background: #16283d; }
+.card-check { position: absolute; bottom: -5px; right: -5px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #161c23; border: 1px solid #4a5462; color: transparent; font-size: 0.7rem; line-height: 1; }
+.card.selected .card-check { background: #2a76c9; border-color: #2a76c9; color: #fff; }
+
 .filter-backdrop { position: fixed; inset: 0; z-index: 7; }
 .filter-panel { position: fixed; right: 1rem; bottom: 4.5rem; z-index: 8; box-sizing: border-box; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
 .filter-chip-row { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
@@ -192,6 +206,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   .card-rank { font-size: 0.58rem; padding: 1px 4px; top: -4px; right: -4px; }
   .card-badge { top: -3px; left: -3px; }
   .card-badge .mark-icon { width: 17px; height: 17px; }
+  .card-check { width: 16px; height: 16px; font-size: 0.6rem; bottom: -4px; right: -4px; }
   .card-fallback { font-size: 1.5rem; }
   .spark-strip { gap: 2px; }
   .spark-label { font-size: 0.5rem; padding: 0.5px 2.5px; }

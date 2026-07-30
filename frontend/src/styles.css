@@ -135,7 +135,11 @@ button:disabled { opacity: 0.6; cursor: default; }
 /* Bottom-right dock holding the Filters pill and the sort pill. Wraps
    right-aligned when it outgrows the viewport (the select dock's six pills
    on a phone) instead of running off-screen. */
-.pill-dock { position: fixed; bottom: 1rem; right: 1rem; z-index: 5; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; max-width: calc(100vw - 2rem); }
+/* right aligns to the grid column's edge on wide screens (the .app column
+   is 1100px content + centered), falling back to the viewport corner when
+   the column fills the screen — keeps the dock beside the cards it filters,
+   matching the batch dock's in-column alignment. */
+.pill-dock { position: fixed; bottom: 1rem; right: max(1rem, calc((100vw - 1100px) / 2)); z-index: 5; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; max-width: calc(100vw - 2rem); }
 .filter-float { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; background: #161c23; color: inherit; border: 1px solid #2a3340; border-radius: 999px; padding: 0.55rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
 .filter-float:not(:disabled):hover { border-color: #2a76c9; }
 .filter-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.25rem; height: 1.25rem; border-radius: 999px; background: #2a76c9; font-size: 0.75rem; font-weight: 700; padding: 0 0.3rem; }
@@ -162,7 +166,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .card.selected .card-check { background: #2a76c9; border-color: #2a76c9; color: #fff; }
 
 .filter-backdrop { position: fixed; inset: 0; z-index: 7; }
-.filter-panel { position: fixed; right: 1rem; bottom: 4.5rem; z-index: 8; box-sizing: border-box; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
+.filter-panel { position: fixed; right: max(1rem, calc((100vw - 1100px) / 2)); bottom: 4.5rem; z-index: 8; box-sizing: border-box; width: min(640px, calc(100vw - 2rem)); max-height: min(70vh, 34rem); overflow-y: auto; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
 .filter-chip-row { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
 .filter-group-label { width: 4.2rem; flex-shrink: 0; font-size: 0.8rem; opacity: 0.6; }
 .uma-popout-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.4); }

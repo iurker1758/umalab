@@ -20,6 +20,20 @@ the game's own names/rarities) and, for gameless regenerations, from the
 factor table and the previous committed file — see the pass comments in
 main(). The unique flag is normalized locally (uma.moe's is inconsistent).
 
+relations.json: the succession affinity tables (relation groups, their
+points, and the rank bands behind the in-game △/○/◎ symbols) — these exist
+on no fan API, so they come straight from the local client's master.mdb
+(succession_relation, succession_relation_member, succession_relation_rank).
+
+races.json: win-saddle id -> {name, g1_race_ids} plus race_id -> name, for
+the shared-G1-win affinity bonus (single_mode_wins_saddle expanded through
+race_instance to race, G1 = grade 100; names from text_data categories 111
+and 32). Composite saddles (e.g. Classic Triple Crown) expand to all their
+component races.
+
+relations.json and races.json are skipped (previous committed files kept)
+when the game isn't installed, like card titles.
+
 All outputs are committed; rerun this manually when the game updates
 (DECISIONS.md #6).
 
@@ -97,6 +111,105 @@ def load_mdb_skills() -> dict[str, dict[str, Any]]:
         for sid, text, rarity in rows
         if text
     }
+
+
+def build_relations() -> dict[str, Any] | None:
+    """The succession affinity tables, verbatim from the local client.
+
+    None when the game isn't installed — the caller keeps the committed
+    file, same posture as card titles: a gameless regeneration never wipes
+    data only the client can provide.
+    """
+    if not MASTER_MDB.exists():
+        return None
+    con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
+    try:
+        points = {
+            str(rt): pt
+            for rt, pt in con.execute(
+                "SELECT relation_type, relation_point FROM succession_relation"
+            )
+        }
+        members: dict[str, list[int]] = {}
+        for rt, cid in con.execute(
+            "SELECT relation_type, chara_id FROM succession_relation_member"
+            " ORDER BY relation_type, chara_id"
+        ):
+            members.setdefault(str(rt), []).append(cid)
+        rank_rows = con.execute(
+            "SELECT relation_rank, rank_value_max FROM succession_relation_rank"
+            " ORDER BY relation_rank"
+        ).fetchall()
+    finally:
+        con.close()
+    # relation_rank 1/2/3 are the game's △/○/◎ bands; the symbols themselves
+    # aren't in the DB, only on screen.
+    symbols = {1: "△", 2: "○", 3: "◎"}
+    ranks = [{"max": mx, "symbol": symbols[rank]} for rank, mx in rank_rows]
+    return {"ranks": ranks, "points": points, "members": members}
+
+
+def build_races() -> dict[str, Any] | None:
+    """Win-saddle -> G1 races mapping for the shared-win affinity bonus.
+
+    Saddles are what a dump's win_saddle_id_array holds; composites expand to
+    every component race. Non-G1 components are dropped (grade 100 = G1 —
+    only shared G1 wins score points under the 2026-06-24 Global system),
+    which can leave a saddle's g1_race_ids empty; it's kept for its name.
+    None when the game isn't installed (committed file kept).
+    """
+    if not MASTER_MDB.exists():
+        return None
+    con = sqlite3.connect(f"file:{MASTER_MDB}?mode=ro", uri=True)
+    try:
+        saddle_names = {
+            idx: " ".join(str(text).split())
+            for idx, text in con.execute(
+                'SELECT "index", text FROM text_data WHERE category = 111'
+            )
+            if text
+        }
+        instance_race = dict(
+            con.execute("SELECT id, race_id FROM race_instance").fetchall()
+        )
+        g1_ids = {
+            rid for (rid,) in con.execute("SELECT id FROM race WHERE grade = 100")
+        }
+        all_race_names = {
+            idx: " ".join(str(text).split())
+            for idx, text in con.execute(
+                'SELECT "index", text FROM text_data WHERE category = 32'
+            )
+            if text
+        }
+        instance_cols = ", ".join(f"race_instance_id_{i}" for i in range(1, 9))
+        saddle_rows = con.execute(
+            f"SELECT id, {instance_cols} FROM single_mode_wins_saddle"
+        ).fetchall()
+    finally:
+        con.close()
+    saddles: dict[str, dict[str, Any]] = {}
+    used_race_ids: set[int] = set()
+    for row in saddle_rows:
+        saddle_id, instances = row[0], row[1:]
+        race_ids = sorted(
+            {
+                instance_race[inst]
+                for inst in instances
+                if inst and instance_race.get(inst) in g1_ids
+            }
+        )
+        used_race_ids.update(race_ids)
+        saddles[str(saddle_id)] = {
+            "name": saddle_names.get(saddle_id, f"Saddle {saddle_id}"),
+            "g1_race_ids": race_ids,
+        }
+    # Names only for races some saddle can actually reference — display data
+    # for the shared-win breakdown, not a full race catalog.
+    race_names = {
+        str(rid): all_race_names.get(rid, f"Race {rid}") for rid in sorted(used_race_ids)
+    }
+    return {"saddles": saddles, "race_names": race_names}
 
 
 def fetch(url: str, api_key: str) -> bytes:
@@ -272,11 +385,23 @@ def main() -> None:
             cast(int, entry["rarity"] or 0) >= 3 or 900000 <= int(sid) <= 999999
         )
 
+    # master.mdb-only files: skip (keep the committed copy) without the game.
+    mdb_outputs: list[tuple[str, Any]] = []
+    for filename, payload in (
+        ("relations.json", build_relations()),
+        ("races.json", build_races()),
+    ):
+        if payload is None:
+            print(f"{filename}: master.mdb not found, kept committed file")
+        else:
+            mdb_outputs.append((filename, payload))
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     for filename, payload in (
         ("cards.json", cards),
         ("factors.json", factors),
         ("skills.json", skills),
+        *mdb_outputs,
     ):
         out = DATA_DIR / filename
         out.write_text(

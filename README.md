@@ -101,6 +101,10 @@ characters and game data are the property of Cygames, Inc.
   local game client.
 - [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — the inspiration
   for the planned inheritance-blueprint designer.
+- [ayaliz/hakuraku](https://github.com/ayaliz/hakuraku) (MIT) — the
+  inheritance-affinity algorithm structure in `app/affinity.py` is adapted
+  from its `VeteransHelper.ts` (with constants updated for the 2026 Global
+  affinity rework).
 
 ## How this was built
 

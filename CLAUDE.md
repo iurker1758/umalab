@@ -33,9 +33,11 @@ Backend (from `backend/`, venv in `.venv/`):
 - Character icons: `python scripts/fetch_icons.py` (no key) →
   `frontend/public/icons/` — gitignored game art, fetched per clone/update,
   never committed (DECISIONS.md #10)
-- Favorite-mark icons (tag badges): extracted into `icons/marks/`. Tag ids live in
-  `app/data/tag_icons.json` (committed) and must stay in sync with
-  `MARK_IDS` in `frontend/src/domain.ts`
+- Favorite-mark icons (tag badges): original SVGs committed in
+  `frontend/src/assets/marks/` (DECISIONS.md #22 — not game art, no fetch
+  step). Tag ids live in `app/data/tag_icons.json` (committed) and must stay
+  in sync with `MARK_IDS`/`MARK_LABELS` in `frontend/src/domain.ts` and the
+  `MARK_ART` map in `src/assets/marks/index.ts`
 
 Frontend (from `frontend/`):
 

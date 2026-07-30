@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import ForeignKey, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,9 +62,36 @@ class Veteran(Base):
     proper_running_style_sashi: Mapped[int]
     proper_running_style_oikomi: Mapped[int]
     register_time: Mapped[str] = mapped_column(String(19))
+    # Raw won-saddle ids (the dump's win_saddle_id_array) — expanded to G1
+    # race sets at scoring time by app/affinity.py, never stored decoded.
+    # The server_default keeps rows from pre-win-capture imports valid.
+    win_saddles: Mapped[list[int]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb")
+    )
     factors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     skills: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     lineage: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+
+
+class Blueprint(Base):
+    """A saved inheritance design (DECISIONS.md #16). `slots` maps the six
+    lineage slot ids (p1/p2/g11/g12/g21/g22, absent or null when unfilled) to
+    slot objects. Roster slots reference veterans by trained_chara_id — stable
+    across full-replace imports, same reasoning as veteran_tags (#9) — and
+    every slot snapshots chara_id/card_id, so a slot whose veteran left the
+    roster still displays, degraded to a catalog-theoretical pick. Slots are
+    never pruned to match the current roster.
+    """
+    __tablename__ = "blueprints"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    trainee_chara_id: Mapped[int | None]
+    slots: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
 
 
 class VeteranTag(Base):

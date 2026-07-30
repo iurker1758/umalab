@@ -14,6 +14,11 @@ white keys are skill_id // 10).
 `succession_chara_array` is the full 6-slot lineage: position_id 10/20 are
 the parents; 11/12 and 21/22 are each parent's parents.
 
+Won races come from `win_saddle_id_array` (raw saddle ids, kept as-is for
+app/affinity.py's win bonus), present on the veteran and every lineage
+member. The scalar `wins` count is NOT a substitute: the game backfilled
+saddle arrays for all veterans but left `wins` at 0 for pre-Dec-2025 ones.
+
 Reference dicts (cards, factors) are passed in so tests can use synthetic
 fixtures.
 """
@@ -24,6 +29,8 @@ from typing import Any, cast
 from .reference import FACTOR_TYPE_KINDS, Card, FactorInfo
 
 PARENT_POSITIONS = (10, 20)
+
+WIN_SADDLE_FIELD = "win_saddle_id_array"
 
 VETERAN_INT_FIELDS = (
     "card_id",
@@ -116,6 +123,18 @@ def _decode_factor_list(
     return decoded
 
 
+def _parse_win_saddles(record: dict[str, Any], context: str) -> list[int]:
+    # Missing/None degrades to no wins (risk noted in the plan: a dump
+    # variant without the field just loses win bonuses, not the import).
+    entries: Any = record.get(WIN_SADDLE_FIELD) or []
+    if not isinstance(entries, list):
+        raise IngestError(f"{context} has a malformed '{WIN_SADDLE_FIELD}'")
+    for entry in cast("list[Any]", entries):
+        if not isinstance(entry, int):
+            raise IngestError(f"{context} has a non-integer won-saddle id")
+    return cast("list[int]", entries)
+
+
 def _parse_lineage_member(
     member: Any,
     cards: dict[int, Card],
@@ -139,6 +158,7 @@ def _parse_lineage_member(
         "talent_level": member.get("talent_level", 0),
         "rank": member.get("rank", 0),
         "factors": _decode_factor_list(member, cards, factors, context),
+        "win_saddles": _parse_win_saddles(member, context),
     }
 
 
@@ -160,6 +180,7 @@ def parse_veteran(
     fields["name"], fields["outfit"] = card_label(fields["card_id"], cards)
     fields["register_time"] = str(raw.get("register_time") or "")[:19]
     fields["factors"] = _decode_factor_list(raw, cards, factors, context)
+    fields["win_saddles"] = _parse_win_saddles(raw, context)
 
     skills: Any = raw.get("skill_array") or []
     if not isinstance(skills, list):

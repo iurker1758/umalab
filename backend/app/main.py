@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from typing import Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,14 +15,21 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import ingest, reference
+from . import affinity, ingest, reference
 from .database import get_session
-from .models import Import, Veteran, VeteranTag
+from .models import Blueprint, Import, Veteran, VeteranTag
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # ~100 veterans ≈ 1.7 MB; 25 MB is generous headroom
 
 # Tags are a fixed set of favorite-mark icon ids, not free text (DECISIONS.md #9).
 VALID_TAGS = frozenset(reference.TAG_ICONS)
+
+# Built once — the relation reference is static for the process lifetime, and
+# scoring against it is microseconds, so /api/affinity stays stateless
+# (DECISIONS.md #17): no DB reads, no precomputed scores to go stale.
+RELATION_TABLE = affinity.build_relation_table(
+    reference.RELATION_POINTS, reference.RELATION_MEMBERS
+)
 
 app = FastAPI(title="UmaLab")
 
@@ -54,6 +62,8 @@ class LineageMemberOut(BaseModel):
     talent_level: int
     rank: int
     factors: list[FactorOut]
+    # Default covers lineage stored by pre-win-capture imports.
+    win_saddles: list[int] = []
 
 
 class SkillOut(BaseModel):
@@ -105,6 +115,7 @@ class VeteranOut(BaseModel):
     proper_running_style_sashi: int
     proper_running_style_oikomi: int
     register_time: str
+    win_saddles: list[int] = []
     factors: list[FactorOut]
     skills: list[SkillOut]
     lineage: list[LineageMemberOut]
@@ -140,6 +151,130 @@ class ImportOut(BaseModel):
 
 class TagIn(BaseModel):
     tag: str = Field(min_length=1, max_length=40)
+
+
+class CatalogEntryOut(BaseModel):
+    chara_id: int
+    name: str
+    card_ids: list[int]  # sorted; [0] is the base outfit (icon source)
+
+
+class AffinitySlotIn(BaseModel):
+    """A filled blueprint slot: the chara plus its raw won-saddle ids (empty
+    for catalog/theoretical picks — the client already holds real veterans'
+    win_saddles from GET /api/veterans)."""
+
+    chara_id: int
+    win_saddle_ids: list[int] = []
+
+    def to_slot(self) -> affinity.Slot:
+        return affinity.Slot(
+            chara_id=self.chara_id,
+            wins=affinity.g1_wins(self.win_saddle_ids, reference.SADDLES),
+        )
+
+
+class AffinityIn(BaseModel):
+    trainee_chara_id: int
+    p1: AffinitySlotIn | None = None
+    p2: AffinitySlotIn | None = None
+    g11: AffinitySlotIn | None = None
+    g12: AffinitySlotIn | None = None
+    g21: AffinitySlotIn | None = None
+    g22: AffinitySlotIn | None = None
+
+
+class AffinityLinkOut(BaseModel):
+    link: str
+    relation_points: int
+    win_points: int
+
+
+class AffinityOut(BaseModel):
+    total: int
+    symbol: str
+    relation_total: int
+    win_total: int
+    links: list[AffinityLinkOut]
+    p1_affinity: int | None
+    p2_affinity: int | None
+
+
+class BlueprintSlotIn(BaseModel):
+    """One designed lineage slot (DECISIONS.md #16). Every slot snapshots
+    chara_id/card_id; roster and lineage slots additionally reference the
+    backing veteran by trained_chara_id (survives full-replace imports), with
+    position_id saying which lineage member a `lineage` slot came from."""
+
+    source: Literal["catalog", "roster", "lineage"]
+    chara_id: int
+    card_id: int
+    trained_chara_id: int | None = None
+    position_id: int | None = None
+
+    @model_validator(mode="after")
+    def _require_refs(self) -> BlueprintSlotIn:
+        if self.source != "catalog" and self.trained_chara_id is None:
+            raise ValueError(f"a {self.source} slot needs a trained_chara_id")
+        if self.source == "lineage" and self.position_id is None:
+            raise ValueError("a lineage slot needs a position_id")
+        return self
+
+
+class BlueprintSlotsIn(BaseModel):
+    p1: BlueprintSlotIn | None = None
+    p2: BlueprintSlotIn | None = None
+    g11: BlueprintSlotIn | None = None
+    g12: BlueprintSlotIn | None = None
+    g21: BlueprintSlotIn | None = None
+    g22: BlueprintSlotIn | None = None
+
+
+class BlueprintIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    trainee_chara_id: int | None = None
+    slots: BlueprintSlotsIn = BlueprintSlotsIn()
+
+    @model_validator(mode="after")
+    def _validate(self) -> BlueprintIn:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("name must not be blank")
+        # The game's slot rules, so a saved design is always one the parent-
+        # select screen would accept. Partial designs are fine — rules apply
+        # only between filled slots. A grandparent repeating the TRAINEE's
+        # chara is deliberately not rejected: the game allows it (and
+        # app/affinity.py scores it correctly).
+        s = self.slots
+        for parent in (s.p1, s.p2):
+            if (
+                parent is not None
+                and self.trainee_chara_id is not None
+                and parent.chara_id == self.trainee_chara_id
+            ):
+                raise ValueError("a parent can't be the trainee's own character")
+        if s.p1 is not None and s.p2 is not None and s.p1.chara_id == s.p2.chara_id:
+            raise ValueError("the two parents must be different characters")
+        for parent, gps in ((s.p1, (s.g11, s.g12)), (s.p2, (s.g21, s.g22))):
+            for gp in gps:
+                if parent is not None and gp is not None and gp.chara_id == parent.chara_id:
+                    raise ValueError(
+                        "a grandparent can't repeat its own parent's character"
+                    )
+        for a, b in ((s.g11, s.g12), (s.g21, s.g22)):
+            if a is not None and b is not None and a.chara_id == b.chara_id:
+                raise ValueError("a parent's two grandparents must be different")
+        return self
+
+
+class BlueprintOut(BaseModel):
+    id: int
+    name: str
+    trainee_chara_id: int | None
+    slots: BlueprintSlotsIn
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    model_config = {"from_attributes": True}
 
 
 # ---------- imports ----------
@@ -249,3 +384,113 @@ async def remove_tag(
     if row:
         await session.delete(row)
         await session.commit()
+
+
+# ---------- catalog ----------
+
+def _build_catalog() -> list[CatalogEntryOut]:
+    cards_by_chara: dict[int, list[int]] = {}
+    for card_id, card in reference.CARDS.items():
+        cards_by_chara.setdefault(card["chara_id"], []).append(card_id)
+    entries = [
+        CatalogEntryOut(
+            chara_id=chara_id,
+            name=reference.CARDS[card_ids[0]]["name"],
+            card_ids=card_ids,
+        )
+        for chara_id, card_ids in (
+            (cid, sorted(ids)) for cid, ids in cards_by_chara.items()
+        )
+    ]
+    entries.sort(key=lambda entry: (entry.name, entry.chara_id))
+    return entries
+
+
+# Static per process, like the reference data it derives from.
+CATALOG = _build_catalog()
+
+
+@app.get("/api/catalog", response_model=list[CatalogEntryOut])
+async def get_catalog():
+    """Every known character (deduped across outfits) for theoretical slot
+    picks in the blueprint designer."""
+    return CATALOG
+
+
+# ---------- affinity ----------
+
+@app.post("/api/affinity", response_model=AffinityOut)
+async def score_affinity(body: AffinityIn):
+    """Score a (possibly partial) blueprint. Stateless by design (DECISIONS.md
+    #17): slots arrive with their won-saddle ids and are expanded server-side,
+    so nothing here can go stale against the roster. Slot configurations the
+    game would reject score 0 on the offending links rather than erroring —
+    the designer enforces pickability, not this endpoint."""
+    slots = {
+        slot_id: slot.to_slot() if slot is not None else None
+        for slot_id, slot in (
+            ("p1", body.p1), ("p2", body.p2),
+            ("g11", body.g11), ("g12", body.g12),
+            ("g21", body.g21), ("g22", body.g22),
+        )
+    }
+    result = affinity.score_blueprint(RELATION_TABLE, body.trainee_chara_id, **slots)
+    symbol = affinity.symbol_for(result["total"], reference.AFFINITY_RANKS)
+    return AffinityOut.model_validate({"symbol": symbol, **result})
+
+
+# ---------- blueprints ----------
+
+@app.get("/api/blueprints", response_model=list[BlueprintOut])
+async def list_blueprints(session: AsyncSession = Depends(get_session)):
+    return (
+        await session.scalars(
+            select(Blueprint).order_by(Blueprint.updated_at.desc(), Blueprint.id.desc())
+        )
+    ).all()
+
+
+@app.post("/api/blueprints", response_model=BlueprintOut, status_code=201)
+async def create_blueprint(
+    body: BlueprintIn,
+    session: AsyncSession = Depends(get_session),
+):
+    blueprint = Blueprint(
+        name=body.name,
+        trainee_chara_id=body.trainee_chara_id,
+        slots=body.slots.model_dump(),
+    )
+    session.add(blueprint)
+    await session.commit()
+    await session.refresh(blueprint)
+    return blueprint
+
+
+@app.put("/api/blueprints/{blueprint_id}", response_model=BlueprintOut)
+async def update_blueprint(
+    blueprint_id: int,
+    body: BlueprintIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Full-document replace — the designer always saves its whole state."""
+    blueprint = await session.get(Blueprint, blueprint_id)
+    if blueprint is None:
+        raise HTTPException(404, "no blueprint with that id")
+    blueprint.name = body.name
+    blueprint.trainee_chara_id = body.trainee_chara_id
+    blueprint.slots = body.slots.model_dump()
+    await session.commit()
+    await session.refresh(blueprint)
+    return blueprint
+
+
+@app.delete("/api/blueprints/{blueprint_id}", status_code=204)
+async def delete_blueprint(
+    blueprint_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    blueprint = await session.get(Blueprint, blueprint_id)
+    if blueprint is None:
+        raise HTTPException(404, "no blueprint with that id")
+    await session.delete(blueprint)
+    await session.commit()

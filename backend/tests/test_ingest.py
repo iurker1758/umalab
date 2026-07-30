@@ -32,6 +32,7 @@ def make_lineage_member(position_id: int, card_id: int = 100101) -> dict[str, ob
         "talent_level": 2,
         "rank": 10,
         "factor_info_array": [{"factor_id": 2003501, "level": 0}],
+        "win_saddle_id_array": [63, 105],
     }
 
 
@@ -62,6 +63,7 @@ def make_veteran(trained_chara_id: int = 7001, card_id: int = 103201) -> dict[st
         "proper_running_style_oikomi": 1,
         "register_time": "2025-07-17 16:51:51",
         "skill_array": [{"skill_id": 200351, "level": 1}],
+        "win_saddle_id_array": [10, 63],
         "factor_info_array": [
             {"factor_id": 303, "level": 0},
             {"factor_id": 3402, "level": 0},
@@ -182,6 +184,43 @@ def test_parse_veteran_lineage_relations():
     assert lineage[0]["name"] == "Symboli Rudolf"
     assert lineage[0]["factors"][0]["name"] == "Corner Recovery"
     assert lineage[0]["factors"][0]["star"] == 1
+
+
+def test_parse_veteran_keeps_raw_win_saddles():
+    veteran = parse_veteran(make_veteran(), CARDS, FACTORS)
+    assert veteran["win_saddles"] == [10, 63]
+    assert [m["win_saddles"] for m in veteran["lineage"]] == [[63, 105]] * 6
+
+
+def test_parse_veteran_missing_win_saddles_degrades_to_empty():
+    member = make_lineage_member(10, 101701)
+    del member["win_saddle_id_array"]
+    raw = make_veteran()
+    del raw["win_saddle_id_array"]
+    raw["succession_chara_array"] = [member]
+    veteran = parse_veteran(raw, CARDS, FACTORS)
+    assert veteran["win_saddles"] == []
+    assert veteran["lineage"][0]["win_saddles"] == []
+
+
+def test_parse_veteran_null_win_saddles_degrades_to_empty():
+    raw = make_veteran()
+    raw["win_saddle_id_array"] = None
+    assert parse_veteran(raw, CARDS, FACTORS)["win_saddles"] == []
+
+
+def test_parse_veteran_malformed_win_saddles_raises():
+    raw = make_veteran()
+    raw["win_saddle_id_array"] = "63,105"
+    with pytest.raises(IngestError, match="malformed 'win_saddle_id_array'"):
+        parse_veteran(raw, CARDS, FACTORS)
+
+
+def test_parse_veteran_non_integer_win_saddle_raises():
+    raw = make_veteran()
+    raw["win_saddle_id_array"] = [63, "105"]
+    with pytest.raises(IngestError, match="non-integer won-saddle id"):
+        parse_veteran(raw, CARDS, FACTORS)
 
 
 def test_parse_veteran_keeps_raw_skills():

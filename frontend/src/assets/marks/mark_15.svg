@@ -1,11 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <path fill="#f6b2d0" stroke="#b85688" stroke-width="1" stroke-linejoin="round" d="M1.3 11.2 L8.6 10.8 C9.4 10.8 10 11.4 10 12.2 L10 14 C10 14.8 9.4 15.4 8.6 15.4 L1.3 15.8 Z"/>
-  <path fill="#ee8ab5" stroke="#b85688" stroke-width="1" stroke-linejoin="round" d="M22.7 9 L15.4 9.4 C14.6 9.4 14 10 14 10.8 L14 12.6 C14 13.4 14.6 14 15.4 14 L22.7 13.6 Z"/>
-  <rect x="7.2" y="9.2" width="9.6" height="6.4" rx="3" fill="#f6b2d0" stroke="#b85688" stroke-width="1"/>
-  <g fill="#ee8ab5" stroke="#b85688" stroke-width="0.9">
-    <circle cx="9.3" cy="10.9" r="1.35"/>
-    <circle cx="11.1" cy="10.4" r="1.35"/>
-    <circle cx="12.9" cy="10.5" r="1.35"/>
-    <circle cx="14.6" cy="11" r="1.35"/>
+  <g transform="rotate(-10 7.2 13)">
+    <rect x="4.4" y="9.4" width="5.6" height="8.2" rx="2.7" fill="#f6b2d0" stroke="#b85688" stroke-width="1"/>
+    <ellipse cx="9.7" cy="13.1" rx="1.5" ry="1.9" fill="#f6b2d0" stroke="#b85688" stroke-width="0.9"/>
+    <rect x="4.2" y="16.4" width="6" height="2.6" rx="1" fill="#ffffff" stroke="#b85688" stroke-width="0.9"/>
+    <path fill="none" stroke="#b85688" stroke-width="0.8" stroke-linecap="round" d="M5.6 11.6 C6.6 11 8 11 9 11.6"/>
+  </g>
+  <g transform="rotate(10 16.8 13)">
+    <rect x="14" y="9.4" width="5.6" height="8.2" rx="2.7" fill="#ee8ab5" stroke="#b85688" stroke-width="1"/>
+    <ellipse cx="14.3" cy="13.1" rx="1.5" ry="1.9" fill="#ee8ab5" stroke="#b85688" stroke-width="0.9"/>
+    <rect x="13.8" y="16.4" width="6" height="2.6" rx="1" fill="#ffffff" stroke="#b85688" stroke-width="0.9"/>
+    <path fill="none" stroke="#b85688" stroke-width="0.8" stroke-linecap="round" d="M15 11.6 C16 11 17.4 11 18.4 11.6"/>
   </g>
 </svg>

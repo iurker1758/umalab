@@ -33,7 +33,7 @@ Backend (from `backend/`, venv in `.venv/`):
   never committed (DECISIONS.md #10)
 - Favorite-mark icons (tag badges): extracted into `icons/marks/`. Tag ids live in
   `app/data/tag_icons.json` (committed) and must stay in sync with
-  `MARK_IDS` in `frontend/src/App.tsx`
+  `MARK_IDS` in `frontend/src/domain.ts`
 
 Frontend (from `frontend/`):
 

@@ -427,3 +427,58 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** in-game anchor symbols disagreeing with
   computed totals — the win-link set or constant is wrong and this entry
   gets amended with what the anchors prove.
+
+## 16. Blueprints persisted server-side, roster slots by trained_chara_id
+
+- **Requirements:** saved inheritance designs must survive roster
+  re-imports — which are full-replace snapshots (#3) that delete every
+  `veterans` row — and be reachable from any device the app serves; no
+  design-sharing requirement in v1.
+- **Choice:** a `blueprints` table (name, nullable trainee_chara_id,
+  JSONB `slots` keyed p1/p2/g11/g12/g21/g22). Roster and lineage slots
+  reference their backing veteran by **trained_chara_id** — the same
+  import-stable key veteran_tags uses (#9) — and every slot additionally
+  snapshots `chara_id`/`card_id` and the pick's won-saddle ids, so a
+  slot whose veteran left the current snapshot still renders and scores
+  — win bonus included — degraded to a catalog-theoretical pick with a
+  "not in current roster" badge. Slots
+  are never pruned to match the roster. Saves are validated against the
+  game's slot rules (parent ≠ trainee's chara, p1 ≠ p2, grandparent ≠
+  its own parent or its sibling slot) so a stored design is always one
+  the parent-select screen would accept; a grandparent repeating the
+  *trainee's* chara is legal in-game and deliberately allowed.
+- **Rejected:** localStorage — single-browser, wiped with site data,
+  and invisible to the eventual Pi deployment's other clients;
+  URL-encoded designs — sharing is out of v1 and a lineage doesn't fit
+  a readable URL; referencing `veterans.id` — dies on every re-import;
+  pruning/cascading slots on import — silently destroys designs.
+- **Would change my mind:** the platform gaining a second user
+  (blueprints then need an owner column and Access-identity scoping);
+  real demand for sharing (an export codec becomes an addition, not a
+  replacement for persistence).
+
+## 17. Affinity scoring over the wire, stateless
+
+- **Requirements:** the designer needs live scores while slots are
+  filled and refilled; the formula in `app/affinity.py` was verified
+  against the live client (#15) and the spark-scoring milestone will
+  consume the same per-parent affinities in Python; scoring costs
+  microseconds.
+- **Choice:** `POST /api/affinity`, stateless: the client sends each
+  filled slot as `{chara_id, win_saddle_ids}` (it already holds veterans'
+  raw saddle ids from `GET /api/veterans`), the server expands saddles to
+  G1 sets and scores against a module-level relation table built once at
+  startup. No DB reads, nothing precomputed or persisted — same
+  stale-reference reasoning as read-time skill decoration (#12). A future
+  parent-ranking endpoint is the same request body plus an open-slot
+  marker, looping `score_blueprint`.
+- **Rejected:** porting the math to TypeScript for client-side scoring —
+  splits a freshly-verified formula across two languages just before the
+  scoring milestone needs it in Python (#4's rationale); precomputing
+  pair scores into Postgres — goes stale on every reference regen for no
+  measurable win at 24 µs/score; GET with query params — seven slots of
+  id arrays don't belong in a URL.
+- **Would change my mind:** an interactive optimizer needing thousands
+  of scores per keystroke — then the relation table ships to the client
+  (or the ranker endpoint batches server-side) and this entry gets
+  revisited.

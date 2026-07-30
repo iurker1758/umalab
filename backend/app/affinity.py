@@ -158,7 +158,7 @@ def symbol_for(total: int, ranks: list[RankBand]) -> str:
 
 def score_blueprint(
     table: RelationTable,
-    trainee: int,
+    trainee: int | None,
     p1: Slot | None = None,
     p2: Slot | None = None,
     g11: Slot | None = None,
@@ -166,8 +166,10 @@ def score_blueprint(
     g21: Slot | None = None,
     g22: Slot | None = None,
 ) -> AffinityResult:
-    """Score a (possibly partial) blueprint. Unset slots contribute 0, so the
-    designer can show a live score while slots are being filled.
+    """Score a (possibly partial) blueprint. Unset slots — the trainee
+    included — contribute 0, so the designer can show a live score while
+    slots are being filled; without a trainee the parent-parent relation
+    and the (trainee-independent) win links still score.
 
     Configurations the game outright rejects score nothing rather than
     garbage: same-chara pair links dedupe to 0 (rel2), a grandparent

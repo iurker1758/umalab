@@ -187,3 +187,28 @@ export const MARK_IDS = Array.from(
   { length: 15 },
   (_, i) => `mark_${String(i + 1).padStart(2, "0")}`
 );
+
+// Hover/aria names for the marks. The game ships no text for them, so these
+// describe the art: food, card suits, shoe colors, handshake — in the same
+// grouped order the game lists them.
+export const MARK_LABELS: Record<string, string> = {
+  mark_01: "Carrot",
+  mark_02: "Rice bowl",
+  mark_03: "Juice",
+  mark_04: "Bread",
+  mark_05: "Cake",
+  mark_06: "Diamond",
+  mark_07: "Spade",
+  mark_08: "Heart",
+  mark_09: "Club",
+  mark_10: "Pink shoe",
+  mark_11: "Green shoe",
+  mark_12: "Yellow shoe",
+  mark_13: "Blue shoe",
+  mark_14: "Red shoe",
+  mark_15: "Handshake",
+};
+// Degrades to the numbered form for an id outside the known set (stale
+// reference data), same spirit as sparkAbbr.
+export const markLabel = (id: string): string =>
+  MARK_LABELS[id] ?? `Mark ${Number(id.slice(-2))}`;

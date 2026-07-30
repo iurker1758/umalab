@@ -193,13 +193,13 @@ export function RosterPage({
         <div className={selecting ? "batch-dock select-dock" : "batch-dock"}>
           {selecting ? (
             <>
-              {/* Everything except Confirm freezes while the request is in
-                  flight — Cancel can't pretend to back out a request that's
-                  already on the wire, and All/None would desync the sent
-                  payload from what the dock shows. */}
-              <button className="filter-float" disabled={bulkBusy} onClick={exitSelectMode}>
-                Cancel
-              </button>
+              {/* Reading order: what's being applied and to how many, then
+                  the selection tools, then the abort/commit pair at the
+                  prominent right edge (dialog convention). Everything except
+                  Confirm freezes while the request is in flight — Cancel
+                  can't pretend to back out a request that's already on the
+                  wire, and All/None would desync the sent payload from what
+                  the dock shows. */}
               <span
                 className="select-count target-chip"
                 title={bulkTarget ? "Batch-applying this mark" : "Batch-clearing marks"}
@@ -232,6 +232,9 @@ export function RosterPage({
                 onClick={() => setSelectedIds(new Set())}
               >
                 None
+              </button>
+              <button className="filter-float" disabled={bulkBusy} onClick={exitSelectMode}>
+                Cancel
               </button>
               <button
                 className="filter-float"

@@ -1,4 +1,4 @@
-import { MARK_IDS } from "../domain";
+import { MARK_IDS, markLabel } from "../domain";
 import { MarkIcon } from "./MarkIcon";
 
 // The 4×4 mark grid shared by the veteran modal and the roster's bulk dock:
@@ -50,7 +50,8 @@ export function MarkPicker({
           <button
             key={id}
             className={id === activeId ? "mark-toggle active" : "mark-toggle"}
-            title={id === activeId ? activeTileTitle : tileTitle}
+            title={`${id === activeId ? activeTileTitle : tileTitle} — ${markLabel(id)}`}
+            aria-label={`${id === activeId ? activeTileTitle : tileTitle} — ${markLabel(id)}`}
             onClick={() => onPick(id)}
           >
             <MarkIcon id={id} />

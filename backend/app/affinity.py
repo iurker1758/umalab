@@ -10,12 +10,23 @@ trainee T, parents P1/P2, and each parent's parents G11/G12/G21/G22:
           + rel3(T,P2,G21) + rel3(T,P2,G22)
           + win bonus
 
+with one non-obvious exclusion, verified against the live Global client
+across ten in-game symbol checks (2026-07-30) and confirmed by GameTora's
+per-server implementation: a grandparent slot occupied by the same chara as
+the TRAINEE (or as its own parent) contributes zero to its triple. Without
+this rule every blueprint that reuses the trainee's character in the lineage
+overcounts.
+
 The win bonus models the Global system live since 2026-06-24: +3 points per
 shared won G1 race on the p1-p2 link and each parent-own-grandparent link
 (G2/G3 wins and win titles no longer count; the trainee has no wins at
 design time). Wins arrive as won saddle ids from a dump and are expanded to
 G1 race-id sets via the races reference, so composite saddles (Triple Crown)
-overlap correctly with their component races.
+overlap correctly with their component races. Same-name G1s at different
+venues keep distinct race ids and do not cross-match (JP-documented
+behavior; unfalsified by the verification set). Win overlaps are NOT
+subject to the chara exclusion — a slot's races count even when its chara
+duplicates the trainee's.
 
 The per-parent `p1_affinity` / `p2_affinity` fields are the individual
 affinities the spark-scoring milestone plugs into
@@ -163,6 +174,11 @@ def score_blueprint(
             charas.append(resolved)
         if len(charas) == 2:
             return rel2(table, charas[0], charas[1])
+        # Triple exclusion (in-game verified; see module docstring): a
+        # grandparent that repeats the trainee's chara or its own parent's
+        # chara scores nothing on this link.
+        if charas[2] in (charas[0], charas[1]):
+            return 0
         return rel3(table, charas[0], charas[1], charas[2])
 
     win_by_link = {

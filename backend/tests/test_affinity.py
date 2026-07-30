@@ -6,6 +6,7 @@ once verified against the parent-select screen).
 from app.affinity import (
     RELATION_LINKS,
     WIN_POINTS_PER_SHARED_G1,
+    RelationTable,
     Slot,
     build_relation_table,
     g1_wins,
@@ -170,6 +171,126 @@ def test_duplicate_race_counts_once() -> None:
         TABLE, 100, p1=Slot(200, wins=wins), p2=Slot(300, wins=frozenset({10}))
     )
     assert result["win_total"] == WIN_POINTS_PER_SHARED_G1
+
+
+def test_grandparent_repeating_trainee_chara_scores_zero() -> None:
+    # In-game verified (2026-07-30): a grandparent slot holding the trainee's
+    # own chara contributes nothing to its triple. Chara 100 as g11 under
+    # parent 200 would otherwise re-add rel3(100, 200, 100) = rel2-level pts.
+    with_dupe = score_blueprint(TABLE, 100, p1=Slot(200), g11=Slot(100))
+    without_gp = score_blueprint(TABLE, 100, p1=Slot(200))
+    assert with_dupe["relation_total"] == without_gp["relation_total"]
+
+
+def test_grandparent_repeating_parent_chara_scores_zero() -> None:
+    with_dupe = score_blueprint(TABLE, 100, p1=Slot(200), g11=Slot(200))
+    without_gp = score_blueprint(TABLE, 100, p1=Slot(200))
+    assert with_dupe["relation_total"] == without_gp["relation_total"]
+
+
+def test_excluded_grandparent_wins_still_count() -> None:
+    # The exclusion is relation-only: the duplicate-chara slot's races still
+    # overlap (GameTora applies race bonuses per slot, chara-blind).
+    r = score_blueprint(
+        TABLE, 100,
+        p1=Slot(200, wins=frozenset({10})),
+        g11=Slot(100, wins=frozenset({10})),
+    )
+    assert r["win_total"] == WIN_POINTS_PER_SHARED_G1
+
+
+# ---------- in-game verified anchors (Global client, 2026-07-30) ----------
+# Slot data extracted from a real UmaExtractor dump; expected totals were
+# verified against the parent-select symbols in three rounds of checks.
+
+
+def _real_table() -> RelationTable:
+    from app.reference import RELATION_MEMBERS, RELATION_POINTS
+
+    return build_relation_table(RELATION_POINTS, RELATION_MEMBERS)
+
+
+# Win sets for the anchor blueprints, as G1 race ids.
+_HARU = frozenset({1001, 1104})
+_MARU_GP = frozenset(
+    {1003, 1005, 1007, 1008, 1010, 1011, 1013, 1016, 1017, 1018, 1019, 1022, 1023}
+)
+_RUDOLF_GP = frozenset({1003, 1005, 1010, 1015, 1017, 1019, 1023, 1024})
+
+
+def test_anchor_trainee_in_lineage_triangle() -> None:
+    # Trainee Special Week (1001); p1 Taiki Shuttle whose own parent IS
+    # Special Week — the exclusion drops this pair to △ (game-confirmed).
+    r = score_blueprint(
+        _real_table(), 1001,
+        p1=Slot(1010, wins=frozenset({1007, 1011, 1013, 1018})),
+        g11=Slot(1001, wins=frozenset({1006, 1016, 1019, 1023, 1024})),
+        g12=Slot(1032, wins=frozenset({1003, 1010, 1016, 1019, 1023})),
+        p2=Slot(1052, wins=_HARU),
+        g21=Slot(1004, wins=_MARU_GP),
+        g22=Slot(1017, wins=_RUDOLF_GP),
+    )
+    assert r["total"] == 47
+    assert symbol_for(r["total"], RANKS) == "△"
+
+
+def test_anchor_circle_with_win_bonus() -> None:
+    # Trainee Special Week; Maruzensky x Haru Urara — game-confirmed ○.
+    r = score_blueprint(
+        _real_table(), 1001,
+        p1=Slot(1004, wins=frozenset({1003, 1005, 1010, 1011, 1016, 1022, 1023})),
+        g11=Slot(
+            1024,
+            wins=frozenset({1005, 1006, 1010, 1012, 1015, 1016, 1017, 1019, 1023, 1024}),
+        ),
+        g12=Slot(1020, wins=frozenset({1005, 1010, 1012, 1016, 1017, 1019, 1023, 1024})),
+        p2=Slot(1052, wins=_HARU),
+        g21=Slot(1004, wins=_MARU_GP),
+        g22=Slot(1017, wins=_RUDOLF_GP),
+    )
+    assert r["total"] == 71
+    assert symbol_for(r["total"], RANKS) == "○"
+
+
+def test_anchor_double_circle_win_heavy() -> None:
+    # Trainee Mayano Top Gun; Smart Falcon x Taiki Shuttle — game-confirmed
+    # ◎ with 90 of its points from shared G1 wins.
+    r = score_blueprint(
+        _real_table(), 1024,
+        p1=Slot(
+            1046,
+            wins=frozenset(
+                {1002, 1004, 1007, 1008, 1009, 1011, 1012, 1013, 1014, 1017, 1018,
+                 1020, 1022, 1024, 1101, 1103, 1106}
+            ),
+        ),
+        g11=Slot(
+            1026,
+            wins=frozenset(
+                {1003, 1005, 1006, 1007, 1008, 1010, 1011, 1012, 1015, 1016, 1017,
+                 1019, 1022, 1023}
+            ),
+        ),
+        g12=Slot(
+            1020,
+            wins=frozenset(
+                {1003, 1005, 1006, 1007, 1008, 1010, 1011, 1012, 1015, 1016, 1017,
+                 1018, 1019, 1021, 1023, 1024}
+            ),
+        ),
+        p2=Slot(
+            1010,
+            wins=frozenset(
+                {1001, 1002, 1004, 1007, 1008, 1009, 1011, 1013, 1014, 1016, 1018,
+                 1020, 1022, 1024, 1103, 1106}
+            ),
+        ),
+        g21=Slot(1026, wins=frozenset({1005, 1008, 1010, 1019, 1022, 1023})),
+        g22=Slot(1045, wins=frozenset({1003, 1005, 1006, 1010, 1012, 1016, 1017, 1019, 1023})),
+    )
+    assert r["total"] == 178
+    assert r["win_total"] == 90
+    assert symbol_for(r["total"], RANKS) == "◎"
 
 
 # ---------- real committed data (shape sanity, not exact anchors) ----------

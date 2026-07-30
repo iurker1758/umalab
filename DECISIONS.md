@@ -400,14 +400,24 @@ Keep adding entries as the build evolves. This file is the interview.
   relation-group sums (pair + parent-triple links) from #14's tables —
   which, coming from the live client, already carry the rebalanced
   values — plus `WIN_POINTS_PER_SHARED_G1 = 3` on the five win links,
-  shared races counted once via saddle→G1-set expansion. The algorithm
-  structure is adapted from hakuraku's `VeteransHelper.ts` (MIT,
-  credited in README); its legacy +1-per-shared-win constants are
-  deliberately not ported. Whether the parent↔parent win overlap also
-  feeds each parent's *individual* affinity is unverified — it is
-  excluded there for now, the per-link breakdown keeps that a one-line
-  change, and in-game anchor checks (the stat-grade validation pattern)
-  arbitrate before this ships in the designer.
+  shared races counted once via saddle→G1-set expansion, and one
+  non-obvious exclusion: **a grandparent slot whose chara repeats the
+  trainee's (or its own parent's) contributes zero to its relation
+  triple** — win overlaps stay chara-blind. The formula was verified
+  against the live Global client through three rounds of in-game
+  parent-select symbol checks (ten observations, 2026-07-30), after
+  the first round contradicted the community-documented formula; the
+  exclusion rule was located in GameTora's per-server calculator
+  implementation and then confirmed to fit all ten observations
+  exactly. The algorithm skeleton came from hakuraku's
+  `VeteransHelper.ts` (MIT, credited in README); its legacy
+  +1-per-shared-win constants are deliberately not ported. Same-name
+  G1s at different venues keep distinct race ids and do not
+  cross-match (JP-documented; unfalsified by the verification set).
+  Whether the parent↔parent win overlap also feeds each parent's
+  *individual* affinity is still unverified — it is excluded there for
+  now and the per-link breakdown keeps that a one-line change; it
+  affects only the scoring milestone's per-parent rates, not totals.
 - **Rejected:** porting hakuraku's constants as-is — they predate the
   system change; hardcoding relation points or thresholds — they are
   game data and live in #14's files.

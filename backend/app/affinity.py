@@ -22,11 +22,12 @@ shared won G1 race on the p1-p2 link and each parent-own-grandparent link
 (G2/G3 wins and win titles no longer count; the trainee has no wins at
 design time). Wins arrive as won saddle ids from a dump and are expanded to
 G1 race-id sets via the races reference, so composite saddles (Triple Crown)
-overlap correctly with their component races. Same-name G1s at different
-venues keep distinct race ids and do not cross-match (JP-documented
-behavior; unfalsified by the verification set). Win overlaps are NOT
-subject to the chara exclusion — a slot's races count even when its chara
-duplicates the trainee's.
+overlap correctly with their component races, and venue variants of the
+same G1 (alt-track reroutes, rotating JBC hosts) arrive pre-canonicalized
+to one id — the game matches wins across venues (two cross-venue in-game
+checks both scored the bonus, 2026-07-30). Win overlaps are NOT subject to
+the chara exclusion — a slot's races count even when its chara duplicates
+the trainee's.
 
 The per-parent `p1_affinity` / `p2_affinity` fields are the individual
 affinities the spark-scoring milestone plugs into

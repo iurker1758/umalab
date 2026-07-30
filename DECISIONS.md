@@ -412,8 +412,11 @@ Keep adding entries as the build evolves. This file is the interview.
   exactly. The algorithm skeleton came from hakuraku's
   `VeteransHelper.ts` (MIT, credited in README); its legacy
   +1-per-shared-win constants are deliberately not ported. Same-name
-  G1s at different venues keep distinct race ids and do not
-  cross-match (JP-documented; unfalsified by the verification set).
+  G1s at different venues (Kyoto-renovation reroutes, rotating JBC
+  hosts) DO cross-match — two dedicated in-game checks both scored
+  the cross-venue bonus (2026-07-30), overturning the JP-documented
+  old-system behavior — so races.json canonicalizes every variant
+  group to one id at build time.
   Whether the parent↔parent win overlap also feeds each parent's
   *individual* affinity is still unverified — it is excluded there for
   now and the per-link breakdown keeps that a one-line change; it

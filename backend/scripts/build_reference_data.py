@@ -156,6 +156,13 @@ def build_races() -> dict[str, Any] | None:
     every component race. Non-G1 components are dropped (grade 100 = G1 —
     only shared G1 wins score points under the 2026-06-24 Global system),
     which can leave a saddle's g1_race_ids empty; it's kept for its name.
+
+    Venue variants (the same G1 run at an alternate track — Kyoto-renovation
+    reroutes, the rotating JBC hosts) are separate race rows with the same
+    name; the game matches wins across them (in-game verified 2026-07-30:
+    two cross-venue checks both scored the +3), so every variant group is
+    canonicalized to its lowest race id here. race.\"group\" can't do this —
+    it's 1 for every race.
     None when the game isn't installed (committed file kept).
     """
     if not MASTER_MDB.exists():
@@ -188,13 +195,19 @@ def build_races() -> dict[str, Any] | None:
         ).fetchall()
     finally:
         con.close()
+    # Canonical id per G1: lowest race id among same-named rows.
+    by_race_name: dict[str, list[int]] = {}
+    for rid in g1_ids:
+        by_race_name.setdefault(all_race_names.get(rid, f"Race {rid}"), []).append(rid)
+    canonical = {rid: min(ids) for ids in by_race_name.values() for rid in ids}
+
     saddles: dict[str, dict[str, Any]] = {}
     used_race_ids: set[int] = set()
     for row in saddle_rows:
         saddle_id, instances = row[0], row[1:]
         race_ids = sorted(
             {
-                instance_race[inst]
+                canonical[instance_race[inst]]
                 for inst in instances
                 if inst and instance_race.get(inst) in g1_ids
             }

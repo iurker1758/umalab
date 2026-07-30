@@ -314,5 +314,15 @@ def test_real_saddles_expand_to_known_g1s() -> None:
     assert sorted(g1_wins([1], SADDLES)) == [1005, 1010, 1015]
 
 
+def test_real_races_are_venue_canonicalized() -> None:
+    # Venue variants of a G1 must collapse to one id at build time — the
+    # game matches wins across venues (in-game verified 2026-07-30). A
+    # regenerated races.json that forgets this silently undercounts.
+    from app.reference import RACE_NAMES
+
+    names = list(RACE_NAMES.values())
+    assert len(names) == len(set(names))
+
+
 def test_links_constant_covers_all_edges() -> None:
     assert len(RELATION_LINKS) == 7

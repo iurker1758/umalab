@@ -24,10 +24,6 @@
     "1022": "Asahi Hai Futurity Stakes",
     "1023": "Arima Kinen",
     "1024": "Hopeful Stakes",
-    "1025": "Takarazuka Kinen",
-    "1026": "Kikuka Sho",
-    "1027": "Tenno Sho (Spring)",
-    "1028": "Satsuki Sho",
     "1101": "Teio Sho",
     "1102": "Japan Dirt Derby",
     "1103": "JBC Ladies’ Classic",
@@ -37,16 +33,7 @@
     "1107": "Kawasaki Kinen",
     "1108": "Zen-Nippon Junior Yushun",
     "1109": "Kashiwa Kinen",
-    "1110": "Mile Championship Nambu Hai",
-    "1111": "JBC Ladies’ Classic",
-    "1112": "JBC Sprint",
-    "1113": "JBC Classic",
-    "1114": "JBC Ladies’ Classic",
-    "1115": "JBC Sprint",
-    "1116": "JBC Classic",
-    "1117": "JBC Ladies’ Classic",
-    "1118": "JBC Sprint",
-    "1119": "JBC Classic"
+    "1110": "Mile Championship Nambu Hai"
   },
   "saddles": {
     "1": {
@@ -267,7 +254,7 @@
       "g1_race_ids": [
         1005,
         1010,
-        1026
+        1015
       ],
       "name": "Classic Triple Crown"
     },
@@ -275,26 +262,26 @@
       "g1_race_ids": [
         1003,
         1006,
-        1025
+        1012
       ],
       "name": "Senior Spring Triple Crown"
     },
     "146": {
       "g1_race_ids": [
-        1023,
-        1025
+        1012,
+        1023
       ],
       "name": "Dual Grand Prix"
     },
     "147": {
       "g1_race_ids": [
-        1025
+        1012
       ],
       "name": "Takarazuka Kinen"
     },
     "148": {
       "g1_race_ids": [
-        1026
+        1015
       ],
       "name": "Kikuka Sho"
     },
@@ -315,59 +302,59 @@
     "151": {
       "g1_race_ids": [
         1003,
-        1012,
-        1027
+        1006,
+        1012
       ],
       "name": "Senior Spring Triple Crown"
     },
     "152": {
       "g1_race_ids": [
-        1016,
-        1027
+        1006,
+        1016
       ],
       "name": "Tenno Sweep"
     },
     "153": {
       "g1_race_ids": [
-        1027
+        1006
       ],
       "name": "Tenno Sho (Spring)"
     },
     "154": {
       "g1_race_ids": [
+        1005,
         1010,
-        1015,
-        1028
+        1015
       ],
       "name": "Classic Triple Crown"
     },
     "155": {
       "g1_race_ids": [
-        1028
+        1005
       ],
       "name": "Satsuki Sho"
     },
     "156": {
       "g1_race_ids": [
-        1111
+        1103
       ],
       "name": "JBC L. Classic"
     },
     "157": {
       "g1_race_ids": [
-        1112
+        1104
       ],
       "name": "JBC Sprint"
     },
     "158": {
       "g1_race_ids": [
-        1113
+        1105
       ],
       "name": "JBC Classic"
     },
     "159": {
       "g1_race_ids": [
-        1114
+        1103
       ],
       "name": "JBC L. Classic"
     },
@@ -379,31 +366,31 @@
     },
     "160": {
       "g1_race_ids": [
-        1115
+        1104
       ],
       "name": "JBC Sprint"
     },
     "161": {
       "g1_race_ids": [
-        1116
+        1105
       ],
       "name": "JBC Classic"
     },
     "162": {
       "g1_race_ids": [
-        1117
+        1103
       ],
       "name": "JBC L. Classic"
     },
     "163": {
       "g1_race_ids": [
-        1118
+        1104
       ],
       "name": "JBC Sprint"
     },
     "164": {
       "g1_race_ids": [
-        1119
+        1105
       ],
       "name": "JBC Classic"
     },

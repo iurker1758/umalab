@@ -267,7 +267,7 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 .g0 .nname, .g1 .nname { font-size: 0.78rem; font-weight: 600; max-width: 14ch; }
 .vnode.pick { border-style: dashed; color: #6b7280; }
 /* Anonymous spark slots (the deepest two generations). */
-.vnode.anon { background: #1c1520; border-color: #3d2437; }
+.vnode.anon { background: #1c1520; border-color: #3d2437; padding: 0.2rem 0.25rem; }
 .vnode.anon:hover { border-color: #5f1e46; }
 .vnode.anon.sel { border-color: #2a76c9; background: #1e3a5f; }
 .vnode .sp { font-size: 0.68rem; font-weight: 700; color: #ff7fb8; white-space: nowrap; }

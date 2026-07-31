@@ -21,6 +21,21 @@ export const APTITUDE_LABELS: Record<AptitudeKey, string> = {
   end: "End",
 };
 
+// Gen-4 map chips only: sixteen columns leave ~4ch per chip, and the full
+// names would force the map into a horizontal scroll beside the panel.
+export const APTITUDE_ABBR: Record<AptitudeKey, string> = {
+  turf: "Turf",
+  dirt: "Dirt",
+  sprint: "Sprt",
+  mile: "Mile",
+  medium: "Med",
+  long: "Long",
+  front: "Frnt",
+  pace: "Pace",
+  late: "Late",
+  end: "End",
+};
+
 // Grouped the way the game's detail screen shows them.
 export const APTITUDE_GROUPS: [group: string, keys: AptitudeKey[]][] = [
   ["Track", ["turf", "dirt"]],

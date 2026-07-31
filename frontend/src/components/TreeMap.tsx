@@ -1,5 +1,5 @@
 import type { AptitudeLetters } from "../api";
-import { APTITUDE_LABELS, aptitudeRows, bestDelta, nodeWarnings } from "../aptitude";
+import { APTITUDE_ABBR, APTITUDE_LABELS, aptitudeRows, bestDelta, nodeWarnings } from "../aptitude";
 import { NAMED_COUNT, NODE_COUNT, genOf, nodeLabel, sparkAt, type Design } from "../blueprint";
 import { gradeClass } from "../domain";
 
@@ -77,6 +77,8 @@ export function TreeMap({
     }
     const spark = sparkAt(design, i);
     if (spark === null) {
+      // A bare "+": sixteen "+ spark" labels would widen every gen-4 track
+      // past the point where the map fits beside the panel.
       return (
         <button
           className={`vnode anon pick${sel ? " sel" : ""}`}
@@ -84,7 +86,7 @@ export function TreeMap({
           aria-pressed={sel}
           onClick={() => onSelect(i)}
         >
-          + spark
+          +
         </button>
       );
     }
@@ -93,14 +95,16 @@ export function TreeMap({
       <button
         className={`vnode anon${sel ? " sel" : ""}`}
         aria-label={`${nodeLabel(i)} — ${spark.stars}★ ${label}`}
+        title={`${spark.stars}★ ${label}`}
         aria-pressed={sel}
         onClick={() => onSelect(i)}
       >
-        {/* Gen 4's sixteen columns are too tight for one line — stack. */}
+        {/* Gen 4's sixteen columns are too tight for one line — stack, and
+            abbreviate so the tracks stay near their 34px minimum. */}
         {gen === 4 ? (
           <>
             <span className="sp">{spark.stars}★</span>
-            <span className="sp-name">{label}</span>
+            <span className="sp-name">{APTITUDE_ABBR[spark.aptitude]}</span>
           </>
         ) : (
           <span className="sp">

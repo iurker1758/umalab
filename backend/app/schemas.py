@@ -131,10 +131,21 @@ class BulkTagIn(BaseModel):
     tag: str | None = Field(min_length=1, max_length=40)
 
 
+class CatalogCardOut(BaseModel):
+    """One outfit of a catalog character. Aptitudes ride along because base
+    letters are per-CARD (DECISIONS.md #23 — Haru Urara's New Year outfit
+    runs Mile A against her base B); None for the two NPC/tutorial cards
+    that have no card_rarity_data rows ("letters unknown" in the UI)."""
+
+    card_id: int
+    outfit: str
+    aptitudes: reference.CardAptitudes | None
+
+
 class CatalogEntryOut(BaseModel):
     chara_id: int
     name: str
-    card_ids: list[int]  # sorted; [0] is the base outfit (icon source)
+    cards: list[CatalogCardOut]  # sorted by card_id; [0] is the base outfit (icon source)
 
 
 class AffinitySlotIn(BaseModel):
@@ -180,14 +191,41 @@ class AffinityOut(BaseModel):
     p2_affinity: int | None
 
 
+# The ten aptitude keys in the game's display order (track, distance,
+# running style) — the same keys reference.CardAptitudes uses.
+AptitudeKey = Literal[
+    "turf", "dirt",
+    "sprint", "mile", "medium", "long",
+    "front", "pace", "late", "end",
+]
+
+# Blueprint tree shape (DECISIONS.md #25): 31 nodes breadth-first (node i's
+# kids are 2i+1 / 2i+2). Indices 0-6 — trainee, parents, grandparents —
+# carry identity; 7-30 (generations 3-4) are anonymous pink-spark slots
+# that exist only to feed the bracket math of the generations above.
+NAMED_SLOT_COUNT = 7
+SPARK_SLOT_COUNT = 24
+
+
+class PinkSparkIn(BaseModel):
+    """One pink (aptitude) spark. Single, not a list: every lineage member
+    carries exactly one pink — verified against a real 159-veteran dump
+    (all 954 lineage members included)."""
+
+    aptitude: AptitudeKey
+    stars: int = Field(ge=1, le=3)
+
+
 class BlueprintSlotIn(BaseModel):
-    """One designed lineage slot (DECISIONS.md #16). Every slot snapshots
+    """One designed named slot (DECISIONS.md #16). Every slot snapshots
     chara_id/card_id AND the pick's won-saddle ids — the wins must ride in
     the snapshot so a slot whose veteran left the roster keeps its win bonus
     when re-scored, not just its portrait. Roster and lineage slots
     additionally reference the backing veteran by trained_chara_id (survives
     full-replace imports), with position_id saying which lineage member a
-    `lineage` slot came from."""
+    `lineage` slot came from. `spark` is the member's typed-in pink —
+    catalog picks have no dump to read it from, and the bracket math needs
+    it (the trainee slot never carries one; nothing is bred from it)."""
 
     source: Literal["catalog", "roster", "lineage"]
     chara_id: int
@@ -195,6 +233,7 @@ class BlueprintSlotIn(BaseModel):
     win_saddle_ids: list[int] = []
     trained_chara_id: int | None = None
     position_id: int | None = None
+    spark: PinkSparkIn | None = None
 
     @model_validator(mode="after")
     def _check_slot(self) -> BlueprintSlotIn:
@@ -210,17 +249,22 @@ class BlueprintSlotIn(BaseModel):
 
 
 class BlueprintSlotsIn(BaseModel):
-    p1: BlueprintSlotIn | None = None
-    p2: BlueprintSlotIn | None = None
-    g11: BlueprintSlotIn | None = None
-    g12: BlueprintSlotIn | None = None
-    g21: BlueprintSlotIn | None = None
-    g22: BlueprintSlotIn | None = None
+    """Blueprint document v2 (DECISIONS.md #25). `named` is the identity
+    triangle breadth-first — [0] trainee, [1-2] parents, [3-6] grandparents;
+    `sparks` covers tree indices 7-30 (generations 3-4) as bare pinks.
+    Both required with exact lengths: the document is positional, so a
+    short array would silently shift every slot below the gap."""
+
+    named: list[BlueprintSlotIn | None] = Field(
+        min_length=NAMED_SLOT_COUNT, max_length=NAMED_SLOT_COUNT
+    )
+    sparks: list[PinkSparkIn | None] = Field(
+        min_length=SPARK_SLOT_COUNT, max_length=SPARK_SLOT_COUNT
+    )
 
 
 class BlueprintIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    trainee_chara_id: int | None = None
     # Required: PUT is full-document replace, so a body that forgot `slots`
     # must 422 rather than silently wipe a saved design.
     slots: BlueprintSlotsIn
@@ -230,37 +274,39 @@ class BlueprintIn(BaseModel):
         self.name = self.name.strip()
         if not self.name:
             raise ValueError("name must not be blank")
-        # The game's slot rules, so a saved design is always one the parent-
-        # select screen would accept. Partial designs are fine — rules apply
-        # only between filled slots. A grandparent repeating the TRAINEE's
-        # chara is deliberately not rejected: the game allows it (and
-        # app/affinity.py scores it correctly).
-        s = self.slots
-        for parent in (s.p1, s.p2):
-            if (
-                parent is not None
-                and self.trainee_chara_id is not None
-                and parent.chara_id == self.trainee_chara_id
-            ):
-                raise ValueError("a parent can't be the trainee's own character")
-        if s.p1 is not None and s.p2 is not None and s.p1.chara_id == s.p2.chara_id:
-            raise ValueError("the two parents must be different characters")
-        for parent, gps in ((s.p1, (s.g11, s.g12)), (s.p2, (s.g21, s.g22))):
-            for gp in gps:
-                if parent is not None and gp is not None and gp.chara_id == parent.chara_id:
-                    raise ValueError(
-                        "a grandparent can't repeat its own parent's character"
-                    )
-        for a, b in ((s.g11, s.g12), (s.g21, s.g22)):
+        # The game's breeding rules over the named triangle, so a saved
+        # design is always one the parent-select screen would accept.
+        # Partial designs are fine — rules apply only between filled slots.
+        # A grandparent repeating the TRAINEE's chara is deliberately not
+        # rejected: the game allows it (and app/affinity.py scores it
+        # correctly). The anonymous spark slots carry no identity, so no
+        # chara rule can apply below the grandparents.
+        named = self.slots.named
+        trainee = named[0]
+        if trainee is not None and trainee.spark is not None:
+            raise ValueError("the trainee slot can't carry a spark")
+        for i, kid in enumerate(named[1:], start=1):
+            parent = named[(i - 1) // 2]
+            if kid is not None and parent is not None and kid.chara_id == parent.chara_id:
+                raise ValueError(
+                    "a parent can't be the trainee's own character"
+                    if i <= 2
+                    else "a grandparent can't repeat its own parent's character"
+                )
+        for i in range(NAMED_SLOT_COUNT // 2):
+            a, b = named[2 * i + 1], named[2 * i + 2]
             if a is not None and b is not None and a.chara_id == b.chara_id:
-                raise ValueError("a parent's two grandparents must be different")
+                raise ValueError(
+                    "the two parents must be different characters"
+                    if i == 0
+                    else "a parent's two grandparents must be different"
+                )
         return self
 
 
 class BlueprintOut(BaseModel):
     id: int
     name: str
-    trainee_chara_id: int | None
     slots: BlueprintSlotsIn
     created_at: dt.datetime
     updated_at: dt.datetime

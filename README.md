@@ -21,9 +21,13 @@ parent/grandparent lineage, decoded to human-readable names.
   detail: stats, aptitude letters, and each veteran's own sparks plus the
   sparks carried by all six lineage slots (2 parents + 4 grandparents).
 
-Planned next: hunted-skill spark scoring (expected sparks before/after reroll,
-ported from the predecessor tkinter app) and an English inheritance-blueprint
-designer in the spirit of design.u-ma.org.
+There's also an inheritance-blueprint designer (in the spirit of
+design.u-ma.org), currently being rebuilt as a four-generation aptitude
+calculator: pick the named lineage from the character catalog, type in the
+deeper generations' pink sparks, and see each ancestor's career-start
+letters after inheritance. Planned next: hunted-skill spark scoring
+(expected sparks before/after reroll, ported from the predecessor tkinter
+app).
 
 ## Stack
 

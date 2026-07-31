@@ -18,16 +18,9 @@ resource informs a feature, so future work can find it again.
 
 ## Reference / inspiration
 
-- [Vali-98/umamusu-utils](https://github.com/Vali-98/umamusu-utils) (MIT) —
-  meta-DB key derivation and asset-bundle decryption. The out-of-repo
-  favorite-mark extraction tool adapted it to pull mark icons from a local
-  Global client; **no longer used**, since DECISIONS.md #22 replaced the
-  extracted art with committed original SVGs. Kept here for the trail if
-  reading client assets ever comes back.
-
 - [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — JP
-  inheritance-blueprint designer; the model for our planned English
-  equivalent (lineage slots, spark targets, affinity display).
+  inheritance-blueprint designer; the model for our English equivalent
+  (lineage slots, spark targets, affinity display).
 - [ayaliz/hakuraku](https://github.com/ayaliz/hakuraku/) (MIT; frontend of
   hakuraku.moe, detached fork of SSHZ-ORG/hakuraku, actively maintained) —
   Uma Musume **Global** toolbox (Vite + React + TS) whose Veterans page

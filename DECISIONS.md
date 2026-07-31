@@ -654,3 +654,30 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** the game exposing officially licensed
   assets for fan tools — parity with in-game art beats our
   approximations; dozens more marks would revisit per-file imports.
+
+## 23. Base aptitudes as a per-card master.mdb artifact
+
+- **Requirements:** the deep-tree designer shows each lineage node's
+  career-start aptitude letters and how inherited pink sparks raise them,
+  so the backend needs every playable card's ten base aptitudes
+  (turf/dirt, sprint/mile/medium/long, front/pace/late/end); regeneration
+  must follow the game's patches without a uma.moe key; committed data
+  stays deterministic offline (#6).
+- **Choice:** `app/data/aptitudes.json`, `card_id -> ten letters`, built
+  from the local client's `card_rarity_data` on the keyless `--mdb-only`
+  path (same posture as relations/races: gameless or empty reads keep the
+  committed file). Keyed per **card**, not per chara — Haru Urara's New
+  Year outfit runs Mile A against her base card's B, the one variance in
+  the current table but proof the model must be card-level. Letters are
+  stored (not the 1–8 scale) so the file is self-describing; the builder
+  refuses to regenerate on an unknown numeric value or on a card whose
+  rarity rows disagree, both of which mean the scale or the
+  one-entry-per-card model changed.
+- **Rejected:** extending cards.json — it's built on the network path
+  from uma.moe artifacts that don't carry aptitudes, and merging
+  mdb-sourced fields into it would give one file two regeneration
+  stories; chara-keyed storage — provably wrong (above); numeric values
+  with a frontend letter map — two places to keep the scale.
+- **Would change my mind:** aptitudes appearing in a uma.moe artifact
+  (fold into the cards build); a card whose rarity rows legitimately
+  differ (re-key on card_id + rarity).

@@ -14,6 +14,7 @@ from ..schemas import (
     AffinityOut,
     BlueprintIn,
     BlueprintOut,
+    CatalogCardOut,
     CatalogEntryOut,
 )
 
@@ -32,12 +33,26 @@ RELATION_TABLE = affinity.build_relation_table(
 def _build_catalog() -> list[CatalogEntryOut]:
     cards_by_chara: dict[int, list[int]] = {}
     for card_id, card in reference.CARDS.items():
+        # 7-digit ids are the NPC/tutorial copies of real cards — same chara,
+        # same outfit label, no aptitude rows. Serving them would put an
+        # indistinguishable letter-less duplicate next to every real pick.
+        if card_id > 999_999:
+            continue
         cards_by_chara.setdefault(card["chara_id"], []).append(card_id)
     entries = [
         CatalogEntryOut(
             chara_id=chara_id,
             name=reference.CARDS[card_ids[0]]["name"],
-            card_ids=card_ids,
+            cards=[
+                CatalogCardOut(
+                    card_id=card_id,
+                    outfit=reference.CARDS[card_id]["outfit"],
+                    # .get(): every playable card has letters today, but a
+                    # cards.json regen can run ahead of aptitudes.json.
+                    aptitudes=reference.APTITUDES.get(card_id),
+                )
+                for card_id in card_ids
+            ],
         )
         for chara_id, card_ids in (
             (cid, sorted(ids)) for cid, ids in cards_by_chara.items()
@@ -98,7 +113,6 @@ async def create_blueprint(
 ):
     blueprint = Blueprint(
         name=body.name,
-        trainee_chara_id=body.trainee_chara_id,
         slots=body.slots.model_dump(),
     )
     session.add(blueprint)
@@ -118,7 +132,6 @@ async def update_blueprint(
     if blueprint is None:
         raise HTTPException(404, "no blueprint with that id")
     blueprint.name = body.name
-    blueprint.trainee_chara_id = body.trainee_chara_id
     blueprint.slots = body.slots.model_dump()
     # Explicit: onupdate only fires when a column changed, but the saved-list
     # is ordered by updated_at, so an identical re-save must still rise.

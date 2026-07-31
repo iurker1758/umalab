@@ -701,3 +701,45 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** wanting to open-source the tool — revisit
   by splitting data out or accepting the ecosystem-norm posture;
   Cygames publishing fan-tool guidelines that bless static data use.
+
+## 25. Blueprint document v2: 31-node tree, anonymous deep sparks
+
+- **Requirements:** the deep-tree designer (V1 aptitude calculator)
+  needs four ancestor generations, because a trained node's career-start
+  bracket math sums the pink sparks of the two generations below it —
+  gen-1/2 letters need input from gens 2–4; the game stores only two
+  generations per veteran, so gens 3–4 can never reliably carry an
+  identity; base letters are per-card (#23), so the trainee needs a
+  card_id; designs stay persisted in Postgres (#16).
+- **Choice:** the `slots` document becomes the 31-node breadth-first
+  tree (node *i*'s kids at *2i+1*/*2i+2*): `named`, exactly 7 entries
+  ([0] trainee, [1–2] parents, [3–6] grandparents), each the full #16
+  slot snapshot plus one typed pink spark; `sparks`, exactly 24 entries
+  (tree indices 7–30), bare `{aptitude, stars}` with no uma identity —
+  they exist only to feed the brackets above. A spark is single, never
+  a list: every lineage member carries exactly one pink (verified
+  against a real dump — 159/159 veterans, 954/954 lineage members).
+  The trainee moves into named[0] and the `trainee_chara_id` column is
+  dropped; a trainee spark is rejected (nothing is bred from it). Array
+  lengths are exact-or-422 — the document is positional, and a short
+  array would silently shift every slot below the gap. The old 6-slot
+  blueprints are **wiped** by the migration (v1 rows only — the DELETE
+  keys on the missing `named` field, so v2 documents written against a
+  not-yet-migrated database survive it, and downgrade keeps them too).
+  The catalog serves `cards` (`{card_id, outfit, aptitudes}`) instead
+  of bare card ids, and drops the two 7-digit NPC/tutorial copies —
+  they duplicate a real card's chara and outfit label with no aptitude
+  rows, an indistinguishable letter-less pick (review-driven; aptitudes
+  stay nullable against a cards.json regen outrunning aptitudes.json).
+- **Rejected:** migrating 6-slot docs into the new shape — they carry
+  no typed sparks, so the copies would be empty shells in a calculator
+  whose whole point is spark math, saving a handful of one user's
+  drafts; named identity in gens 3–4 — the game can't supply it and the
+  UI treats those nodes as spark bundles by design; spark lists per
+  slot — the one-pink fact makes lists pure ceremony; extending the
+  keyed p1/g11-style map with 24 more names — index arithmetic
+  generalizes the validators and the frontend math, names don't.
+- **Would change my mind:** the game exposing deeper lineage (named
+  deep slots become possible and the anonymous tier shrinks); a
+  feature needing non-pink sparks in the document (the editors are
+  pink-only by ruling — the spark shape gains a kind field then).

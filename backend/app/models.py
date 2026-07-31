@@ -74,20 +74,21 @@ class Veteran(Base):
 
 
 class Blueprint(Base):
-    """A saved inheritance design (DECISIONS.md #16). `slots` maps the six
-    lineage slot ids (p1/p2/g11/g12/g21/g22, absent or null when unfilled) to
-    slot objects. Roster slots reference veterans by trained_chara_id — stable
+    """A saved inheritance design (DECISIONS.md #16, document v2 in #25).
+    `slots` is the 31-node breadth-first tree: `named` holds the identity
+    triangle ([0] trainee, [1-2] parents, [3-6] grandparents; null when
+    unfilled), `sparks` the 24 anonymous pink-spark slots of generations
+    3-4. Roster slots reference veterans by trained_chara_id — stable
     across full-replace imports, same reasoning as veteran_tags (#9) — and
-    every slot snapshots chara_id/card_id plus its won-saddle ids, so a slot
-    whose veteran left the roster still displays AND keeps its win bonus when
-    re-scored, degraded to a catalog-theoretical pick. Slots are never pruned
-    to match the current roster.
+    every named slot snapshots chara_id/card_id plus its won-saddle ids, so
+    a slot whose veteran left the roster still displays AND keeps its win
+    bonus when re-scored, degraded to a catalog-theoretical pick. Slots are
+    never pruned to match the current roster.
     """
     __tablename__ = "blueprints"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
-    trainee_chara_id: Mapped[int | None]
     slots: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

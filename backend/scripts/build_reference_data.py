@@ -31,8 +31,14 @@ race_instance to race, G1 = grade 100; names from text_data categories 111
 and 32). Composite saddles (e.g. Classic Triple Crown) expand to all their
 component races.
 
-relations.json and races.json are skipped (previous committed files kept)
-when the game isn't installed, like card titles.
+aptitudes.json: card_id -> the ten base career-start aptitude letters
+(turf/dirt, sprint/mile/medium/long, front/pace/late/end) from
+card_rarity_data. Aptitudes are per-card, not per-chara — an alt outfit can
+differ (Haru Urara's runs Mile A against her base card's B) — and constant
+across a card's rarity rows.
+
+relations.json, races.json and aptitudes.json are skipped (previous
+committed files kept) when the game isn't installed, like card titles.
 
 All outputs are committed; rerun this manually when the game updates
 (DECISIONS.md #6).
@@ -263,6 +269,82 @@ def build_races() -> dict[str, Any] | None:
     return {"saddles": saddles, "race_names": race_names}
 
 
+# The game's numeric aptitude scale, as rendered on the career-start screen.
+# 8 (S) never appears as a base value today but its meaning is fixed by the
+# in-game scale, so a future S-base card regenerates cleanly.
+APTITUDE_LETTERS = {1: "G", 2: "F", 3: "E", 4: "D", 5: "C", 6: "B", 7: "A", 8: "S"}
+
+# Output key -> card_rarity_data column, in the game's display order
+# (track, distance, style). Global style names: Front Runner / Pace Chaser /
+# Late Surger / End Closer.
+APTITUDE_COLUMNS = (
+    ("turf", "proper_ground_turf"),
+    ("dirt", "proper_ground_dirt"),
+    ("sprint", "proper_distance_short"),
+    ("mile", "proper_distance_mile"),
+    ("medium", "proper_distance_middle"),
+    ("long", "proper_distance_long"),
+    ("front", "proper_running_style_nige"),
+    ("pace", "proper_running_style_senko"),
+    ("late", "proper_running_style_sashi"),
+    ("end", "proper_running_style_oikomi"),
+)
+
+
+def build_aptitudes() -> dict[str, Any] | None:
+    """Base career-start aptitude letters per playable card.
+
+    From card_rarity_data, which keys on (card_id, rarity). Aptitudes are
+    constant across a card's rarity rows (verified over the full Global
+    table, 2026-07-30); a card whose rows ever disagree would break the
+    one-entry-per-card model, so that keeps the committed file and says so
+    loudly rather than guess a row. Same posture for a value outside the
+    letter map — a new scale, not a new datum.
+    None when the game isn't installed (committed file kept).
+    """
+    if not MASTER_MDB.exists():
+        print("aptitudes.json: master.mdb not found, kept committed file")
+        return None
+    cols = ", ".join(col for _, col in APTITUDE_COLUMNS)
+    with open_mdb() as con:
+        rows = con.execute(
+            f"SELECT card_id, {cols} FROM card_rarity_data ORDER BY card_id, rarity"
+        ).fetchall()
+    # Empty reads must not clobber committed data (see build_relations).
+    if not rows:
+        print("aptitudes.json: master.mdb card_rarity_data empty, kept committed file")
+        return None
+    by_card: dict[int, tuple[int, ...]] = {}
+    conflicted: set[int] = set()
+    for row in rows:
+        card_id, values = int(row[0]), tuple(int(v) for v in row[1:])
+        if by_card.setdefault(card_id, values) != values:
+            conflicted.add(card_id)
+    if conflicted:
+        print(
+            f"aptitudes.json: WARNING cards {sorted(conflicted)} have rarity rows"
+            " with differing aptitudes — the per-card model is broken, update"
+            " this script; kept committed file"
+        )
+        return None
+    unknown = sorted(
+        {v for values in by_card.values() for v in values if v not in APTITUDE_LETTERS}
+    )
+    if unknown:
+        print(
+            f"aptitudes.json: WARNING unknown aptitude values {unknown} —"
+            " update this script's letter map; kept committed file"
+        )
+        return None
+    return {
+        str(card_id): {
+            key: APTITUDE_LETTERS[value]
+            for (key, _), value in zip(APTITUDE_COLUMNS, values, strict=True)
+        }
+        for card_id, values in sorted(by_card.items())
+    }
+
+
 def fetch(url: str, api_key: str) -> bytes:
     req = urllib.request.Request(
         url,
@@ -306,6 +388,7 @@ def collect_mdb_outputs() -> list[tuple[str, Any]]:
         for filename, payload in (
             ("relations.json", build_relations()),
             ("races.json", build_races()),
+            ("aptitudes.json", build_aptitudes()),
         )
         if payload is not None
     ]
@@ -318,6 +401,8 @@ def payload_summary(filename: str, payload: Any) -> str:
         return f"{len(payload['points'])} relation groups"
     if filename == "races.json":
         return f"{len(payload['saddles'])} saddles"
+    if filename == "aptitudes.json":
+        return f"{len(payload)} cards' aptitudes"
     return f"{len(payload)} entries"
 
 
@@ -342,8 +427,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # relations.json/races.json never touch the network — a game-patch
-    # affinity refresh must not be gated on a uma.moe key being configured.
+    # relations.json/races.json/aptitudes.json never touch the network — a
+    # game-patch refresh must not be gated on a uma.moe key being configured.
     if args.mdb_only:
         write_outputs(collect_mdb_outputs())
         return

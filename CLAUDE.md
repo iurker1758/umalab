@@ -28,8 +28,9 @@ Backend (from `backend/`, venv in `.venv/`):
   venv active so it resolves site-packages)
 - Reference data: `python scripts/build_reference_data.py` (uma.moe key from
   `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it);
-  `--mdb-only` regenerates just the affinity files (relations.json,
-  races.json) from the local game client, no key/network needed
+  `--mdb-only` regenerates just the client-sourced files (relations.json,
+  races.json, aptitudes.json) from the local game client, no key/network
+  needed
 - Character icons: `python scripts/fetch_icons.py` (no key) →
   `frontend/public/icons/` — gitignored game art, fetched per clone/update,
   never committed (DECISIONS.md #10)

@@ -72,8 +72,9 @@ Run the tests: `cd backend && pytest`
 Reference data (`backend/app/data/`) is committed; regenerate it when the game
 adds characters: `python scripts/build_reference_data.py` (needs a
 [uma.moe](https://uma.moe) API key in `backend/.env` as `UMA_MOE_API_KEY`).
-The affinity tables (`relations.json`, `races.json`) come from the local game
-client's own database; `--mdb-only` refreshes just those, no key needed.
+The affinity tables (`relations.json`, `races.json`) and base aptitudes
+(`aptitudes.json`) come from the local game client's own database;
+`--mdb-only` refreshes just those, no key needed.
 
 Game art is **not** committed (DECISIONS.md entry 10); fetch it once per
 clone or game update:

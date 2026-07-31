@@ -654,3 +654,50 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** the game exposing officially licensed
   assets for fan tools — parity with in-game art beats our
   approximations; dozens more marks would revisit per-file imports.
+
+## 23. Base aptitudes as a per-card master.mdb artifact
+
+- **Requirements:** the deep-tree designer shows each lineage node's
+  career-start aptitude letters and how inherited pink sparks raise them,
+  so the backend needs every playable card's ten base aptitudes
+  (turf/dirt, sprint/mile/medium/long, front/pace/late/end); regeneration
+  must follow the game's patches without a uma.moe key; committed data
+  stays deterministic offline (#6).
+- **Choice:** `app/data/aptitudes.json`, `card_id -> ten letters`, built
+  from the local client's `card_rarity_data` on the keyless `--mdb-only`
+  path (same posture as relations/races: gameless or empty reads keep the
+  committed file). Keyed per **card**, not per chara — Haru Urara's New
+  Year outfit runs Mile A against her base card's B, the one variance in
+  the current table but proof the model must be card-level. Letters are
+  stored (not the 1–8 scale) so the file is self-describing; the builder
+  refuses to regenerate on an unknown numeric value or on a card whose
+  rarity rows disagree, both of which mean the scale or the
+  one-entry-per-card model changed.
+- **Rejected:** extending cards.json — it's built on the network path
+  from uma.moe artifacts that don't carry aptitudes, and merging
+  mdb-sourced fields into it would give one file two regeneration
+  stories; chara-keyed storage — provably wrong (above); numeric values
+  with a frontend letter map — two places to keep the scale.
+- **Would change my mind:** aptitudes appearing in a uma.moe artifact
+  (fold into the cards build); a card whose rarity rows legitimately
+  differ (re-key on card_id + rarity).
+
+## 24. Repo private while it carries game-derived data
+
+- **Requirements:** the committed reference data (relations, races,
+  aptitudes, factor/skill names) is extracted from the game client and
+  redistributing it is a plain-reading breach of Cygames' EULA
+  (Art. 5(3) "may not copy … distribute … the Content", Art. 11(2)(14)
+  on disassembly) — a contract exposure, not a copyright one; the
+  deployment milestone only requires the *frontend* to be public.
+- **Choice:** repo visibility flipped to private (2026-07-30). The data
+  stays committed — the offline/deterministic invariant (#6) and CI are
+  untouched; the change removes the public-redistribution posture while
+  the fan-tool ecosystem norm (uma.moe, GameTora, hakuraku all publish
+  the same data openly) remains merely tolerated, not permitted.
+- **Rejected:** keeping the repo public — no upside today; per-machine
+  regeneration of all game data (icons model) — breaks CI and the
+  committed-data tests for a risk the private flip already covers.
+- **Would change my mind:** wanting to open-source the tool — revisit
+  by splitting data out or accepting the ecosystem-norm posture;
+  Cygames publishing fan-tool guidelines that bless static data use.

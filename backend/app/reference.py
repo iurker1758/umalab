@@ -18,6 +18,22 @@ class Card(TypedDict):
     title: str  # bracketed card epithet, e.g. "[Special Dreamer]"; may be ""
 
 
+class CardAptitudes(TypedDict):
+    """Base career-start aptitude letters (G..A today; S has a fixed meaning),
+    in the game's display order: track, distance, running style."""
+
+    turf: str
+    dirt: str
+    sprint: str
+    mile: str
+    medium: str
+    long: str
+    front: str
+    pace: str
+    late: str
+    end: str
+
+
 class FactorInfo(TypedDict):
     name: str
     type: int
@@ -46,6 +62,11 @@ def _load_cards() -> dict[int, Card]:
         int(card_id): cast("Card", {"title": "", **card})
         for card_id, card in raw.items()
     }
+
+
+def _load_aptitudes() -> dict[int, CardAptitudes]:
+    raw = json.loads((DATA_DIR / "aptitudes.json").read_text(encoding="utf-8"))
+    return {int(card_id): cast("CardAptitudes", apt) for card_id, apt in raw.items()}
 
 
 def _load_factors() -> dict[int, FactorInfo]:
@@ -79,6 +100,12 @@ def _load_races() -> tuple[dict[int, SaddleInfo], dict[int, str]]:
 
 
 CARDS: dict[int, Card] = _load_cards()
+# Base career-start aptitudes per card from the local client's
+# card_rarity_data (DECISIONS.md #23). Per-CARD, not per-chara — an alt
+# outfit can differ. Not every cards.json id has an entry (uma.moe lists
+# two NPC/tutorial card copies the client's table doesn't) — look up with
+# .get() and treat a miss as "unknown".
+APTITUDES: dict[int, CardAptitudes] = _load_aptitudes()
 FACTORS: dict[int, FactorInfo] = _load_factors()
 # Skill names are presentation-only: the DB stores skills raw (DECISIONS.md
 # #5) and the API decorates them at read time (DECISIONS.md #12).

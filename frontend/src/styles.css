@@ -285,6 +285,11 @@ button.bp-row:hover { background: #1e2937; }
 .bar-icon:hover { border-color: #2a76c9; color: #cfe0f5; }
 .bar-icon-danger:hover { border-color: #a8474b; background: #2b1418; color: #ff8f8f; }
 .designer-autosave { font-size: 0.78rem; opacity: 0.55; white-space: nowrap; }
+/* The one status worth reading: full opacity and a warning colour, because
+   nothing else on the page says the work isn't being kept. */
+.designer-autosave.failed { opacity: 1; color: #ff8f8f; }
+.bar-icon:disabled { opacity: 0.4; cursor: default; }
+.bar-icon:disabled:hover { border-color: #2a3340; background: none; color: inherit; }
 .designer-secondary { background: #1a2027; border: 1px solid #2a3340; }
 .designer-secondary:hover { border-color: #2a76c9; }
 

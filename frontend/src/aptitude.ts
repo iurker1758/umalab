@@ -96,7 +96,12 @@ export function aptitudeRows(
 // A typed pink on generations 1–2 whose matching aptitude resolves below A
 // couldn't exist: the game only generates pink sparks at A. Not checkable
 // when the card's letters are unknown, or on anonymous deep slots (no card
-// by design). The trainee carries no spark.
+// by design). The trainee carries no spark. This is the map's one badge
+// state — overstacking past 10★ is deliberately unflagged, since the extra
+// sparks are still inspiration-proc tickets toward S.
+//
+// Takes rows rather than letters: callers rendering a node already have
+// them, and the window scan behind them is the expensive part.
 export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number): boolean {
   if (i === 0 || i >= NAMED_COUNT) return false;
   const spark = design.named[i]?.spark;
@@ -106,17 +111,4 @@ export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number)
   if (final === null) return false;
   const idx = (LETTER_ORDER as readonly string[]).indexOf(final);
   return idx !== -1 && idx < CAP;
-}
-
-// The map's one badge state, so the issue surfaces without clicking through.
-// Only filled named nodes can carry it — an empty slot has no typed spark.
-// (Overstacking past 10★ is deliberately unflagged: the extra sparks are
-// still inspiration-proc tickets toward S, so it isn't a mistake.)
-export function hasUndroppableSpark(
-  design: Design,
-  i: number,
-  letters: AptitudeLetters | null
-): boolean {
-  if (i >= NAMED_COUNT || design.named[i] === null) return false;
-  return undroppableSpark(aptitudeRows(design, i, letters), design, i);
 }

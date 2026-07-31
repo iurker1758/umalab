@@ -3,7 +3,7 @@ import {
   APTITUDE_GROUPS,
   APTITUDE_LABELS,
   aptitudeRows,
-  hasUndroppableSpark,
+  undroppableSpark,
   type AptitudeRow,
 } from "../aptitude";
 import { NAMED_COUNT, NODE_COUNT, genOf, nodeLabel, sparkAt, type Design } from "../blueprint";
@@ -66,7 +66,10 @@ export function TreeMap({
       const icon = empty ? undefined : iconIndex[String(card)];
       const rows = empty ? [] : aptitudeRows(design, i, aptitudesFor(card));
       const byKey = new Map<AptitudeKey, AptitudeRow>(rows.map((r) => [r.key, r]));
-      const warn = empty ? false : hasUndroppableSpark(design, i, aptitudesFor(card));
+      // Takes the rows already in hand — the window scan and bracket math
+      // behind them are the expensive part, and this runs for every named
+      // node on every render.
+      const warn = empty ? false : undroppableSpark(rows, design, i);
       const cell = (k: AptitudeKey) => {
         const r = byKey.get(k);
         // "-" also covers a filled card whose letters are unknown.

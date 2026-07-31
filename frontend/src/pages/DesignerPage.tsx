@@ -8,9 +8,11 @@ import {
   type SetStateAction,
 } from "react";
 import {
+  ApiError,
   api,
   type AptitudeLetters,
   type Blueprint,
+  type BlueprintIn,
   type CatalogCard,
   type CatalogEntry,
   type PinkSpark,
@@ -41,6 +43,25 @@ const HALF_TREE_QUERY = "(max-width: 860px)";
 // Long enough that a run of picks collapses into one PUT, short enough that
 // the design on the server is never far behind the one on screen.
 const AUTOSAVE_MS = 800;
+// Failed writes stay queued and retry on a widening delay, capped so a
+// backend that comes back after lunch is still picked up promptly.
+const RETRY_MS = 4000;
+const RETRY_MAX_MS = 30000;
+
+// One bootstrap create per page load, shared across mounts. The page
+// unmounts on every route change, so a quick Designer → Roster → Designer
+// can otherwise have the second mount's GET race the first mount's POST,
+// see an empty list, and create a second blank blueprint. Cleared on settle,
+// so this only ever collapses genuinely concurrent attempts.
+let inflightBootstrap: Promise<Blueprint> | null = null;
+function bootstrapBlueprint(): Promise<Blueprint> {
+  inflightBootstrap ??= api
+    .createBlueprint({ name: nextUntitledName([]), slots: toApi(emptyDesign()).slots })
+    .finally(() => {
+      inflightBootstrap = null;
+    });
+  return inflightBootstrap;
+}
 
 // The trainee is what a blueprint is ABOUT, so it labels the row alongside
 // the name. A fixed-size blank holds the space when there's no pick yet (or
@@ -108,27 +129,172 @@ export function DesignerPage({
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [autosaving, setAutosaving] = useState(false);
+  // Set while a write has failed and not yet succeeded. Counted, not just
+  // flagged, so a repeat of the same message still re-arms the retry — and
+  // so the status can say "not saved" instead of reading "Saving…" forever.
+  // There is no Save button to fall back on, so a silent failure is an
+  // afternoon of lost work.
+  const [saveFail, setSaveFail] = useState<{ n: number; message: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   // One bootstrap per mount, whatever StrictMode does with the effect —
   // creating a blueprint is not a repeatable side effect.
   const bootstrapped = useRef(false);
 
+  // ---------- the write queue ----------
+  // The bodies the server still needs, keyed by the row each belongs to
+  // (null = a design with no row yet). A ref rather than effect-closure
+  // state: switching blueprints re-renders, and an edit that lived only in
+  // the old effect's closure would die with it. A leftover entry for the
+  // blueprint you just left is precisely what makes switching lossless.
+  const pending = useRef(new Map<number | null, BlueprintIn>());
+  // Writes run one behind another, so a slow PUT can never land after a
+  // newer one and restore an older document under a "Saved" label.
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Read inside async continuations to answer "is this still the blueprint
+  // on screen?": a write that lands after a switch belongs to the design
+  // you left and must not mark the newly opened one clean.
+  const openRow = useRef<number | null>(design.id);
+  const dirtyRef = useRef(false);
+  // Rows this page deleted. A delete races the edit that was still queued
+  // for the row: without this the queued body PUTs into the hole, 404s, and
+  // the re-create recovery below resurrects the blueprint the user just
+  // threw away.
+  const deleted = useRef(new Set<number>());
+
+  // A blank name field saves as the placeholder rather than not saving at
+  // all — the server rejects an empty name, and "we'll save it later" is how
+  // an afternoon disappears. The dirty check normalizes the same way, so a
+  // stray space can't read as a permanent unsaved edit.
+  const bodyOf = useCallback((d: Design): BlueprintIn => {
+    const body = toApi(d);
+    const name = body.name.trim();
+    return { ...body, name: name === "" ? UNTITLED : name };
+  }, []);
+
+  const dirty =
+    savedJson === null
+      ? JSON.stringify(bodyOf(design)) !== JSON.stringify(bodyOf(emptyDesign()))
+      : savedJson !== JSON.stringify(bodyOf(design));
+
+  useEffect(() => {
+    openRow.current = design.id;
+    dirtyRef.current = dirty;
+  }, [design.id, dirty]);
+
+  // One queued write. Creates when the design has no row — a failed
+  // bootstrap, a failed post-delete create, a blueprint deleted out from
+  // under us — so "nowhere to save" is a state the page recovers from
+  // rather than a dead end where every later edit is silently discarded.
+  const writeOne = useCallback(
+    async (id: number | null, body: BlueprintIn): Promise<void> => {
+      const land = (bp: Blueprint) => {
+        setSaved((prev) =>
+          prev.some((b) => b.id === bp.id)
+            ? prev.map((b) => (b.id === bp.id ? bp : b))
+            : [bp, ...prev]
+        );
+        if (bp.id !== id) {
+          // The job was filed under a key that no longer exists. Anything
+          // queued behind it moves onto the new row, or the next drain would
+          // create a second copy instead of updating this one.
+          const queued = pending.current.get(id);
+          if (queued !== undefined) {
+            pending.current.delete(id);
+            pending.current.set(bp.id, queued);
+          }
+        }
+        if (openRow.current === id) {
+          if (bp.id !== id) {
+            setDesign((d) => ({ ...d, id: bp.id }));
+            writeOpenId(bp.id);
+          }
+          setSavedJson(JSON.stringify(body));
+        }
+        setSaveFail(null);
+      };
+      try {
+        land(id === null ? await api.createBlueprint(body) : await api.updateBlueprint(id, body));
+      } catch (e) {
+        // Deleted elsewhere: re-create rather than keep PUTting into a hole.
+        // Not for a row we deleted ourselves — that 404 means the delete won
+        // a race with an already-drained write, and re-creating would undo it.
+        if (
+          id !== null &&
+          !deleted.current.has(id) &&
+          e instanceof ApiError &&
+          e.status === 404
+        ) {
+          try {
+            land(await api.createBlueprint(body));
+            onError(`"${body.name}" had been deleted — your edits were saved as a new blueprint.`);
+            return;
+          } catch {
+            // fall through to the retry path
+          }
+        }
+        // Back on the queue: the retry timer (or the next edit) carries it.
+        if (!pending.current.has(id)) pending.current.set(id, body);
+        const message = e instanceof Error ? e.message : String(e);
+        setSaveFail((f) => ({ n: (f?.n ?? 0) + 1, message }));
+      }
+    },
+    [onError, setDesign, setSavedJson]
+  );
+
+  // Drains the queue, oldest row first, behind whatever is already running.
+  const write = useCallback(async (): Promise<void> => {
+    if (timer.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    if (pending.current.size === 0) {
+      await chain.current;
+      return;
+    }
+    const jobs = [...pending.current].filter(
+      ([id]) => id === null || !deleted.current.has(id)
+    );
+    pending.current.clear();
+    if (jobs.length === 0) {
+      await chain.current;
+      return;
+    }
+    const run = chain.current.then(async () => {
+      setAutosaving(true);
+      try {
+        for (const [id, body] of jobs) await writeOne(id, body);
+      } finally {
+        setAutosaving(false);
+      }
+    });
+    chain.current = run;
+    await run;
+  }, [writeOne]);
+
   // Adopt a server blueprint as the working design: parse it, remember it as
   // the one to reopen, and mark it clean so the autosave stays quiet.
+  // Callers flush first — adopting is what makes the previous design
+  // unreachable, so anything still queued for it has to be on the wire.
   const adopt = useCallback(
     (bp: Blueprint) => {
       try {
         const d = fromApi(bp);
         setDesign(d);
-        setSavedJson(JSON.stringify(toApi(d)));
+        setSavedJson(JSON.stringify(bodyOf(d)));
         writeOpenId(bp.id);
         setSelected(0);
       } catch {
-        onError(`Couldn't open "${bp.name}" — its saved data didn't parse.`);
+        // Left alone rather than opened half-parsed: editing it here would
+        // overwrite whatever the row actually holds. The design on screen
+        // keeps its null id, which the autosave turns into a new row.
+        onError(
+          `Couldn't open "${bp.name}" — its saved data didn't parse. Your next edit starts a new blueprint.`
+        );
       }
     },
-    [setDesign, setSavedJson, onError]
+    [setDesign, setSavedJson, onError, bodyOf]
   );
   // Below the layout breakpoint the map shows one parent's half at a time
   // (see TreeMap): sixteen gen-4 columns are unreadable on a phone.
@@ -156,8 +322,16 @@ export function DesignerPage({
   // too, and yanking the view from under those would be motion for its own
   // sake.
   const panelRef = useRef<HTMLDivElement>(null);
-  const selectFromMap = (i: number) => {
+  // Every selection remembers which half it was in, so the toggle and the
+  // selection can't disagree: without this, selecting the trainee (which
+  // belongs to both halves) falls back to whatever the toggle was last set
+  // to and yanks the view to the other parent's branch.
+  const select = (i: number) => {
     setSelected(i);
+    if (i !== 0) setSide(halfOf(i));
+  };
+  const selectFromMap = (i: number) => {
+    select(i);
     if (!narrow) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // After paint: the panel changes height with the node it shows.
@@ -187,25 +361,31 @@ export function DesignerPage({
       // not editing one.
       if (bootstrapped.current) return;
       bootstrapped.current = true;
+      // Never adopt over work in progress. The map and the spark editor are
+      // usable before this fetch lands, and on a slow link people do start
+      // designing — a dirty design is one the autosave already owns, whether
+      // it has a row yet or not.
+      if (dirtyRef.current) return;
       const held = design.id === null ? null : bps.value.find((b) => b.id === design.id);
       if (held !== undefined && held !== null) return;
-      const openId = readOpenId();
+      const lastOpen = readOpenId();
       const target =
-        bps.value.find((b) => b.id === openId) ??
+        bps.value.find((b) => b.id === lastOpen) ??
         [...bps.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
       if (target !== undefined) {
         adopt(target);
         return;
       }
       try {
-        const bp = await api.createBlueprint({
-          name: nextUntitledName([]),
-          slots: toApi(emptyDesign()).slots,
-        });
+        const bp = await bootstrapBlueprint();
+        // Remembered even if we've already unmounted: the row exists, so the
+        // next visit must reopen it rather than create a second blank one.
+        writeOpenId(bp.id);
         if (cancelled) return;
         setSaved([bp]);
         adopt(bp);
       } catch {
+        // Recoverable: with no row, the first edit creates one.
         onError("Couldn't create a blueprint — is uvicorn running?");
       }
     })();
@@ -239,10 +419,6 @@ export function DesignerPage({
     [cardById]
   );
 
-  const dirty = savedJson === null
-    ? JSON.stringify(toApi(design)) !== JSON.stringify(toApi(emptyDesign()))
-    : savedJson !== JSON.stringify(toApi(design));
-
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
     setPickerFor(null);
@@ -257,7 +433,7 @@ export function DesignerPage({
         spark: d.named[target]?.spark ?? null,
       })
     );
-    setSelected(target);
+    select(target);
   };
 
   // Clears only the node itself — character and planned spark together: in a
@@ -274,41 +450,58 @@ export function DesignerPage({
     setDesign((d) => withSpark(d, target, spark));
   };
 
-  // Every edit autosaves. Debounced so a burst of picks is one request, and
-  // skipped while a create/delete is in flight so the two can't race for the
-  // same row. A blank name is skipped rather than sent: the server rejects
-  // it, and mid-rename the field is legitimately empty for a keystroke.
+  // Every edit autosaves. Queued immediately (so nothing depends on this
+  // effect surviving), then debounced so a burst of picks is one request.
+  // While a create/delete is in flight the edit stays queued rather than
+  // racing it for the same row — the next drain carries it.
   useEffect(() => {
-    if (design.id === null || !dirty || busy || design.name.trim().length === 0) return;
-    const id = design.id;
-    const body = toApi(design);
-    const timer = setTimeout(() => {
-      setAutosaving(true);
-      void (async () => {
-        try {
-          const bp = await api.updateBlueprint(id, body);
-          setSaved((prev) => prev.map((b) => (b.id === bp.id ? bp : b)));
-          setSavedJson(JSON.stringify(body));
-        } catch {
-          // Left dirty on purpose: the next edit retries, and the status
-          // keeps reading "Saving…". A background retry loop that toasted
-          // every failure would be unusable with the backend down.
-        } finally {
-          setAutosaving(false);
-        }
-      })();
+    if (!dirty) return;
+    // A delete in flight has already disowned this row; queueing for it
+    // would only re-create what the user just deleted.
+    if (design.id !== null && deleted.current.has(design.id)) return;
+    pending.current.set(design.id, bodyOf(design));
+    if (busy) return;
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void write();
     }, AUTOSAVE_MS);
-    return () => clearTimeout(timer);
-  }, [design, dirty, busy, setSavedJson]);
+    // No cleanup: re-arming is what replaces the old timer, and unmounting
+    // must flush the queue (below) rather than cancel it.
+  }, [design, dirty, busy, bodyOf, write]);
 
-  const onLoad = (id: number) => {
+  // A failed write stays queued and retries quietly on a widening delay.
+  // The backend being down for a minute shouldn't cost anything, and a toast
+  // per attempt would make the page unusable.
+  useEffect(() => {
+    if (saveFail === null || pending.current.size === 0) return;
+    const t = setTimeout(
+      () => void write(),
+      Math.min(RETRY_MAX_MS, RETRY_MS * saveFail.n)
+    );
+    return () => clearTimeout(t);
+  }, [saveFail, write]);
+
+  // Leaving the page is a route change, which unmounts this component —
+  // that must not eat the last debounce window.
+  const writeRef = useRef(write);
+  useEffect(() => {
+    writeRef.current = write;
+  }, [write]);
+  useEffect(() => () => void writeRef.current(), []);
+
+  const onLoad = async (id: number) => {
     const bp = saved.find((b) => b.id === id);
-    if (bp !== undefined) adopt(bp);
+    if (bp === undefined) return;
+    // The blueprint you're leaving keeps the last thing you did to it.
+    await write();
+    adopt(bp);
   };
 
   // A blank row, created straight away: the design you're editing is always
   // a real blueprint, so there's nothing to "save" later.
   const onNew = async () => {
+    await write();
     setBusy(true);
     try {
       const bp = await api.createBlueprint({
@@ -328,10 +521,11 @@ export function DesignerPage({
   // already like. Copies the design as it stands on screen, not the last
   // autosaved body, so an in-flight edit is included.
   const onCopy = async () => {
+    await write();
     setBusy(true);
     try {
-      const body = toApi(design);
-      const bp = await api.createBlueprint({ ...body, name: copyName(design.name, saved) });
+      const body = bodyOf(design);
+      const bp = await api.createBlueprint({ ...body, name: copyName(body.name, saved) });
       setSaved((prev) => [bp, ...prev]);
       adopt(bp);
     } catch (e) {
@@ -346,24 +540,53 @@ export function DesignerPage({
   const onDelete = async () => {
     const id = design.id;
     if (id === null) return;
-    if (!window.confirm(`Delete "${design.name}"?`)) return;
+    if (!window.confirm(`Delete "${bodyOf(design).name}"?`)) return;
     setBusy(true);
+    // Whatever is queued for this row dies with it — including anything the
+    // still-dirty design queues while the DELETE is in flight.
+    deleted.current.add(id);
+    pending.current.delete(id);
+    if (timer.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
     try {
       await api.deleteBlueprint(id);
-      const rest = saved.filter((b) => b.id !== id);
-      setSaved(rest);
-      if (rest.length > 0) {
-        adopt([...rest].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]);
-      } else {
-        const bp = await api.createBlueprint({
-          name: nextUntitledName([]),
-          slots: toApi(emptyDesign()).slots,
-        });
-        setSaved([bp]);
-        adopt(bp);
-      }
     } catch (e) {
+      // Still very much alive: let it save again, or the rest of the session
+      // would edit a blueprint nothing writes.
+      deleted.current.delete(id);
       onError(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+      setBusy(false);
+      return;
+    }
+    // Past here the row is gone, so a later failure is never reported as a
+    // failed delete — and never leaves the page bound to a dead id.
+    const rest = saved.filter((b) => b.id !== id);
+    setSaved(rest);
+    if (rest.length > 0) {
+      adopt([...rest].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]);
+      setBusy(false);
+      return;
+    }
+    setDesign(emptyDesign());
+    setSavedJson(null);
+    writeOpenId(null);
+    setSelected(0);
+    try {
+      const bp = await api.createBlueprint({
+        name: nextUntitledName([]),
+        slots: toApi(emptyDesign()).slots,
+      });
+      setSaved([bp]);
+      adopt(bp);
+    } catch (e) {
+      // The blank stays on screen with no row; the first edit creates one.
+      onError(
+        `Couldn't open a replacement blueprint: ${
+          e instanceof Error ? e.message : String(e)
+        }. Your next edit starts one.`
+      );
     } finally {
       setBusy(false);
     }
@@ -413,6 +636,12 @@ export function DesignerPage({
               // caret is a shortcut rather than the only door.
               onFocus={() => setMenuOpen(true)}
               onChange={(e) => setDesign((d) => ({ ...d, name: e.target.value }))}
+              // Blank saves as the placeholder, so the field is made to
+              // agree once you're done typing rather than showing an empty
+              // name for a blueprint the server calls "Untitled Blueprint".
+              onBlur={() =>
+                setDesign((d) => (d.name.trim() === "" ? { ...d, name: UNTITLED } : d))
+              }
               onKeyDown={(e) => {
                 if (e.key === "Enter") e.currentTarget.blur();
                 if (e.key === "Escape") setMenuOpen(false);
@@ -438,9 +667,10 @@ export function DesignerPage({
                     key={bp.id}
                     className="bp-row"
                     role="menuitem"
+                    disabled={busy}
                     onClick={() => {
                       setMenuOpen(false);
-                      onLoad(bp.id);
+                      void onLoad(bp.id);
                     }}
                   >
                     <TraineeIcon card={traineeCard(bp)} iconIndex={iconIndex} />
@@ -462,36 +692,39 @@ export function DesignerPage({
           )}
         </div>
         {/* There is no Save: the row exists from the moment you start, and
-            every edit autosaves. The status is the whole story. */}
-        {design.id !== null && (
-          <>
-            {/* Whole-blueprint actions, out of the menu: they act on the one
-                you're in, which is what the bar is about. The status trails
-                them — it changes width as it flips, and between the picker
-                and the buttons that would shove the buttons around. */}
-            <button
-              className="bar-icon"
-              aria-label={`Duplicate ${design.name}`}
-              title="Duplicate this blueprint"
-              disabled={busy}
-              onClick={() => void onCopy()}
-            >
-              <CopyIcon />
-            </button>
-            <button
-              className="bar-icon bar-icon-danger"
-              aria-label={`Delete ${design.name}`}
-              title="Delete this blueprint"
-              disabled={busy}
-              onClick={() => void onDelete()}
-            >
-              <TrashIcon />
-            </button>
-            <span className="designer-autosave" role="status">
-              {autosaving || dirty ? "Saving…" : "Saved"}
-            </span>
-          </>
-        )}
+            every edit autosaves. The status is the whole story — including
+            when it has nothing good to report, which is why the bar renders
+            even before a row exists rather than leaving a design that can't
+            say whether it's being kept. */}
+        {/* Whole-blueprint actions, out of the menu: they act on the one
+            you're in, which is what the bar is about. The status trails
+            them — it changes width as it flips, and between the picker
+            and the buttons that would shove the buttons around. */}
+        <button
+          className="bar-icon"
+          aria-label={`Duplicate ${design.name}`}
+          title="Duplicate this blueprint"
+          disabled={busy || design.id === null}
+          onClick={() => void onCopy()}
+        >
+          <CopyIcon />
+        </button>
+        <button
+          className="bar-icon bar-icon-danger"
+          aria-label={`Delete ${design.name}`}
+          title="Delete this blueprint"
+          disabled={busy || design.id === null}
+          onClick={() => void onDelete()}
+        >
+          <TrashIcon />
+        </button>
+        <span
+          className={`designer-autosave${saveFail !== null ? " failed" : ""}`}
+          role="status"
+          title={saveFail?.message}
+        >
+          {saveFail !== null ? "Not saved" : autosaving || dirty ? "Saving…" : "Saved"}
+        </span>
       </div>
 
       <div className="designer-combo">

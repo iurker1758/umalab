@@ -146,6 +146,19 @@ export interface Blueprint extends BlueprintIn {
   updated_at: string;
 }
 
+// Carries the status so a caller can tell "this row is gone" (404) from
+// "the backend is down" — the designer's autosave recovers from the first
+// by re-creating the row and only retries on the second.
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = "";
@@ -164,7 +177,7 @@ async function json<T>(res: Response): Promise<T> {
     } catch {
       // body wasn't JSON; fall through to the status line
     }
-    throw new Error(detail || `${res.status} ${res.statusText}`);
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
   }
   return res.json() as Promise<T>;
 }
@@ -215,6 +228,7 @@ export const api = {
     }).then((r) => json<Blueprint>(r)),
   deleteBlueprint: (id: number) =>
     fetch(`/api/blueprints/${id}`, { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      // Already gone is the outcome the caller wanted.
+      if (!r.ok && r.status !== 404) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
     }),
 };

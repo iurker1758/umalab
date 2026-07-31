@@ -48,6 +48,12 @@ Frontend (from `frontend/`):
 
 - `npm run dev` (proxies `/api` to `:8000`) · `npm run build` (typechecks via
   `tsc -b`) · `npm run lint` (ESLint incl. react-hooks rules)
+- End-to-end: `npm run e2e` (Playwright, `frontend/e2e/`) — needs the backend
+  and `npm run dev` already running. Baseline-relative and self-restoring: it
+  derives its cast from `/api/catalog` and deletes every blueprint it created
+  in `finally`, so it is safe against your own database. Set
+  `E2E_ARTIFACT_DIR` to capture screenshots at the moment of failure plus an
+  `e2e-results.json` summary; CI does this and uploads them (DECISIONS.md #27)
 
 Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
 `.markdownlint.jsonc`; CI runs it as the `docs` job).

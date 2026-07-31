@@ -884,3 +884,82 @@ Keep adding entries as the build evolves. This file is the interview.
   next lever is the named chips' letter grid, which is the constraint
   behind the gen-4 tracks, and after that raising the half-tree
   breakpoint so the full tree never renders in that band.
+
+## 27. Designer e2e suite in CI, as-is and dev-served
+
+- **Requirements:** the 94 designer checks — the only thing that
+  catches the autosave data-loss class of bug (#26), which last round
+  had to be found by reading a diff — must run on every PR instead of
+  when someone remembers; the suite must stay safe to run against a
+  real local database; a headless-only failure must be diagnosable
+  without reproducing it locally.
+- **Choice:** move `verify-deep-tree.mjs` from an untracked local
+  working directory (unversioned and unshared, so it would die with the
+  machine) into tracked `frontend/e2e/`, run by
+  `npm run e2e`, plus an `e2e` CI job on a `postgres:16` service.
+  **Kept as a plain `.mjs` script rather than converted to
+  `@playwright/test`.** The suite is one stateful narrative: a single
+  `try` spans ~500 lines, the cast is constraint-solved once against
+  `/api/catalog`, and one blueprint is mutated across ~18 sequential
+  sections whose later assertions ("reload reopens the same
+  blueprint", "duplicate", "route round-trip keeps the working
+  design") read state the earlier ones built. Splitting it into
+  isolated `test()` blocks means inventing fixtures that reconstruct
+  mid-narrative state, and the final "no JS errors or failed requests"
+  check filters deliberate late-run noise by `i >= noiseFrom` — an
+  index into one continuous run, which has no meaning once split.
+  **Served by `npm run dev`, not `build` + `preview`.** The production
+  bundle is already covered by the `frontend` job's `npm run build`,
+  and serving it here would register the PWA service worker
+  (`registerType: "autoUpdate"`, inert in dev): Playwright's
+  `page.route` does not intercept requests issued through a service
+  worker, and the suite's last two checks deliberately abort
+  `**/api/blueprints/**` to assert the "Not saved" → auto-recover
+  path. Preview would have quietly stopped testing what those checks
+  claim to. So `vite.config.ts` keeps `server.proxy` only — no
+  `preview.proxy` was added. What replaces `@playwright/test`'s traces
+  is `E2E_ARTIFACT_DIR`: on failure the script screenshots **at the
+  moment of the failing check** (the narrative has moved on by
+  `finally`), capped at five and serialised through one promise chain,
+  and always writes an `e2e-results.json` carrying pass/fail counts,
+  each failure, and the raw error log — CI uploads that plus both
+  server logs. Verified end-to-end by injecting a forced failure: exit
+  1, a full-page screenshot of real app state, and the other 94 checks
+  unaffected. The job is **required from day one** — a
+  `continue-on-error` job gets ignored within two PRs, and the
+  artifacts make the first CI-only failure actionable. Readiness is
+  polled (`curl` until-loops on `/api/catalog` and `:5173`, 90s cap,
+  dumping the server log on timeout) rather than slept, and the dev
+  server takes `--strictPort` so a busy 5173 fails loudly instead of
+  drifting to 5174 while the poll waits. The suite's self-restoring
+  `finally` is kept even though CI's database is disposable — it is
+  what makes `npm run e2e` safe against your own data — but it deletes
+  by **ownership, not by list-diff**: a plain "delete everything absent
+  from the startup snapshot" also matches a blueprint saved from
+  another tab during the ~2-minute run, which is data loss rather than
+  restoration. Ours are the `bpName`-prefixed rows (the timestamp makes
+  that unambiguous) plus ids claimed at each create; anything else that
+  appeared is reported and left alone. The whole loop is wrapped,
+  because a throw in `finally` would replace whatever the run was
+  actually failing on with a network error.
+- **Rejected:** converting to `@playwright/test` — a ~500-line
+  restructure of the only regression net for the designer, before it
+  has ever run in CI; the middle option of keeping the `.mjs` and
+  wrapping it in a `test()` for `webServer` — the runner instruments
+  its own browser, not a shelled-out child's `chromium.launch()`, so
+  it buys server orchestration but not the traces that were the whole
+  point; committing a personal roster dump to unlock the further
+  local suites that cover the roster surface and so read
+  `/api/veterans` — those need a synthetic fixture built from
+  `make_veteran()`/`make_lineage_member()` (`tests/test_ingest.py`),
+  deferred as phase 2; a fixed `sleep` before the run.
+- **Would change my mind:** CI-only failures that the screenshot and
+  results JSON don't explain — the next lever is `@playwright/test`
+  for real traces, and the narrative would have to be decomposed
+  then; the suite proving flaky in CI despite many stable local runs
+  (drop to `continue-on-error` while it is diagnosed rather than
+  deleting the job); phase 2 landing, which adds a roster fixture and
+  a seeding step and may argue for one shared harness; the PWA
+  service worker becoming something worth exercising end-to-end,
+  which would mean a separate preview-served job rather than
+  switching this one.

@@ -46,3 +46,86 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: umalab
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ["5432:5432"]
+    env:
+      # Overrides the pydantic-settings default; backend/.env is gitignored
+      # and absent in CI, so this is the only source.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost/umalab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: pip install -e ".[dev]"
+        working-directory: backend
+      - run: alembic upgrade head
+        working-directory: backend
+
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      # The suite drives the app through Vite's dev proxy, exactly as it runs
+      # locally. The production bundle is already covered by `npm run build`
+      # in the frontend job; serving it here would also register the PWA
+      # service worker, which Playwright's page.route cannot intercept — the
+      # suite's abort-the-network checks depend on that interception.
+      - name: Start backend
+        run: nohup uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
+        working-directory: backend
+      - name: Start frontend
+        # --strictPort: fail loudly rather than drift to 5174 while the
+        # readiness poll below waits on 5173.
+        run: nohup npm run dev -- --port 5173 --strictPort > "$RUNNER_TEMP/frontend.log" 2>&1 &
+        working-directory: frontend
+
+      - name: Wait for both servers
+        run: |
+          timeout 90 bash -c 'until curl -sf http://localhost:8000/api/catalog > /dev/null; do sleep 1; done' \
+            || { echo "::error::backend never came up"; cat "$RUNNER_TEMP/backend.log"; exit 1; }
+          timeout 90 bash -c 'until curl -sf http://localhost:5173 > /dev/null; do sleep 1; done' \
+            || { echo "::error::frontend never came up"; cat "$RUNNER_TEMP/frontend.log"; exit 1; }
+
+      - name: Deep-tree designer suite
+        run: npm run e2e
+        working-directory: frontend
+        env:
+          E2E_ARTIFACT_DIR: ${{ runner.temp }}/e2e-artifacts
+
+      - name: Collect server logs
+        if: failure()
+        # mkdir first: only the e2e script creates this directory, so a failure
+        # before it runs (npm ci, browser install, a crash at import) would
+        # otherwise leave nothing to upload — exactly when the logs matter most.
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-artifacts"
+          cp "$RUNNER_TEMP"/*.log "$RUNNER_TEMP/e2e-artifacts/" || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure
+          path: ${{ runner.temp }}/e2e-artifacts
+          if-no-files-found: warn

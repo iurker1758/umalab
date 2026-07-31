@@ -15,12 +15,15 @@ resource informs a feature, so future work can find it again.
   [rockisch/umadump](https://github.com/rockisch/umadump)) — the veteran-dump
   tool whose `data.json` format we import. Watch it for dump-format changes
   when the game updates.
-- [Vali-98/umamusu-utils](https://github.com/Vali-98/umamusu-utils) (MIT) —
-  meta-DB key derivation and asset-bundle decryption that the favorite-mark
-  extraction tool (kept outside this repo; DECISIONS.md #10) adapts to pull
-  the mark icons from a local Global client.
 
 ## Reference / inspiration
+
+- [Vali-98/umamusu-utils](https://github.com/Vali-98/umamusu-utils) (MIT) —
+  meta-DB key derivation and asset-bundle decryption. The out-of-repo
+  favorite-mark extraction tool adapted it to pull mark icons from a local
+  Global client; **no longer used**, since DECISIONS.md #22 replaced the
+  extracted art with committed original SVGs. Kept here for the trail if
+  reading client assets ever comes back.
 
 - [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — JP
   inheritance-blueprint designer; the model for our planned English

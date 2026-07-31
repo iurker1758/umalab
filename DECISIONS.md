@@ -209,7 +209,7 @@ Keep adding entries as the build evolves. This file is the interview.
   favorite-mark icons exist only inside the client's UI asset bundles — on
   no CDN or fan site — so an extraction tool pulls them from your own
   installed Global client (meta-DB and bundle decryption adapted from
-  Vali-98/umamusu-utils, MIT; credited in README) into `icons/marks/`,
+  Vali-98/umamusu-utils, MIT) into `icons/marks/`,
   same posture: read-only against the game, local only. That tool is kept
   **outside the repo**: it embeds the client's decryption keys, and
   publishing those in a public repo is a bigger exposure than the art this

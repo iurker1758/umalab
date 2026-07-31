@@ -681,3 +681,23 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** aptitudes appearing in a uma.moe artifact
   (fold into the cards build); a card whose rarity rows legitimately
   differ (re-key on card_id + rarity).
+
+## 24. Repo private while it carries game-derived data
+
+- **Requirements:** the committed reference data (relations, races,
+  aptitudes, factor/skill names) is extracted from the game client and
+  redistributing it is a plain-reading breach of Cygames' EULA
+  (Art. 5(3) "may not copy … distribute … the Content", Art. 11(2)(14)
+  on disassembly) — a contract exposure, not a copyright one; the
+  deployment milestone only requires the *frontend* to be public.
+- **Choice:** repo visibility flipped to private (2026-07-30). The data
+  stays committed — the offline/deterministic invariant (#6) and CI are
+  untouched; the change removes the public-redistribution posture while
+  the fan-tool ecosystem norm (uma.moe, GameTora, hakuraku all publish
+  the same data openly) remains merely tolerated, not permitted.
+- **Rejected:** keeping the repo public — no upside today; per-machine
+  regeneration of all game data (icons model) — breaks CI and the
+  committed-data tests for a risk the private flip already covers.
+- **Would change my mind:** wanting to open-source the tool — revisit
+  by splitting data out or accepting the ecosystem-norm posture;
+  Cygames publishing fan-tool guidelines that bless static data use.

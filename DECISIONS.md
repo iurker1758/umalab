@@ -743,3 +743,56 @@ Keep adding entries as the build evolves. This file is the interview.
   deep slots become possible and the anonymous tier shrinks); a
   feature needing non-pink sparks in the document (the editors are
   pink-only by ruling — the spark shape gains a kind field then).
+
+## 26. Designer v1: client-side bracket math, map + focus panel
+
+- **Requirements:** show every named node's computed career-start
+  letters over the 31-node document (#25) using the verified bracket
+  table (total matching ★ over a node's two generations below:
+  1★/4★/7★/10★ → +1/+2/+3/+4 letters, cap A, deterministic); 31 nodes
+  can't all show full detail at once, but configuration problems must
+  surface without clicking through them; v2 of the designer (roster
+  fills, run affinity, inspiration estimates) must layer on without
+  rework.
+- **Choice:** replace `/designer` wholesale with the Option-C layout
+  from the mockup pass: a vertical 16-column pedigree map (a node spans
+  its children's columns; chips are terse — name + strongest-delta
+  badge on gens 0–2, the single spark on gens 3–4) beside a docked
+  focus panel that reads and edits the selected node; ≤860px the map
+  collapses to a horizontal strip above the panel (the run-navigator
+  degradation). All bracket math is frontend-pure (`aptitude.ts`) —
+  deterministic integer arithmetic over data the client already holds
+  (catalog per-card letters + the design), so no endpoint and no
+  debounce; the backend's job stays document validity and reference
+  data. Display rulings (Jason): the letter cell shows the **final**
+  letter only, boosted = highlighted, no strikethrough — cause math
+  ("7★ → +3") lives in a From column; >10★ of one aptitude in one
+  window = amber overflow warning; bump past the A cap = a softer
+  info note, never a warning (overstacking is deliberate S-fishing —
+  every matching spark is an independent inspiration-proc ticket);
+  a typed gen-1/2 pink whose own aptitude resolves below A = red
+  "undroppable" warning (the game only generates pinks at A), not
+  checkable on anonymous slots by design; map chips carry the warning
+  badges; the trainee gets no spark editor (nothing is bred from it)
+  and editors are pink-only. v1 picks are catalog-only and card-aware
+  (outfits differ — #23); the affinity panel is gone until v2 restores
+  it (the endpoint stays). `fromApi` parses catalog slots only —
+  roster/lineage shapes are future documents this client treats as
+  unknown, since the #25 wipe emptied the table and nothing else
+  writes them. A re-pick keeps the slot's typed spark: the pink is a
+  plan input, not part of the card's identity.
+- **Rejected:** server-side letter computation — a network round-trip
+  and stale-result debouncing for pure local arithmetic; full-detail
+  map chips (Option A's density) — the panel is the one stable read
+  surface, terse chips are the price of overview-plus-detail;
+  popover editors on the map — the panel exists so the chart never
+  needs them; strikethrough old→new letters — ruled out in favor of
+  final-letter-plus-From; keeping the old run-affinity panel rendered
+  beside the calculator while its roster inputs are absent — dead
+  weight that v2 restores properly, trainee-only.
+- **Would change my mind:** v2's roster fill lands (roster/lineage
+  slot parsing and the affinity panel return); letter math turning
+  out to vary by card in ways aptitudes.json doesn't capture (would
+  force a backend authority); the map's terseness failing in practice
+  on real 13" screens (first fallback: initials-only chips at gens
+  3–4).

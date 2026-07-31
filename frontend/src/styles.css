@@ -250,54 +250,75 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 .designer-secondary { background: #1a2027; border: 1px solid #2a3340; }
 .designer-secondary:hover { border-color: #2a76c9; }
 
-/* 7-slot tree: trainee column, parent column, grandparent column. */
-.designer-tree { display: grid; grid-template-areas: "t p1 g11" "t p1 g12" "t p2 g21" "t p2 g22"; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
-.slot-t { grid-area: t; }
-.slot-p1 { grid-area: p1; }
-.slot-p2 { grid-area: p2; }
-.slot-g11 { grid-area: g11; }
-.slot-g12 { grid-area: g12; }
-.slot-g21 { grid-area: g21; }
-.slot-g22 { grid-area: g22; }
-.slot-tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; box-sizing: border-box; background: #161c23; border: 1px solid #1f2833; border-radius: 10px; padding: 1.5rem 0.5rem 0.6rem; min-height: 7rem; }
-.slot-tile:hover { border-color: #2a3340; }
-.slot-label { position: absolute; top: 0.4rem; left: 0.55rem; font-size: 0.7rem; opacity: 0.55; }
-.slot-clear { position: absolute; top: 0.15rem; right: 0.25rem; background: transparent; color: inherit; font-size: 1rem; padding: 0.1rem 0.35rem; opacity: 0.6; line-height: 1; }
-.slot-clear:hover { opacity: 1; }
-.slot-open { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; }
-.slot-open img, .slot-open .lineage-icon-fallback { width: 56px; height: 56px; object-fit: contain; }
-.slot-empty-icon { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border: 1px dashed #3a4250; border-radius: 50%; font-size: 1.6rem; color: #9aa1ab; }
-.slot-name { font-size: 0.85rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slot-open:hover .slot-name { text-decoration: underline; }
-.slot-badges { display: flex; gap: 0.3rem; align-items: center; }
-.slot-source { font-size: 0.62rem; letter-spacing: 0.03em; border-radius: 5px; padding: 1px 5px; background: #232b34; opacity: 0.85; }
-.slot-source.roster { background: #1e3a5f; }
-.slot-source.lineage { background: #46345c; }
-.slot-missing { font-size: 0.62rem; border-radius: 5px; padding: 1px 5px; color: #ffb38a; background: #3d2a1a; border: 1px solid #5c4020; }
-/* Points for the link this slot terminates (win bonus folded in server-side). */
-.slot-link { font-size: 0.72rem; font-variant-numeric: tabular-nums; border-radius: 999px; padding: 1px 7px; background: #1e3a5f; border: 1px solid #2a76c9; }
+/* Option C (DECISIONS.md #26): 31-node vertical map beside a docked focus
+   panel. ≤860px the map collapses to a horizontal strip above the panel. */
+.designer-combo { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 1rem; align-items: start; }
+.tree-map-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
 
-.designer-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
-.designer-panel { box-sizing: border-box; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; }
-.designer-hint { margin: 0; opacity: 0.65; font-size: 0.9rem; }
-.aff-error { color: #ff8a80; opacity: 1; }
-.aff-total { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.2rem; }
-.aff-symbol { font-size: 1.6rem; line-height: 1; }
-.aff-low { color: #9aa1ab; }
-.aff-good { color: #4da3ff; }
-.aff-best { color: #ffd257; }
-.aff-number { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.aff-breakdown { opacity: 0.7; font-size: 0.85rem; margin-bottom: 0.6rem; }
-.aff-links { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.aff-links td { padding: 0.22rem 0.3rem; font-size: 0.85rem; border-top: 1px solid #1f2833; }
-.aff-link-name { opacity: 0.75; }
-.aff-link-pts { text-align: right; opacity: 0.65; }
-.aff-link-sum { text-align: right; font-weight: 600; }
-.aff-parents { display: flex; gap: 1rem; margin-top: 0.6rem; font-size: 0.82rem; opacity: 0.65; }
+/* 16-column pedigree grid: generation g's nodes span 16/2^g columns each,
+   so every node sits over its children; the ::before tick links the rows. */
+.vped { display: grid; grid-template-columns: repeat(16, minmax(34px, 1fr)); row-gap: 0.9rem; column-gap: 4px; width: max-content; min-width: 100%; }
+.cell { display: flex; justify-content: center; position: relative; min-width: 0; }
+.cell:not(.g0)::before { content: ""; position: absolute; top: -0.9rem; height: 0.9rem; width: 1px; background: #2a3340; left: 50%; }
+.vnode { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; box-sizing: border-box; background: #161c23; border: 1px solid #1f2833; border-radius: 6px; padding: 0.2rem 0.35rem; min-width: 0; max-width: 100%; color: inherit; font-size: 0.8rem; line-height: 1.35; cursor: pointer; }
+.vnode:hover { border-color: #2a3340; background: #1a2230; }
+.vnode.sel { border-color: #2a76c9; background: #1e3a5f; }
+.vnode .nname { font-size: 0.7rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 9ch; }
+.g0 .nname, .g1 .nname { font-size: 0.78rem; font-weight: 600; max-width: 14ch; }
+.vnode.pick { border-style: dashed; color: #6b7280; }
+/* Anonymous spark slots (the deepest two generations). */
+.vnode.anon { background: #1c1520; border-color: #3d2437; }
+.vnode.anon:hover { border-color: #5f1e46; }
+.vnode.anon.sel { border-color: #2a76c9; background: #1e3a5f; }
+.vnode .sp { font-size: 0.68rem; font-weight: 700; color: #ff7fb8; white-space: nowrap; }
+.g4 .sp { font-size: 0.62rem; }
+.sp-name { font-size: 0.58rem; color: #ff7fb8; white-space: nowrap; }
+.delta { font-size: 0.62rem; font-weight: 700; background: #5f1e46; border-radius: 5px; padding: 0 4px; white-space: nowrap; }
+.delta .arr { opacity: 0.6; font-weight: 400; }
+.delta-more { opacity: 0.7; font-weight: 400; }
+.node-warns { position: absolute; top: -4px; right: -4px; display: flex; gap: 2px; }
+.node-warn { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #101418; }
+.node-warn.amber { background: #e8c15a; }
+.node-warn.red { background: #ff5c5c; }
 
-.spark-total-row { display: flex; align-items: baseline; gap: 0.5rem; margin-top: 0.5rem; }
-.spark-total-row:first-of-type { margin-top: 0; }
-.spark-total-label { flex-shrink: 0; width: 4.5rem; font-size: 0.8rem; opacity: 0.6; }
+/* Docked focus panel: everything about the selected node in one place. */
+.focus { box-sizing: border-box; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; align-self: start; }
+.focus h4 { margin: 0.9rem 0 0.35rem; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; font-weight: 600; }
+.focus-who { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+.focus-icon { width: 44px; height: 44px; object-fit: contain; }
+span.focus-icon { display: inline-flex; font-size: 1.1rem; }
+.focus-name { font-size: 1.05rem; font-weight: 600; }
+.focus-role { opacity: 0.6; font-size: 0.8rem; }
+.focus-actions { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.focus-actions button { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+.focus-pick { width: 100%; border: 1px dashed #3a4250; background: #1a2027; color: #9aa1ab; }
+.focus-pick:hover { border-color: #2a76c9; color: inherit; }
+.focus-note { margin: 0.5rem 0 0; opacity: 0.65; font-size: 0.85rem; }
+.focus-legend { margin: 0.4rem 0 0; opacity: 0.45; font-size: 0.78rem; }
+.focus-rows { display: grid; gap: 0.4rem; }
+.focus-row { display: flex; align-items: center; gap: 0.45rem; background: #1a2230; border: 1px solid #1f2833; border-radius: 8px; padding: 0.3rem 0.5rem; font-size: 0.85rem; color: inherit; text-align: left; cursor: pointer; }
+.focus-row:hover { border-color: #2a3340; }
+.focus-row.dashed { border-style: dashed; color: #6b7280; background: #1a2027; }
+.focus-row img, .focus-row .lineage-icon-fallback { width: 24px; height: 24px; object-fit: contain; }
+.focus-row-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-row-spark { font-size: 0.78rem; font-weight: 700; color: #ff7fb8; white-space: nowrap; margin-left: auto; }
+
+/* The ten-letter table: final letters only, boosted highlighted (no
+   strikethrough — the cause math lives in the From column). */
+.apt-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.apt-table th { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; font-weight: 600; text-align: left; padding: 0.45rem 0.2rem 0.1rem; }
+.apt-table td { padding: 0.14rem 0.2rem; border-top: 1px solid #1f2833; }
+.apt-key { opacity: 0.75; }
+.apt-final { font-weight: 700; }
+.apt-final.boosted { background: #5f1e46; border-radius: 5px; padding: 0 6px; }
+.apt-unknown { opacity: 0.5; }
+.apt-from { opacity: 0.75; font-size: 0.75rem; }
+.apt-over { color: #e8c15a; opacity: 1; }
+.apt-cap { opacity: 0.55; }
+
+.spark-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.spark-editor select { font-size: 0.9rem; padding: 0.35rem 0.5rem; }
+.spark-warn { margin: 0.5rem 0 0; color: #ff8a80; background: #2a1517; border: 1px solid #5c2b2e; border-radius: 8px; padding: 0.4rem 0.6rem; font-size: 0.8rem; }
 
 .picker-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
 .picker-head .filter-title { margin-right: auto; }
@@ -306,10 +327,7 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 .card-chip.disabled { opacity: 0.2; cursor: default; }
 .card-chip.disabled:hover { opacity: 0.2; }
 
-/* Phones: trainee gets its own row, each parent stacks over its GPs. */
-@media (max-width: 640px) {
-  .designer-tree { grid-template-areas: "t t" "p1 g11" "p1 g12" "p2 g21" "p2 g22"; grid-template-columns: repeat(2, 1fr); }
-  .slot-tile { min-height: 6rem; padding: 1.4rem 0.35rem 0.5rem; }
-  .slot-open img, .slot-open .lineage-icon-fallback, .slot-empty-icon { width: 44px; height: 44px; }
-  .designer-panels { grid-template-columns: 1fr; }
+/* The B-degradation: map becomes a horizontal strip above the panel. */
+@media (max-width: 860px) {
+  .designer-combo { grid-template-columns: 1fr; }
 }

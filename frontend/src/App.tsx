@@ -163,8 +163,6 @@ export default function App() {
           path="/designer"
           element={
             <DesignerPage
-              veterans={veterans}
-              loaded={loaded}
               iconIndex={iconIndex}
               design={design}
               setDesign={setDesign}

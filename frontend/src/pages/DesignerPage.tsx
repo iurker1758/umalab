@@ -1,36 +1,27 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   api,
-  type AffinityResult,
+  type AptitudeLetters,
   type Blueprint,
+  type CatalogCard,
   type CatalogEntry,
-  type Veteran,
+  type PinkSpark,
 } from "../api";
-import { AffinityPanel } from "../components/AffinityPanel";
-import { BlueprintTree } from "../components/BlueprintTree";
+import { FocusPanel } from "../components/FocusPanel";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
-import { SparkTotals } from "../components/SparkTotals";
+import { TreeMap } from "../components/TreeMap";
 import {
-  SLOT_LABELS,
-  aggregateSparks,
-  catalogSlot,
   emptyDesign,
   fromApi,
-  rosterSlot,
-  setParentSlot,
+  nodeLabel,
   slotConflicts,
-  toAffinityRequest,
   toApi,
+  withNamed,
+  withSpark,
   type Design,
-  type SlotId,
-  type SlotValue,
 } from "../blueprint";
 
-const AFFINITY_DEBOUNCE_MS = 250;
-
 export function DesignerPage({
-  veterans,
-  loaded,
   iconIndex,
   design,
   setDesign,
@@ -38,8 +29,6 @@ export function DesignerPage({
   setSavedJson,
   onError,
 }: {
-  veterans: Veteran[];
-  loaded: boolean;
   iconIndex: Record<string, string>;
   // design + savedJson live in the App shell so a route change can't
   // discard an unsaved design (see App.tsx). savedJson is the toApi()
@@ -53,9 +42,10 @@ export function DesignerPage({
 }) {
   const [saved, setSaved] = useState<Blueprint[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  const [affinity, setAffinity] = useState<AffinityResult | null>(null);
-  const [scoreFailed, setScoreFailed] = useState(false);
-  const [pickerFor, setPickerFor] = useState<"trainee" | SlotId | null>(null);
+  // Which tree node the focus panel shows. Ephemeral by design — a route
+  // round-trip resets to the trainee, the design itself survives.
+  const [selected, setSelected] = useState(0);
+  const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -76,62 +66,26 @@ export function DesignerPage({
     };
   }, [onError]);
 
-  // Scoring threshold: a trainee plus at least one parent. Keyed on the
-  // request JSON so renaming the design doesn't re-score.
-  const affinityKey = useMemo(() => {
-    const belowThreshold =
-      design.trainee === null || (design.slots.p1 === null && design.slots.p2 === null);
-    return belowThreshold ? null : JSON.stringify(toAffinityRequest(design));
-  }, [design]);
-
-  useEffect(() => {
-    if (affinityKey === null) return;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => {
-      api
-        .scoreAffinity(JSON.parse(affinityKey), ctrl.signal)
-        .then((result) => {
-          if (!ctrl.signal.aborted) {
-            setAffinity(result);
-            setScoreFailed(false);
-          }
-        })
-        .catch(() => {
-          // Aborts are ours (a newer edit superseded this request). Real
-          // failures clear the result — the old design's numbers must not
-          // keep masquerading as current — and report inline in the panel
-          // rather than toasting once per edit while the backend is down.
-          if (!ctrl.signal.aborted) {
-            setAffinity(null);
-            setScoreFailed(true);
-          }
-        });
-    }, AFFINITY_DEBOUNCE_MS);
-    return () => {
-      clearTimeout(timer);
-      ctrl.abort();
-    };
-  }, [affinityKey]);
-
-  // Below the threshold the last result is simply not shown — gating at
-  // render time avoids a synchronous setState-in-effect just to clear it.
-  const shownAffinity = affinityKey === null ? null : affinity;
-
   const charaById = useMemo(
     () => new Map(catalog.map((e) => [e.chara_id, e])),
     [catalog]
   );
-  // null when the catalog is unavailable — BlueprintTree then falls back
-  // to the slot's backing veteran before resorting to a numeric id.
-  const charaName = (charaId: number) => charaById.get(charaId)?.name ?? null;
-  const traineeEntry = design.trainee === null ? undefined : charaById.get(design.trainee);
-  const traineeIcon = traineeEntry
-    ? iconIndex[String(traineeEntry.card_ids[0])]
-    : undefined;
-
-  const sparkTotals = useMemo(
-    () => aggregateSparks(design, veterans),
-    [design, veterans]
+  const cardById = useMemo(
+    () => new Map<number, CatalogCard>(catalog.flatMap((e) => e.cards.map((c) => [c.card_id, c]))),
+    [catalog]
+  );
+  // null when the catalog is unavailable — consumers fall back to ids/"?".
+  const charaName = useCallback(
+    (charaId: number) => charaById.get(charaId)?.name ?? null,
+    [charaById]
+  );
+  const aptitudesFor = useCallback(
+    (cardId: number): AptitudeLetters | null => cardById.get(cardId)?.aptitudes ?? null,
+    [cardById]
+  );
+  const outfitFor = useCallback(
+    (cardId: number) => cardById.get(cardId)?.outfit ?? null,
+    [cardById]
   );
 
   const dirty = savedJson === null
@@ -142,26 +96,28 @@ export function DesignerPage({
     const target = pickerFor;
     setPickerFor(null);
     if (target === null) return;
-    if (target === "trainee") {
-      setDesign((d) => ({ ...d, trainee: pick.chara_id }));
-      return;
-    }
-    const value: SlotValue = pick.veteran
-      ? rosterSlot(pick.veteran)
-      : catalogSlot(pick.chara_id, pick.card_id);
+    // A re-pick keeps the slot's typed spark: the pink is a plan input for
+    // the bracket math, not part of the card's identity, and re-typing it
+    // after every swap would be pure friction.
     setDesign((d) =>
-      target === "p1" || target === "p2"
-        ? setParentSlot(d, target, value, pick.veteran)
-        : { ...d, slots: { ...d.slots, [target]: value } }
+      withNamed(d, target, {
+        chara_id: pick.chara_id,
+        card_id: pick.card_id,
+        spark: d.named[target]?.spark ?? null,
+      })
     );
+    setSelected(target);
   };
 
-  const clearSlot = (target: "trainee" | SlotId) => {
-    setDesign((d) => {
-      if (target === "trainee") return { ...d, trainee: null };
-      if (target === "p1" || target === "p2") return setParentSlot(d, target, null);
-      return { ...d, slots: { ...d.slots, [target]: null } };
-    });
+  // Clears only the node itself: in a catalog-only designer every pick is
+  // independent — nothing below "belongs" to the cleared member (unlike the
+  // old roster auto-fill), and the game rules apply between filled slots.
+  const clearSlot = (target: number) => {
+    setDesign((d) => withNamed(d, target, null));
+  };
+
+  const setSpark = (target: number, spark: PinkSpark | null) => {
+    setDesign((d) => withSpark(d, target, spark));
   };
 
   const onSave = async () => {
@@ -226,6 +182,7 @@ export function DesignerPage({
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     setDesign(emptyDesign());
     setSavedJson(null);
+    setSelected(0);
   };
 
   return (
@@ -283,28 +240,34 @@ export function DesignerPage({
         </button>
       </div>
 
-      <BlueprintTree
-        design={design}
-        veterans={veterans}
-        loaded={loaded}
-        charaName={charaName}
-        traineeIcon={traineeIcon}
-        iconIndex={iconIndex}
-        affinity={shownAffinity}
-        onOpen={setPickerFor}
-        onClear={clearSlot}
-      />
-
-      <div className="designer-panels">
-        <AffinityPanel affinity={shownAffinity} failed={affinityKey !== null && scoreFailed} />
-        <SparkTotals totals={sparkTotals} />
+      <div className="designer-combo">
+        <div className="tree-map-wrap">
+          <TreeMap
+            design={design}
+            selected={selected}
+            onSelect={setSelected}
+            charaName={charaName}
+            aptitudesFor={aptitudesFor}
+          />
+        </div>
+        <FocusPanel
+          design={design}
+          index={selected}
+          iconIndex={iconIndex}
+          charaName={charaName}
+          outfitFor={outfitFor}
+          aptitudesFor={aptitudesFor}
+          onSelect={setSelected}
+          onOpenPicker={setPickerFor}
+          onClear={clearSlot}
+          onSetSpark={setSpark}
+        />
       </div>
 
       {pickerFor !== null && (
         <SlotPicker
-          title={pickerFor === "trainee" ? "Choose Trainee" : `Choose ${SLOT_LABELS[pickerFor]}`}
+          title={`Choose ${nodeLabel(pickerFor)}`}
           catalog={catalog}
-          veterans={pickerFor === "trainee" ? null : veterans}
           iconIndex={iconIndex}
           conflict={(charaId) => slotConflicts(design, pickerFor, charaId)}
           onPick={applyPick}

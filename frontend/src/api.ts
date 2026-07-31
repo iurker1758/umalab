@@ -1,4 +1,4 @@
-// Hand-written types mirroring the backend's Pydantic schemas (app/main.py).
+// Hand-written types mirroring the backend's Pydantic schemas (app/schemas.py).
 // OpenAPI codegen is a v2 concern.
 
 export interface Factor {
@@ -79,46 +79,40 @@ export interface ImportInfo {
   filename: string;
 }
 
-// ---------- designer (catalog / affinity / blueprints) ----------
+// ---------- designer (catalog / blueprints) ----------
+
+// The ten aptitude keys in the game's display order (track, distance,
+// running style) — mirrors the backend's AptitudeKey Literal.
+export const APTITUDE_KEYS = [
+  "turf", "dirt",
+  "sprint", "mile", "medium", "long",
+  "front", "pace", "late", "end",
+] as const;
+export type AptitudeKey = (typeof APTITUDE_KEYS)[number];
+
+// Base career-start letters per card (G..A today; S has a fixed meaning).
+export type AptitudeLetters = Record<AptitudeKey, string>;
+
+// One pink (aptitude) spark. Single, not a list — every lineage member
+// carries exactly one pink (verified against a real full dump). stars 1–3.
+export interface PinkSpark {
+  aptitude: AptitudeKey;
+  stars: number;
+}
+
+export interface CatalogCard {
+  card_id: number;
+  outfit: string;
+  // null when the card is missing from aptitudes.json (a regen gap) —
+  // "letters unknown" in the UI.
+  aptitudes: AptitudeLetters | null;
+}
 
 export interface CatalogEntry {
   chara_id: number;
   name: string;
-  // Sorted; [0] is the base outfit and doubles as the icon key.
-  card_ids: number[];
-}
-
-// A slot in the stateless scoring request: chara plus its raw won-saddle ids
-// (empty for catalog/theoretical picks). The trainee sends no wins.
-export interface AffinitySlotRequest {
-  chara_id: number;
-  win_saddle_ids: number[];
-}
-
-export interface AffinityRequest {
-  trainee_chara_id: number | null;
-  p1?: AffinitySlotRequest | null;
-  p2?: AffinitySlotRequest | null;
-  g11?: AffinitySlotRequest | null;
-  g12?: AffinitySlotRequest | null;
-  g21?: AffinitySlotRequest | null;
-  g22?: AffinitySlotRequest | null;
-}
-
-export interface AffinityLink {
-  link: string;
-  relation_points: number;
-  win_points: number;
-}
-
-export interface AffinityResult {
-  total: number;
-  symbol: string;
-  relation_total: number;
-  win_total: number;
-  links: AffinityLink[];
-  p1_affinity: number | null;
-  p2_affinity: number | null;
+  // Sorted by card_id; [0] is the base outfit and doubles as the icon key.
+  cards: CatalogCard[];
 }
 
 export interface BlueprintSlot {
@@ -128,20 +122,19 @@ export interface BlueprintSlot {
   win_saddle_ids: number[];
   trained_chara_id?: number | null;
   position_id?: number | null;
+  spark?: PinkSpark | null;
 }
 
+// Blueprint document v2 (DECISIONS.md #25): `named` is the identity triangle
+// breadth-first — [0] trainee, [1–2] parents, [3–6] grandparents; `sparks`
+// covers tree indices 7–30 (generations 3–4) as bare pinks. Both exact-length.
 export interface BlueprintSlots {
-  p1: BlueprintSlot | null;
-  p2: BlueprintSlot | null;
-  g11: BlueprintSlot | null;
-  g12: BlueprintSlot | null;
-  g21: BlueprintSlot | null;
-  g22: BlueprintSlot | null;
+  named: (BlueprintSlot | null)[];
+  sparks: (PinkSpark | null)[];
 }
 
 export interface BlueprintIn {
   name: string;
-  trainee_chara_id: number | null;
   slots: BlueprintSlots;
 }
 
@@ -203,15 +196,8 @@ export const api = {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     }),
   catalog: () => fetch("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
-  // Takes a signal so the designer's debounced effect can abort a stale
-  // request instead of racing it against the newer one.
-  scoreAffinity: (body: AffinityRequest, signal?: AbortSignal) =>
-    fetch("/api/affinity", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    }).then((r) => json<AffinityResult>(r)),
+  // /api/affinity exists but v1 of the deep-tree designer doesn't call it —
+  // run affinity returns with the roster features (DECISIONS.md #26).
   blueprints: () => fetch("/api/blueprints").then((r) => json<Blueprint[]>(r)),
   createBlueprint: (body: BlueprintIn) =>
     fetch("/api/blueprints", {

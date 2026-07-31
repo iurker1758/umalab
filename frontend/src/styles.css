@@ -373,9 +373,21 @@ button.bp-row:hover { background: #1e2937; }
    when the widest label meets the narrowest (gen-4) column on a phone. */
 .vnode .sp { max-width: 100%; font-size: 0.68rem; font-weight: 700; color: #ff7fb8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g4 .sp { font-size: 0.62rem; }
+/* The pulled character's portrait on a deep slot. Gen 4 is one grid column
+   wide against gen 3's two, so it takes the smaller of the pair. */
+.sp-ico { width: 30px; height: 30px; object-fit: contain; }
+.g4 .sp-ico { width: 24px; height: 24px; }
+/* The circle also holds the space on an un-pulled slot, so the spark row
+   doesn't shift the first time a portrait lands. Its own font-size, since
+   .lineage-icon-fallback is sized for the 52px named-node icon. */
+.sp-ico.lineage-icon-fallback { font-size: 0.8rem; }
+.g4 .sp-ico.lineage-icon-fallback { font-size: 0.68rem; }
 .sp-name { max-width: 100%; font-size: 0.58rem; color: #ff7fb8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Empty spark slots wear the placeholder in the dashed-dim style. */
 .vnode.pick .sp, .vnode.pick .sp-name { color: inherit; font-weight: 400; }
+/* Same de-emphasis for a deep slot that has a face but no pink yet: it isn't
+   empty (no dashed border), but its spark row is still placeholder text. */
+.vnode .sp.ph, .vnode .sp-name.ph { color: #6b7280; font-weight: 400; }
 /* On-chip aptitude cells (u-ma.org-style labeled letters): label + letter
    boxes grouped into the roster's three rows, boosted highlighted — the
    graph reads without clicking into the panel. */
@@ -452,12 +464,49 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .apt-from { opacity: 0.75; font-size: 0.75rem; }
 .apt-cap { opacity: 0.55; }
 
+/* A locked node's pink, read-only: the editor's footprint without its
+   controls, so the panel doesn't jump between locked and free nodes. */
+.spark-static { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; padding: 0.35rem 0; }
+/* The fill colour is scoped per context (.spark-group on the roster card,
+   .vnode on the map), so the readout needs its own or every star renders
+   in the unfilled grey. Pink, like the map's — these are pink sparks. */
+.spark-static .star { font-size: 0.75rem; }
+.spark-static .star.filled { color: #ff7fb8; }
 .spark-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .spark-editor select { font-size: 0.9rem; padding: 0.35rem 0.5rem; }
 .spark-warn { margin: 0.5rem 0 0; color: #ff8a80; background: #2a1517; border: 1px solid #5c2b2e; border-radius: 8px; padding: 0.4rem 0.6rem; font-size: 0.8rem; }
 
 .picker-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
 .picker-head .filter-title { margin-right: auto; }
+/* Catalog / roster source. Full width so the two halves are equal targets —
+   the roster is the shortcut, not a lesser option. box-sizing because the
+   seg-group carries a border and .uma-popout scrolls on Y: without it the
+   strip is 2px over and the popout gains a horizontal scrollbar, since CSS
+   promotes overflow-x from visible to auto when the other axis isn't. */
+.picker-source { display: flex; box-sizing: border-box; width: 100%; margin-bottom: 0.5rem; }
+.picker-source .seg { flex: 1; }
+/* The roster's pill dock, inside the picker: sticky rather than fixed, so it
+   rides the popout's own scrollport instead of the page's. The container
+   itself stays transparent, like the roster's — the two pills carry their
+   own background and shadow, and float over the chips. */
+.picker-dock { position: sticky; z-index: 5; bottom: 0; right: auto; max-width: none;
+  margin: 0 -0.2rem -0.3rem; padding: 0.5rem 0.2rem; background: none; pointer-events: none; }
+.picker-dock > * { pointer-events: auto; }
+/* Roster picks render as the roster page's own cards, so they get its grid —
+   narrower tracks, since the popout is 520px against the page's 1100. */
+.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.5rem; }
+.picker-grid .empty { grid-column: 1 / -1; }
+/* The roster page's filter panel, reused inside the picker. It has only ever
+   opened from the roster dock (z-index 8), which sits UNDER the popout layer
+   — so both it and its backdrop are lifted over the picker here. */
+.picker-filters .filter-panel { z-index: 12; }
+.picker-filters .filter-backdrop { z-index: 11; }
+/* And the panel's own choosers (umas, common sparks) above THAT. They sit at
+   the popout layer, which outranks the panel on the roster page but not once
+   the panel has been lifted over the picker. The selector can't catch the
+   picker's own popout — that's a sibling of this wrapper, not a child. */
+.picker-filters .uma-popout { z-index: 14; }
+.picker-filters .uma-popout-backdrop { z-index: 13; }
 /* aria-disabled chips stay interactive for hover/title (a natively disabled
    button never shows the tooltip explaining why the pick is illegal). */
 .card-chip.disabled { opacity: 0.2; cursor: default; }
@@ -476,5 +525,8 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
   /* Phone gen-4 columns are ~40px: the longest label ("Medium") only clears
      them a size down, and an ellipsis there costs the word itself. */
   .g4 .sp-name { font-size: 0.5rem; }
+  /* ~40px columns at this width — the portrait has to give way first. */
+  .sp-ico { width: 22px; height: 22px; }
+  .g4 .sp-ico { width: 18px; height: 18px; }
   .vnode.anon { padding: 0.45rem 0.15rem; }
 }

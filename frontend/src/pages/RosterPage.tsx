@@ -9,13 +9,15 @@ import {
   DEFAULT_ASC,
   SORTS,
   SORT_STORE,
-  blueSparkRank,
+  commonSparkNamesOf,
   loadSortPref,
   markLabel,
+  rosterCardsOf,
+  sortVeterans,
   type SortKey,
   type SortPref,
 } from "../domain";
-import { countFilters, isCommonKind, matchesFilters, type Filters } from "../filters";
+import { countFilters, matchesFilters, type Filters } from "../filters";
 
 export function RosterPage({
   veterans,
@@ -79,46 +81,15 @@ export function RosterPage({
     }
   };
 
-  // One entry per distinct card in the roster, for the Umas filter section.
-  const rosterCards = useMemo(() => {
-    const seen = new Map<number, Veteran>();
-    for (const v of veterans) {
-      if (!seen.has(v.card_id)) seen.set(v.card_id, v);
-    }
-    return [...seen.values()].sort(
-      (a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id
-    );
-  }, [veterans]);
+  // Shared with the designer's picker, which renders the same roster behind
+  // the same filter panel — see domain.ts.
+  const rosterCards = useMemo(() => rosterCardsOf(veterans), [veterans]);
+  const commonSparkNames = useMemo(() => commonSparkNamesOf(veterans), [veterans]);
 
-  // Every common-spark (white skill / race / scenario) name present anywhere
-  // in the roster (own + lineage) — the searchable vocabulary for the filter.
-  const commonSparkNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const v of veterans) {
-      for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
-      for (const m of v.lineage) {
-        for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
-      }
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [veterans]);
-
-  const sorted = useMemo(() => {
-    const cards = veterans.filter((v) => matchesFilters(v, filters));
-    const val = (v: Veteran) =>
-      sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key];
-    cards.sort((a, b) => {
-      const av = val(a);
-      const bv = val(b);
-      // register_time is ISO, so string compare doubles as date order.
-      const cmp =
-        typeof av === "string" && typeof bv === "string"
-          ? av.localeCompare(bv)
-          : Number(av) - Number(bv);
-      return sort.asc ? cmp : -cmp;
-    });
-    return cards;
-  }, [veterans, sort, filters]);
+  const sorted = useMemo(
+    () => sortVeterans(veterans.filter((v) => matchesFilters(v, filters)), sort),
+    [veterans, sort, filters]
+  );
 
   // Derived from the roster, not stored: a refresh (tag edit, re-import)
   // updates the open modal in place, and an import that drops the veteran

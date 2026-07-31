@@ -109,11 +109,25 @@ jobs:
           timeout 90 bash -c 'until curl -sf http://localhost:5173 > /dev/null; do sleep 1; done' \
             || { echo "::error::frontend never came up"; cat "$RUNNER_TEMP/frontend.log"; exit 1; }
 
+      # The roster is where the designer's pull gets its veterans, and an
+      # empty one skips those checks entirely. Seeding is safe here and only
+      # here: an import is a full-replace snapshot (DECISIONS.md #3), so the
+      # suite itself never imports — doing that locally would destroy a real
+      # roster. E2E_REQUIRE_ROSTER below turns a silent skip into a failure,
+      # so a broken seed can't read as a green run.
+      - name: Seed the roster fixture
+        run: |
+          curl -sf -X POST http://localhost:8000/api/imports \
+            -F "file=@tests/fixtures/roster.json;filename=data.json" -o /dev/null \
+            || { echo "::error::fixture import failed"; cat "$RUNNER_TEMP/backend.log"; exit 1; }
+        working-directory: backend
+
       - name: Deep-tree designer suite
         run: npm run e2e
         working-directory: frontend
         env:
           E2E_ARTIFACT_DIR: ${{ runner.temp }}/e2e-artifacts
+          E2E_REQUIRE_ROSTER: "1"
 
       - name: Collect server logs
         if: failure()

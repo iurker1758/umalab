@@ -42,10 +42,34 @@ const LABEL = {
 };
 
 // ---------- baseline from the API ----------
-const catalog = await (await fetch(`${BASE}/api/catalog`)).json();
-const baselineIds = new Set(
-  (await (await fetch(`${BASE}/api/blueprints`)).json()).map((b) => b.id)
-);
+// Checked, unlike a bare .json(): these sit above the try block, so a 500 or
+// an HTML error page would otherwise surface as `SyntaxError: Unexpected
+// token '<'` with no results file and no screenshot. CI's readiness gate
+// polls :8000 directly while this goes through the Vite proxy, so a broken
+// proxy is exactly the case it can't rule out.
+const getJson = async (path) => {
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`);
+  } catch (e) {
+    console.log(`cannot reach ${BASE}${path} (${e}) — are both servers running?`);
+    process.exit(1);
+  }
+  if (!res.ok) {
+    console.log(`${BASE}${path} returned ${res.status} ${res.statusText} — cannot run`);
+    process.exit(1);
+  }
+  return res.json();
+};
+
+const catalog = await getJson("/api/catalog");
+const baselineIds = new Set((await getJson("/api/blueprints")).map((b) => b.id));
+// Optional: the roster is the pull's source, and an empty one is a legitimate
+// state (nobody has imported a dump). CI seeds tests/fixtures/roster.json so
+// the roster section always runs there; locally it runs against whatever you
+// have imported. The suite NEVER imports — imports are full-replace snapshots
+// (DECISIONS.md #3), so seeding from here would destroy a real roster.
+const roster = await getJson("/api/veterans");
 const owned = new Set();
 
 // Cast: base cards only (picked by exact chip label), chosen so every
@@ -80,11 +104,101 @@ const P2 = pickCard("p2", (a) =>
 );
 const aptLow = KEYS.find((k) => k !== "mile" && idx(P2.apt[k]) >= 0 && idx(P2.apt[k]) < CAP);
 const G12 = pickCard("g12", () => true);
+
+// ---------- roster cast (independent reimplementation, like the brackets) ----------
+// A pink factor packs its aptitude in the key and its stars in the
+// remainder; keys from app/data/factors.json type 1. Reimplemented here
+// rather than imported so the suite checks the app against the spec.
+const PINK_KEYS = {
+  11: "turf", 12: "dirt",
+  21: "front", 22: "pace", 23: "late", 24: "end",
+  31: "sprint", 32: "mile", 33: "medium", 34: "long",
+};
+const pinkOf = (factors) => {
+  let best = null;
+  for (const f of factors ?? []) {
+    const aptitude = PINK_KEYS[f.key];
+    if (aptitude === undefined || f.star < 1 || f.star > 3) continue;
+    if (best === null || f.star > best.stars) best = { aptitude, stars: f.star };
+  }
+  return best;
+};
+const memberAt = (v, position) => v.lineage.find((m) => m.position_id === position);
+// The map names a node from the CATALOG, by chara — so a veteran (or a
+// lineage member) whose card the catalog doesn't serve renders as
+// "Chara 1234" and the name assertions below would be checking a fallback.
+const catalogCharas = new Set(catalog.map((e) => e.chara_id));
+// Every position the pull reads. A veteran short of one is no use here: the
+// checks below assert on all six.
+const pullable = (v) =>
+  pinkOf(v.factors) !== null &&
+  catalogCharas.has(v.chara_id) &&
+  [10, 20, 11, 12, 21, 22].every((p) => {
+    const m = memberAt(v, p);
+    return m !== undefined && pinkOf(m.factors) !== null && catalogCharas.has(m.chara_id);
+  });
+
+// Two veterans whose pulls are distinguishable: different charas, and
+// different position-10 parents, so replacing one with the other visibly
+// changes both Parent 1 and Grandparent 1-1.
+const candidates = roster.filter(pullable);
+const RV1 = candidates[0];
+const RV2 = candidates.find(
+  (v) =>
+    RV1 !== undefined &&
+    v.chara_id !== RV1.chara_id &&
+    memberAt(v, 10).chara_id !== memberAt(RV1, 10).chara_id
+);
+// A catalog card to hand-place where a later pull will land, so the confirm
+// has something hand-authored to warn about. It sits at Grandparent 2-2 and
+// is then swallowed by a pull into Parent 2, so it must clash with neither
+// veteran: not their charas, and not the succession parents either of them
+// writes into the surrounding nodes.
+const GX =
+  RV1 === undefined || RV2 === undefined
+    ? undefined
+    : (() => {
+        const taken = new Set(
+          [RV1, RV2].flatMap((v) => [
+            v.chara_id,
+            memberAt(v, 10).chara_id,
+            memberAt(v, 20).chara_id,
+          ])
+        );
+        const entry = catalog.find(
+          (e) => !used.has(e.chara_id) && e.cards[0].aptitudes !== null && !taken.has(e.chara_id)
+        );
+        if (entry === undefined) return undefined;
+        used.add(entry.chara_id);
+        return { entry, card: entry.cards[0] };
+      })();
+
+// The roster section runs only when the data supports every one of its
+// assertions. CI seeds tests/fixtures/roster.json and sets
+// E2E_REQUIRE_ROSTER, so an unusable roster there is a broken seeding step
+// rather than an empty database — it must fail loudly instead of quietly
+// skipping the section it exists to cover.
+const rosterReady = RV1 !== undefined && RV2 !== undefined && GX !== undefined;
+if (!rosterReady && process.env.E2E_REQUIRE_ROSTER) {
+  console.log(
+    `roster required but unusable: ${roster.length} veterans, ${candidates.length} with a ` +
+    "full pinked six-slot lineage, and a spare catalog chara for the overwrite check — " +
+    "did the fixture import step run?"
+  );
+  process.exit(1);
+}
+
 console.log(
   `baseline: ${catalog.length} catalog charas, ${baselineIds.size} blueprints; ` +
   `T=${T.entry.name} (mile ${T.apt.mile}), P1=${P1.entry.name} (mile ${P1.apt.mile}, ` +
   `${aptA} A), P2=${P2.entry.name} (${aptLow} ${P2.apt[aptLow]}), ` +
   `G11=${G11.entry.name}, G12=${G12.entry.name}`
+);
+console.log(
+  rosterReady
+    ? `roster: ${roster.length} veterans; RV1=${RV1.name} (${RV1.trained_chara_id}), ` +
+      `RV2=${RV2.name} (${RV2.trained_chara_id}), GX=${GX.entry.name}`
+    : `roster: ${roster.length} veterans — unusable, roster checks will be skipped`
 );
 
 const bpName = `verify-deep-tree ${Date.now()}`;
@@ -92,18 +206,55 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await ctx.newPage();
 const errors = [];
-page.on("pageerror", (e) => errors.push(String(e)));
+// Windows where the run deliberately breaks the network. Anything logged
+// inside one is expected; anything outside is real. This replaces an index
+// into `errors` taken once, which classified EVERY later HTTP failure as
+// noise — including a genuine 500 from the blueprints API in the middle of
+// the persistence section, the highest-value part of the run. That was a
+// false-green risk in exactly the place it could hide most.
+let deliberate = false;
+const expected = [];
+const logError = (message) => (deliberate ? expected : errors).push(message);
+const breaking = async (fn) => {
+  deliberate = true;
+  try {
+    return await fn();
+  } finally {
+    deliberate = false;
+  }
+};
+
+page.on("pageerror", (e) => logError(String(e)));
 // "Failed to load resource" carries no URL, which makes a failure here
 // impossible to act on — the response hook below reports the same thing with
 // the method and URL attached.
 page.on("console", (m) => {
-  if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) errors.push(m.text());
+  if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) logError(m.text());
 });
 page.on("response", (r) => {
-  if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.request().method()} ${r.url()}`);
+  if (r.status() >= 400) logError(`HTTP ${r.status()} ${r.request().method()} ${r.url()}`);
 });
-// Accept every confirm (delete + discard-unsaved prompts).
-page.on("dialog", (d) => d.accept());
+// Accept every confirm (delete + discard-unsaved prompts) unless a check has
+// armed the switch. The roster pull's overwrite guard is the one place where
+// DECLINING is the behaviour under test, and a confirm nobody tests
+// declining is a confirm that has silently become an overwrite. One handler
+// reading a flag, not two handlers: both would fire and the first to answer
+// would win, which is a race rather than a choice.
+let dialogAction = "accept";
+let lastDialog = null;
+page.on("dialog", (d) => {
+  lastDialog = d.message();
+  void (dialogAction === "dismiss" ? d.dismiss() : d.accept());
+});
+const withDialog = async (action, fn) => {
+  dialogAction = action;
+  lastDialog = null;
+  try {
+    return await fn();
+  } finally {
+    dialogAction = "accept";
+  }
+};
 
 // Screenshot at the moment of failure, not at the end — this suite is one
 // long narrative, so by `finally` the page has moved well past the break.
@@ -139,6 +290,62 @@ const pickInto = async (who) => {
   await page.locator(`.designer-picker .card-chip[aria-label="${chipLabel(who)}"]`).click();
   await page.waitForSelector(".designer-picker", { state: "detached" });
 };
+// A roster chip is labeled by identity plus the pink it carries — two
+// veterans trained from the same card would otherwise read identically.
+const vetChipLabel = (v) => {
+  const pink = pinkOf(v.factors);
+  return (
+    `${v.name}${v.outfit !== "Original" ? ` (${v.outfit})` : ""} · ` +
+    (pink === null ? "no pink" : `${pink.stars}★ ${LABEL[pink.aptitude]}`)
+  );
+};
+// Pull a roster veteran into the selected node. Returns the confirm message
+// the app raised, or null if it went through without asking.
+const pullInto = async (v, action = "accept") =>
+  withDialog(action, async () => {
+    const open = page.locator(".focus-pick, .focus-actions button", { hasText: /Choose|Replace/ });
+    await open.first().click();
+    await page.waitForSelector(".designer-picker");
+    await page.locator(".picker-source .seg", { hasText: "My Roster" }).click();
+    // No name search on this tab — the roster is sorted and filtered instead,
+    // and veterans render as the roster page's own cards (.card), not the
+    // catalog's bare chips.
+    await page.locator(`.designer-picker .card[aria-label="${vetChipLabel(v)}"]`).click();
+    if (action === "dismiss") {
+      // Declining an overwrite has to leave the picker exactly as it was:
+      // the confirm is raised on the way to a pick, so closing first would
+      // throw away the filters and sort on the way to a dialog the user then
+      // declined, and make "Cancel" cost a search.
+      check("declining an overwrite leaves the picker open",
+        (await page.locator(".designer-picker").count()) === 1);
+      await page.keyboard.press("Escape");
+    }
+    await page.waitForSelector(".designer-picker", { state: "detached" });
+    // The dialog is raised synchronously inside the click handler, so by the
+    // time the picker has closed it has already been answered.
+    return lastDialog;
+  });
+const sparkLabel = (member) => {
+  const pink = pinkOf(member.factors);
+  return `${pink.stars}★ ${LABEL[pink.aptitude]}`;
+};
+// A deep chip that holds a character names her after the spark: the portrait
+// is decorative, so the label is the only place her identity is reachable.
+// The cast guarantees every pulled member's chara is in the catalog, so this
+// never has to cope with the "…" not-loaded form.
+const charaNameOf = (charaId) => catalog.find((e) => e.chara_id === charaId)?.name;
+// Whether a deep chip shows somebody. Deliberately NOT "renders an <img>":
+// character art is gitignored (DECISIONS.md #10) and CI never fetches it, so
+// requiring the portrait would fail there for a reason unrelated to the code.
+// The slot falls back to her initial, and the thing worth asserting is that
+// it knows who it is at all — never the "+" an empty slot shows.
+const hasFace = async (node) => {
+  const ico = mapChip(node).locator(".sp-ico");
+  if ((await ico.count()) !== 1) return false;
+  if ((await mapChip(node).locator("img.sp-ico").count()) === 1) return true;
+  return ((await ico.textContent()) ?? "").trim() !== "+";
+};
+const deepLabel = (member) => `${sparkLabel(member)} · ${charaNameOf(member.chara_id)}`;
 const setSpark = async (node, aptitude, stars) => {
   await page.locator(`select[aria-label="${node} pink spark"]`).selectOption(aptitude);
   await page.locator(`[aria-label="${node} stars"] .seg`, { hasText: `${stars}★` }).click();
@@ -253,8 +460,15 @@ try {
   // ---------- trainee: catalog-only picker, base letters ----------
   await page.locator(".focus-pick").click();
   await page.waitForSelector(".designer-picker");
-  check("picker is catalog-only (no tabs)",
-    (await page.locator(".designer-picker .seg").count()) === 0);
+  // Catalog is the default source whether or not a roster exists: a plan
+  // that starts from the sparks you're hunting has to work against an empty
+  // roster, so pulling a veteran is the shortcut and never the entry point.
+  // The tab strip appears only when there's something to pull.
+  // This picker is the TRAINEE's, which never offers the roster: the trainee
+  // is the horse you're about to train, so it isn't in your roster — and a
+  // pull there would be the one click that empties all 31 nodes.
+  check("the trainee's picker offers no roster tab",
+    (await page.locator(".designer-picker .picker-source").count()) === 0);
   await page.locator(".uma-search").fill(T.entry.name);
   await page.locator(`.designer-picker .card-chip[aria-label="${chipLabel(T)}"]`).click();
   await page.waitForSelector(".designer-picker", { state: "detached" });
@@ -377,14 +591,21 @@ try {
     !(await rowFrom("Mile")).includes("over 10") &&
     (await page.locator(".apt-over, .node-warn:not(.red)").count()) === 0);
 
-  // ---------- past-cap excess: soft info ----------
+  // ---------- past the A cap: counted, never annotated ----------
+  // Stars beyond what the ceiling can absorb are neither warned about nor
+  // called out: overstacking is usually deliberate, since every matching
+  // spark is an independent inspiration ticket toward S. The row reports
+  // what the window holds and leaves the verdict alone.
   await selectNode("Sparks 3-4");
   await setSpark("Sparks 3-4", aptA, 3);
   await selectNode("Parent 1");
   check(`p1 ${aptA} stays A`, (await rowLetter(LABEL[aptA])) === "A");
-  check("past-cap note still shown",
-    (await rowFrom(LABEL[aptA])).includes("past A") &&
-    (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 1);
+  check("the row still reports the stars behind it",
+    (await rowFrom(LABEL[aptA])).startsWith("3★ → +1"),
+    await rowFrom(LABEL[aptA]));
+  check("and says nothing about the excess",
+    !(await rowFrom(LABEL[aptA])).includes("past A") &&
+    (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 0);
 
   // ---------- G11's own window: gen-3/4 sparks only ----------
   await selectNode("Sparks 4-1");
@@ -685,11 +906,300 @@ try {
     (await page.locator(".vped .vnode").count()) === 31 &&
     (await page.locator(".side-toggle").count()) === 0);
 
+  // ---------- roster pulls: two generations from one pick ----------
+  if (!rosterReady) {
+    console.log("  skip: roster pull checks (no usable roster — see the baseline line above)");
+  } else {
+    const P10 = memberAt(RV1, 10);
+    const P20 = memberAt(RV1, 20);
+    await newBlueprint();
+    await rename(`${bpName} roster`);
+    await selectNode("Parent 1");
+    // Unlike the trainee's, a parent's picker offers both sources — with
+    // catalog selected, so a plan that starts from the pinks you're hunting
+    // still works against an empty roster.
+    await page.locator(".focus-pick").click();
+    await page.waitForSelector(".designer-picker");
+    check("a parent's picker offers both sources",
+      JSON.stringify(
+        await page.locator(".designer-picker .picker-source .seg").allTextContents()
+      ) === JSON.stringify(["Catalog", "My Roster"]));
+    check("with catalog the default",
+      JSON.stringify(
+        await page.locator(".designer-picker .picker-source .seg.active").allTextContents()
+      ) === JSON.stringify(["Catalog"]));
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".designer-picker", { state: "detached" });
+
+    // Into an empty tree: nothing hand-authored is at risk, so the pull must
+    // not stop to ask. A dialog on the fast path is how people learn to
+    // dismiss the one that matters.
+    const quiet = await pullInto(RV1);
+    check("a pull into empty nodes fills silently", quiet === null, String(quiet));
+    check("the pulled veteran lands in the node you picked",
+      (await mapChip("Parent 1").getAttribute("aria-label")) === `Parent 1 — ${RV1.name}`);
+    check("the pull brings the veteran's own pink with it",
+      (await mapChip("Parent 1").locator(".spark-row").textContent())
+        .includes(LABEL[pinkOf(RV1.factors).aptitude]));
+
+    // The generation mapping, which is the one thing easy to get wrong: a
+    // blueprint grandparent is the parent veteran's PARENT (succession
+    // position 10/20), never its grandparent. 11/12/21/22 go a generation
+    // deeper, into the anonymous spark slots.
+    check("position 10 becomes Grandparent 1-1",
+      (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
+        `Grandparent 1-1 — ${P10.name}`);
+    check("position 20 becomes Grandparent 1-2",
+      (await mapChip("Grandparent 1-2").getAttribute("aria-label")) ===
+        `Grandparent 1-2 — ${P20.name}`);
+    const deep = [
+      ["Sparks 3-1", 11], ["Sparks 3-2", 12], ["Sparks 3-3", 21], ["Sparks 3-4", 22],
+    ];
+    for (const [node, position] of deep) {
+      check(`position ${position} becomes ${node}`,
+        (await mapChip(node).getAttribute("aria-label")) ===
+          `${node} — ${deepLabel(memberAt(RV1, position))}`,
+        await mapChip(node).getAttribute("aria-label"));
+    }
+    // Nothing is invented below what the dump carries: a veteran stores two
+    // generations, so generation 4 gets no data from a parent-level pull.
+    check("the pull puts nothing in generation 4 — the dump doesn't reach it",
+      (await mapChip("Sparks 4-1").getAttribute("aria-label")) === "Sparks 4-1 — empty");
+    check("and it touches nothing on the other parent's side",
+      (await mapChip("Parent 2").getAttribute("aria-label")) === "Parent 2 — empty" &&
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        "Grandparent 2-1 — empty");
+
+    // Generation 3 has no room on the map for a name, so the identity the
+    // pull carried is shown here or nowhere.
+    await selectNode("Sparks 3-1");
+    check("a pulled deep slot names who it is",
+      (await page.locator(".focus-role").textContent()).includes(memberAt(RV1, 11).name));
+
+    // It has to survive the API, not just the client. The stored document is
+    // checked directly: the map can only show what a slot renders as, not
+    // whether the snapshot carried the wins and the backing veteran.
+    await settled();
+    const storedRoster = (await rows()).find((b) => b.name === `${bpName} roster`);
+    const s1 = storedRoster?.slots?.named?.[1];
+    const s3 = storedRoster?.slots?.named?.[3];
+    check("the roster slot persists its source and backing veteran",
+      s1?.source === "roster" && s1?.trained_chara_id === RV1.trained_chara_id &&
+      s1?.card_id === RV1.card_id,
+      JSON.stringify(s1));
+    check("won saddles ride in the snapshot, not re-read from the roster",
+      JSON.stringify(s1?.win_saddle_ids) === JSON.stringify(RV1.win_saddles),
+      JSON.stringify(s1?.win_saddle_ids));
+    check("the lineage slot persists which succession position it came from",
+      s3?.source === "lineage" && s3?.position_id === 10 &&
+      s3?.trained_chara_id === RV1.trained_chara_id && s3?.card_id === P10.card_id,
+      JSON.stringify(s3));
+    check("a pulled generation-3 spark keeps the identity it arrived with",
+      storedRoster?.slots?.sparks?.[0]?.card_id === memberAt(RV1, 11).card_id,
+      JSON.stringify(storedRoster?.slots?.sparks?.[0]));
+
+    // Switch away and back so the design comes from the server, not from the
+    // page's own state. Polled, not sampled: `.designer` re-renders before
+    // the fetch lands (the PR #20 hydration race).
+    await newBlueprint();
+    await page.waitForFunction(() => document.querySelectorAll(".vped .vnode.pick").length === 31);
+    await switchTo(`${bpName} roster`);
+    check("a pulled design round-trips through the API",
+      await until(async () =>
+        (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
+          `Grandparent 1-1 — ${P10.name}`),
+      await mapChip("Grandparent 1-1").getAttribute("aria-label"));
+    check("and the deep slots come back with it",
+      (await mapChip("Sparks 3-3").getAttribute("aria-label")) ===
+        `Sparks 3-3 — ${deepLabel(memberAt(RV1, 21))}`);
+
+    // ---------- a pulled branch is read-only ----------
+    // Everything under a real veteran is her recorded pedigree, so it can't
+    // be edited — the controls are gone, not merely ignored.
+    await selectNode("Grandparent 1-1");
+    check("a pulled branch offers no Replace or Clear",
+      (await page.locator(".focus-actions button").count()) === 0 &&
+      (await page.locator(".focus-pick").count()) === 0);
+    check("and no spark editor — that pink is the horse's own",
+      (await page.locator('select[aria-label="Grandparent 1-1 pink spark"]').count()) === 0 &&
+      (await page.locator(".spark-static").count()) === 1);
+    check("the panel says whose pedigree it is",
+      (await page.locator(".focus-note").textContent()).includes("Parent 1"));
+    await selectNode("Parent 1");
+    check("the veteran herself keeps Replace and Clear",
+      (await page.locator(".focus-actions button").count()) === 2);
+    check("but not her spark editor",
+      (await page.locator('select[aria-label="Parent 1 pink spark"]').count()) === 0);
+
+    // ---------- pulling into a grandparent reaches generation 4 ----------
+    // On the OTHER parent's side, which nothing has pulled into yet. Deep
+    // slots have no room for a name, so the pulled card id is what puts a
+    // portrait on them — the only thing that makes one recognisable at a
+    // glance. It rides along at every depth the dump reaches.
+    await selectNode("Grandparent 2-1");
+    const pulledGp = await pullInto(RV1);
+    check("a grandparent takes a pull too", pulledGp === null, String(pulledGp));
+    check("its generation-3 slots take the veteran's parents",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${deepLabel(memberAt(RV1, 10))}`);
+    check("and its generation-4 slots take their parents' sparks",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
+        `Sparks 4-9 — ${deepLabel(memberAt(RV1, 11))}`);
+    await selectNode("Sparks 3-5");
+    check("generation 3 says who it is",
+      (await page.locator(".focus-role").count()) === 1);
+    await selectNode("Sparks 4-9");
+    check("generation 4 does too",
+      (await page.locator(".focus-role").count()) === 1);
+    // The portrait is the point of storing the id — a deep slot has no room
+    // for a name, so without art it's an anonymous star count again.
+    check("both depths show a face on the map",
+      (await hasFace("Sparks 3-5")) && (await hasFace("Sparks 4-9")));
+    check("and the label names her, so the art itself is decorative",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
+        `Sparks 4-9 — ${deepLabel(memberAt(RV1, 11))}`);
+    await settled();
+    const gpPull = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("the stored document keeps identity at both depths",
+      gpPull?.slots?.sparks?.[4]?.card_id === memberAt(RV1, 10).card_id &&
+      gpPull?.slots?.sparks?.[16]?.card_id === memberAt(RV1, 11).card_id,
+      JSON.stringify([gpPull?.slots?.sparks?.[4], gpPull?.slots?.sparks?.[16]]));
+
+    // ---------- replacing a populated branch ----------
+    // Hand-author inside Parent 2's branch but OUTSIDE the sub-branch just
+    // pulled: a catalog pick at the other grandparent, and a spark at
+    // generation 4 under it — which no pull can reach from here, and so is
+    // the node that proves a pull CLEARS rather than merely overwriting what
+    // it has data for. Manual entry is never taken away.
+    await selectNode("Grandparent 2-2");
+    await pickInto(GX);
+    check("manual entry still works alongside the roster",
+      (await mapChip("Grandparent 2-2").getAttribute("aria-label")) ===
+        `Grandparent 2-2 — ${GX.entry.name}`);
+    await selectNode("Sparks 4-13");
+    await setSpark("Sparks 4-13", "end", 3);
+    await settled();
+
+    // Pulling over all of it must ask — once, naming what it would take, and
+    // only what a human authored. The nodes the earlier grandparent pull
+    // produced were never authored by hand, so warning about them would be
+    // the noise that makes people dismiss blind.
+    await selectNode("Parent 2");
+    const asked = await pullInto(RV2, "dismiss");
+    check("a pull over hand-authored nodes asks first", asked !== null, String(asked));
+    check("the prompt names every hand-authored node in the branch",
+      (asked ?? "").includes("Grandparent 2-2") && (asked ?? "").includes("Sparks 4-13"),
+      String(asked));
+    check("the prompt does NOT name what an earlier pull auto-filled",
+      !(asked ?? "").includes("Sparks 3-5") && !(asked ?? "").includes("Sparks 4-9"),
+      String(asked));
+
+    // Declining has to mean declining. Nothing about this is verified by the
+    // accept path — a confirm nobody tests dismissing is a confirm that has
+    // silently become an overwrite.
+    check("declining leaves the hand-authored node alone",
+      (await mapChip("Grandparent 2-2").getAttribute("aria-label")) ===
+        `Grandparent 2-2 — ${GX.entry.name}`);
+    check("declining leaves the deep branch alone",
+      (await mapChip("Sparks 4-13").getAttribute("aria-label")) === "Sparks 4-13 — 3★ End");
+    check("declining leaves the earlier pull alone",
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        `Grandparent 2-1 — ${RV1.name}`);
+    // And it must not have been written either: a dismissed dialog that
+    // still autosaved would lose the work one reload later.
+    await settled();
+    const afterDismiss = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("declining writes nothing to the server",
+      afterDismiss?.slots?.named?.[6]?.chara_id === GX.entry.chara_id,
+      JSON.stringify(afterDismiss?.slots?.named?.[6]));
+
+    // Accepting replaces the whole branch: what the veteran knows is filled
+    // in, and everything else under the node is emptied. Leaving generation
+    // 4 behind would feed the NEW grandparents' brackets from the pedigree
+    // that was just replaced — a wrong number, not a stale one.
+    const accepted = await pullInto(RV2);
+    check("accepting the same prompt goes through", accepted !== null, String(accepted));
+    check("accepting replaces the picked node",
+      (await mapChip("Parent 2").getAttribute("aria-label")) === `Parent 2 — ${RV2.name}`);
+    check("accepting replaces the hand-authored node it warned about",
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        `Grandparent 2-1 — ${memberAt(RV2, 10).name}`);
+    check("accepting re-fills the deep slots from the new veteran",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${deepLabel(memberAt(RV2, 11))}`);
+    check("a pull CLEARS the rest of the branch it can't fill",
+      (await mapChip("Sparks 4-13").getAttribute("aria-label")) === "Sparks 4-13 — empty");
+    check("and clears nothing outside that branch",
+      (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
+        `Grandparent 1-1 — ${P10.name}`);
+    await settled();
+    const afterPull = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("the cleared branch is cleared on the server too",
+      afterPull?.slots?.sparks?.[20] === null,
+      JSON.stringify(afterPull?.slots?.sparks));
+
+    // Re-pulling the same node asks nothing: its branch is now entirely the
+    // previous pull's work, and the node itself is what you asked to
+    // replace. A dialog here would say only "the thing you're replacing will
+    // be replaced" — the noise that teaches people to dismiss blind.
+    const again = await pullInto(RV2);
+    check("re-pulling a pulled node asks nothing", again === null, String(again));
+
+    // Clearing the veteran takes her pedigree with it, rather than leaving it
+    // hanging under nobody — and unlocked, since she was the lock.
+    await selectNode("Parent 2");
+    await page.locator('button[aria-label="Clear Parent 2"]').click();
+    check("clearing a pulled veteran empties her whole branch",
+      (await mapChip("Parent 2").getAttribute("aria-label")) === "Parent 2 — empty" &&
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        "Grandparent 2-1 — empty" &&
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) === "Sparks 3-5 — empty");
+    check("and leaves the other parent's branch alone",
+      (await mapChip("Parent 1").getAttribute("aria-label")) === `Parent 1 — ${RV1.name}`);
+    check("the freed nodes are editable again",
+      await until(async () => {
+        await selectNode("Grandparent 2-1");
+        return (await page.locator(".focus-pick").count()) === 1;
+      }));
+
+    // ---------- replacing a pulled node at depth ----------
+    // Generations 3 and 4 name characters now, so a deep node can be pulled
+    // into directly — and with the branch above it empty, nothing locks it.
+    // Replacing that node by hand is the same act as replacing a pulled
+    // parent and takes the same cleanup: hers is the pedigree below, and hers
+    // is the pink. A face swapped in over the top of them would assert a
+    // lineage belonging to nobody, and quietly unlock it too.
+    await selectNode("Sparks 3-5");
+    await pullInto(RV1);
+    check("a generation-3 node can be pulled into directly",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${deepLabel(RV1)}`,
+      await mapChip("Sparks 3-5").getAttribute("aria-label"));
+    check("and it brings its own generation 4 with it",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
+        `Sparks 4-9 — ${deepLabel(memberAt(RV1, 10))}`);
+    await pickInto(GX);
+    check("replacing a pulled deep node drops her pink with her",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${GX.entry.name}`,
+      await mapChip("Sparks 3-5").getAttribute("aria-label"));
+    check("and clears the generation 4 she brought",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) === "Sparks 4-9 — empty");
+    await settled();
+    const deepSwap = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("the replaced deep node keeps no trace of the pull on the server",
+      // `== null` deliberately: the field is absent on the way up and comes
+      // back as an explicit null from BlueprintOut.
+      deepSwap?.slots?.sparks?.[4]?.source == null &&
+      deepSwap?.slots?.sparks?.[4]?.aptitude == null &&
+      deepSwap?.slots?.sparks?.[16] === null,
+      JSON.stringify([deepSwap?.slots?.sparks?.[4], deepSwap?.slots?.sparks?.[16]]));
+  }
+
   // ---------- persistence: what the autosave guarantees ----------
-  // From here on the run deliberately breaks the network (a row deleted from
-  // under the page, then aborted requests), so failed-request noise is
-  // expected past this point — and only past it.
-  const noiseFrom = errors.length;
+  // Two checks below deliberately break the network. Each wraps itself in
+  // `breaking()` rather than the whole section running under a blanket
+  // exemption, so a real backend failure between them still fails the run.
   // With no Save button these are the only thing between an edit and the
   // floor, so each one is asserted against the API rather than the UI.
   await newBlueprint();
@@ -727,16 +1237,22 @@ try {
     (await nameField().inputValue()) === "Untitled Blueprint");
 
   // A row deleted from under the page is re-created, not PUT into a hole.
+  // The 404 that triggers the recovery is the deliberate break here.
   await settled();
-  await fetch(`${BASE}/api/blueprints/${idA}`, { method: "DELETE" });
-  await selectNode("Sparks 3-3");
-  await setSpark("Sparks 3-3", "sprint", 1);
-  check(
-    "a row deleted elsewhere is re-created rather than lost",
-    await until(async () =>
-      (await rows()).some((b) => b.id !== idA && sparkOf(b, 2)?.aptitude === "sprint")
-    )
-  );
+  await breaking(async () => {
+    await fetch(`${BASE}/api/blueprints/${idA}`, { method: "DELETE" });
+    await selectNode("Sparks 3-3");
+    await setSpark("Sparks 3-3", "sprint", 1);
+    check(
+      "a row deleted elsewhere is re-created rather than lost",
+      await until(async () =>
+        (await rows()).some((b) => b.id !== idA && sparkOf(b, 2)?.aptitude === "sprint")
+      )
+    );
+    // Inside the window: the recovery has to have landed before the window
+    // closes, or a straggling 404 would be counted as a real failure.
+    await settled();
+  });
 
   // Deleting inside the debounce window must not resurrect the blueprint:
   // the queued body would 404 and the re-create recovery would bring back
@@ -772,33 +1288,32 @@ try {
 
   // A failing write says so, and recovers by itself when the backend is back.
   await settled();
-  await page.route("**/api/blueprints/**", (r) => r.abort());
-  await selectNode("Sparks 3-4");
-  await setSpark("Sparks 3-4", "end", 1);
-  const reported = await page
-    .waitForFunction(
-      () => document.querySelector(".designer-autosave")?.textContent === "Not saved",
-      null,
-      { timeout: 8000 }
-    )
-    .then(() => true, () => false);
-  check("a failing write reports 'Not saved' instead of a permanent 'Saving…'", reported);
-  await page.unroute("**/api/blueprints/**");
-  const recovered = await page
-    .waitForFunction(
-      () => document.querySelector(".designer-autosave")?.textContent === "Saved",
-      null,
-      { timeout: 20000 }
-    )
-    .then(() => true, () => false);
-  check("and retries to completion with no user action", recovered);
+  await breaking(async () => {
+    await page.route("**/api/blueprints/**", (r) => r.abort());
+    await selectNode("Sparks 3-4");
+    await setSpark("Sparks 3-4", "end", 1);
+    const reported = await page
+      .waitForFunction(
+        () => document.querySelector(".designer-autosave")?.textContent === "Not saved",
+        null,
+        { timeout: 8000 }
+      )
+      .then(() => true, () => false);
+    check("a failing write reports 'Not saved' instead of a permanent 'Saving…'", reported);
+    await page.unroute("**/api/blueprints/**");
+    const recovered = await page
+      .waitForFunction(
+        () => document.querySelector(".designer-autosave")?.textContent === "Saved",
+        null,
+        { timeout: 20000 }
+      )
+      .then(() => true, () => false);
+    check("and retries to completion with no user action", recovered);
+  });
 
-  const realErrors = errors.filter(
-    (e, i) =>
-      !/favicon/i.test(e) &&
-      !(i >= noiseFrom && /^HTTP \d+ |net::ERR_FAILED/.test(e))
-  );
+  const realErrors = errors.filter((e) => !/favicon/i.test(e));
   check("no JS errors or failed requests", realErrors.length === 0, realErrors.join(" | "));
+  console.log(`  (${expected.length} failures inside the deliberate-break windows, ignored)`);
 } catch (e) {
   // A throw (a timed-out locator, say) isn't a failed check(), so nothing
   // above captured it — and a bare stack trace is the least actionable way

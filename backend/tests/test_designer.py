@@ -179,6 +179,53 @@ def test_duplicate_sibling_grandparents_rejected() -> None:
     )
 
 
+def deep(chara_id: int) -> dict[str, Any]:
+    """A generation-3/4 slot naming a character, with no pink."""
+    return {"card_id": chara_id * 100 + 1}
+
+
+def test_deep_slot_repeating_the_slot_above_it_rejected() -> None:
+    # The rules reach past the grandparents now that these slots can name a
+    # character. Node 7 sits under node 3; node 15 sits under node 7.
+    _rejects(
+        doc(named={3: slot(1004)}, sparks={7: deep(1004)}),
+        "can't repeat the character of the slot above it",
+    )
+    _rejects(
+        doc(sparks={7: deep(1004), 15: deep(1004)}),
+        "can't repeat the character of the slot above it",
+    )
+
+
+def test_deep_siblings_must_differ() -> None:
+    _rejects(
+        doc(sparks={7: deep(1004), 8: deep(1004)}),
+        "two slots sharing a parent must be different characters",
+    )
+    _rejects(
+        doc(sparks={29: deep(1004), 30: deep(1004)}),
+        "two slots sharing a parent must be different characters",
+    )
+
+
+def test_deep_repeats_across_branches_are_legal() -> None:
+    # Same rule as the named nodes: only the pairing and the direct line
+    # matter. Nodes 7 and 9 sit under different parents, and node 15's
+    # grandparent is node 3 — not its parent, so no rule applies.
+    BlueprintIn.model_validate(doc(sparks={7: deep(1004), 9: deep(1004)}))
+    BlueprintIn.model_validate(
+        doc(named={3: slot(1004)}, sparks={7: deep(1005), 15: deep(1004)})
+    )
+
+
+def test_a_deep_slot_naming_nobody_collides_with_nothing() -> None:
+    # A pink with no character sits out every chara rule, exactly as a
+    # spark-only named slot does.
+    BlueprintIn.model_validate(
+        doc(named={3: slot(1004)}, sparks={7: pink(), 8: pink("turf", 1)})
+    )
+
+
 def test_trainee_spark_rejected() -> None:
     # Nothing is bred from the trainee — its slot never carries a pink.
     _rejects(
@@ -264,8 +311,127 @@ def test_roster_slot_needs_trained_chara_id() -> None:
     )
 
 
+def test_lineage_slot_needs_a_position_id() -> None:
+    _rejects(
+        doc(named={3: slot(1004, source="lineage", trained_chara_id=5)}),
+        "needs a position_id",
+    )
+
+
 def test_blank_name_rejected() -> None:
     _rejects(doc(name="   "), "name must not be blank")
+
+
+# ---------- roster pulls (designer V2) ----------
+
+
+def test_a_pulled_triangle_is_legal() -> None:
+    # What the designer writes when a roster veteran is pulled into Parent 1:
+    # the veteran itself at node 1, its two succession parents (position
+    # 10/20) at nodes 3 and 4. A blueprint grandparent is the parent
+    # veteran's PARENT — never its grandparent, which is the classic error.
+    body = BlueprintIn.model_validate(
+        doc(
+            named={
+                0: slot(1001),
+                1: slot(1002, source="roster", trained_chara_id=900001, spark=pink(),
+                        win_saddle_ids=[10, 63]),
+                3: slot(1004, source="lineage", trained_chara_id=900001, position_id=10,
+                        spark=pink("long", 2), win_saddle_ids=[63]),
+                4: slot(1005, source="lineage", trained_chara_id=900001, position_id=20,
+                        spark=pink("turf", 1), win_saddle_ids=[]),
+            }
+        )
+    )
+    parent1 = body.slots.named[1]
+    grandparent = body.slots.named[3]
+    assert parent1 is not None
+    assert grandparent is not None
+    # The wins ride in the snapshot: a veteran that later leaves the roster
+    # must keep its win bonus when the blueprint is re-scored.
+    assert parent1.win_saddle_ids == [10, 63]
+    assert grandparent.position_id == 10
+    assert grandparent.trained_chara_id == 900001
+
+
+def test_gen3_spark_carries_optional_card_identity() -> None:
+    # A roster pull knows who the generation-3 slots are (the picked
+    # veteran's own grandparents, positions 11/12/21/22), so it stores the
+    # card id rather than discarding it. JSONB column ⇒ no migration.
+    body = BlueprintIn.model_validate(doc(sparks={7: {**pink(), "card_id": 100401}}))
+    assert body.slots.sparks[0] == PinkSparkIn(aptitude="mile", stars=3, card_id=100401)
+
+
+def test_deep_slot_may_name_a_character_with_no_pink() -> None:
+    # The mirror of a named node holding a character before its pink is
+    # decided — casting first is a normal way to plan.
+    body = BlueprintIn.model_validate(doc(sparks={7: {"card_id": 100401}}))
+    slot7 = body.slots.sparks[0]
+    assert slot7 is not None
+    assert slot7.card_id == 100401
+    assert slot7.aptitude is None
+    assert slot7.stars is None
+
+
+@pytest.mark.parametrize("raw", [{"aptitude": "mile"}, {"stars": 2}])
+def test_half_a_spark_rejected(raw: dict[str, Any]) -> None:
+    # Half a spark would read as a different one downstream: a missing
+    # aptitude silently contributes nothing, a missing star count reads as 0.
+    _rejects(doc(sparks={7: raw}), "aptitude and stars must be set together")
+
+
+def test_wholly_empty_deep_slot_rejected() -> None:
+    # An untouched node is written as null, not as an empty husk — same rule
+    # the named slots follow.
+    _rejects(doc(sparks={7: {}}), "must carry a spark, a character, or both")
+
+
+def test_named_slot_spark_must_be_a_real_pink() -> None:
+    # PinkSparkIn doubles as the deep-slot model, where a bare character is
+    # legal. A named node keeps identity in its own fields, so a face-only
+    # value there is a shape the document doesn't have a meaning for.
+    _rejects(
+        doc(named={1: slot(1002, spark={"card_id": 100401})}),
+        "a named slot's spark needs an aptitude",
+    )
+
+
+def test_spark_without_identity_still_parses() -> None:
+    # Every hand-typed spark, and every row written before the pull existed.
+    body = BlueprintIn.model_validate(doc(sparks={7: pink()}))
+    assert body.slots.sparks[0] is not None
+    assert body.slots.sparks[0].card_id is None
+
+
+def test_pulled_document_round_trips_through_blueprint_out() -> None:
+    # The identity must survive JSONB and re-validation, or a reload would
+    # silently anonymize every pulled generation-3 slot.
+    body = BlueprintIn.model_validate(
+        doc(
+            named={
+                1: slot(1002, source="roster", trained_chara_id=900001, spark=pink(),
+                        win_saddle_ids=[10]),
+                3: slot(1004, source="lineage", trained_chara_id=900001, position_id=10),
+            },
+            sparks={7: {**pink("dirt", 2), "card_id": 100601}},
+        )
+    )
+    now = dt.datetime(2026, 7, 31, 12, 0, 0, tzinfo=dt.UTC)
+    out = BlueprintOut.model_validate(
+        {
+            "id": 1,
+            "name": body.name,
+            "slots": body.slots.model_dump(),
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    assert out.slots == body.slots
+    assert out.slots.sparks[0] == PinkSparkIn(aptitude="dirt", stars=2, card_id=100601)
+    named3 = out.slots.named[3]
+    assert named3 is not None
+    assert named3.source == "lineage"
+    assert named3.position_id == 10
 
 
 # ---------- round-trip through the persisted document ----------
@@ -329,3 +495,86 @@ def test_catalog_shows_per_card_aptitude_difference() -> None:
     assert alt is not None
     assert base["mile"] == "B"
     assert alt["mile"] == "A"
+
+
+# ---------- what a slot may carry (the client mirrors these) ----------
+
+
+def letters(**overrides: str) -> dict[str, str]:
+    """A full ten-key aptitude map, the shape a roster pull snapshots."""
+    return {**dict.fromkeys(get_args(AptitudeKey), "A"), **overrides}
+
+
+def roster_slot(**overrides: Any) -> dict[str, Any]:
+    return slot(1002, source="roster", trained_chara_id=900001, **overrides)
+
+
+def test_roster_slot_takes_a_full_aptitude_map() -> None:
+    body = BlueprintIn.model_validate(doc(named={1: roster_slot(aptitudes=letters(long="S"))}))
+    got = body.slots.named[1]
+    assert got is not None
+    assert got.aptitudes is not None
+    assert got.aptitudes["long"] == "S"
+    assert len(got.aptitudes) == len(get_args(AptitudeKey))
+
+
+def test_partial_aptitude_map_is_rejected() -> None:
+    # The client reads the map as a whole and throws on a missing key, which
+    # makes the blueprint unopenable — and unrepairable, since the designer is
+    # the only way to edit one. The server has to be at least as strict as the
+    # client that has to render what it stored.
+    partial = letters()
+    del partial["long"]
+    with pytest.raises(ValidationError, match="all ten keys"):
+        BlueprintIn.model_validate(doc(named={1: roster_slot(aptitudes=partial)}))
+
+
+@pytest.mark.parametrize("bad", ["", "Z", "a", "A+"])
+def test_non_grade_aptitude_letters_are_rejected(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        BlueprintIn.model_validate(doc(named={1: roster_slot(aptitudes=letters(long=bad))}))
+
+
+def test_only_a_roster_slot_carries_its_own_aptitudes() -> None:
+    # A catalog pick is a card, not a horse, and the dump gives a lineage
+    # member no aptitudes at all — so letters there would be invented.
+    with pytest.raises(ValidationError, match="only a roster slot"):
+        BlueprintIn.model_validate(doc(named={1: slot(1002, aptitudes=letters())}))
+
+
+def test_a_named_slots_spark_carries_no_identity() -> None:
+    # PinkSparkIn doubles as the generation-3/4 slot model, so it accepts a
+    # card_id and a source. On a named slot those are meaningless — identity
+    # lives in the slot's own fields — and the client drops them on read, so
+    # accepting them would make the round-trip silently lossy.
+    for extra in ({"card_id": 100201}, {"card_id": 100201, "source": "roster"}):
+        with pytest.raises(ValidationError, match="no identity of its own"):
+            BlueprintIn.model_validate(doc(named={1: slot(1002, spark={**pink(), **extra})}))
+
+
+def test_a_deep_slot_keeps_its_source_through_the_round_trip() -> None:
+    # `source` is what marks a branch as recorded history: every read-only
+    # lock in the designer derives from it, so it has to survive JSONB and
+    # come back out of BlueprintOut intact.
+    body = BlueprintIn.model_validate(
+        doc(sparks={7: {"card_id": 100201, "source": "lineage", **pink("long", 2)}})
+    )
+    out = BlueprintOut.model_validate(
+        {
+            "id": 1,
+            "name": body.name,
+            "slots": body.slots.model_dump(),
+            "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+            "updated_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        }
+    )
+    got = out.slots.sparks[0]
+    assert got is not None
+    assert got.source == "lineage"
+    assert got.card_id == 100201
+    assert got.stars == 2
+
+
+def test_a_deep_slot_source_still_needs_a_character() -> None:
+    with pytest.raises(ValidationError, match="a pulled slot needs a character"):
+        BlueprintIn.model_validate(doc(sparks={7: {"source": "roster", **pink()}}))

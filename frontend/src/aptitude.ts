@@ -1,5 +1,12 @@
 import { APTITUDE_KEYS, type AptitudeKey, type AptitudeLetters } from "./api";
-import { NAMED_COUNT, sparkAt, windowIndices, type Design } from "./blueprint";
+import { LETTER_ORDER } from "./domain";
+import {
+  NAMED_COUNT,
+  sparkAt,
+  windowIndices,
+  type Design,
+  type SlotValue,
+} from "./blueprint";
 
 // ---------- career-start aptitude math ----------
 // Deterministic inheritance only (the semantic core of the deep tree): a
@@ -30,7 +37,6 @@ export const APTITUDE_GROUPS: [group: string, keys: AptitudeKey[]][] = [
 
 // Career-start ladder. S exists in the data scale but is unreachable at
 // career start — inheritance caps at A.
-export const LETTER_ORDER = ["G", "F", "E", "D", "C", "B", "A", "S"] as const;
 const CAP = LETTER_ORDER.indexOf("A");
 
 // Verified thresholds (triangulated vs GameWith/Kamigame): total matching ★
@@ -50,23 +56,88 @@ export function windowStars(design: Design, i: number): Map<AptitudeKey, number>
   return totals;
 }
 
+// How a node's letters are arrived at, which follows from where it came from.
+//
+//   project — the career-start forecast: the card's base plus the brackets
+//             its window earns. The designer's whole point, and the only
+//             mode where the numbers below the letter mean anything.
+//   trained — read off a roster veteran's own record. Not a forecast at all:
+//             what she finished with, inheritance and training already in it.
+//   base    — the card's letters and nothing more. For a member pulled out of
+//             a dump's lineage, where we know exactly WHO she is and nothing
+//             about what she trained to: her window is missing two thirds of
+//             its slots and always will be, since the game stores only two
+//             generations per veteran, so a projection there would be a
+//             floor dressed up as a forecast.
+export type LetterMode = "project" | "trained" | "base";
+
 export interface AptitudeRow {
   key: AptitudeKey;
   base: string | null; // null ⇒ the card's letters are unknown (regen gap)
-  final: string | null; // base + bump, capped at A; null with unknown base
+  final: string | null; // the letter to show; null with unknown base
   boosted: boolean; // final ended up above base
   stars: number; // total matching ★ in the window
   bump: number; // bracket letters those ★ are worth
-  capExcess: number; // bump letters wasted past the A cap — soft info only
+  mode: LetterMode; // stars/bump are 0 outside "project"
 }
 
-// The ten display rows for a named node. Letters need the node's card;
-// star totals and brackets compute regardless (the window is card-blind).
+// Which mode a node's letters are in, from the slot itself.
+// Keyed off `source`, not off whether the letters happen to be there: a
+// pulled node describes a horse who already ran, so projecting inheritance
+// onto her would double-count what her career consumed and cap at A a mare
+// who finished at S. If her letters are missing (any pull older than them, or
+// a dump field off the 1..8 scale) the honest fallback is her card's base,
+// never the forecast.
+export function letterModeOf(slot: SlotValue | null): LetterMode {
+  if (slot === null || slot.source === "catalog") return "project";
+  return slot.aptitudes !== null ? "trained" : "base";
+}
+
+// The ten display rows for a named node.
+//
+// `letters` are the card's base letters. `trained` is a roster pick's own
+// record, and when present it wins outright: her career already consumed
+// whatever her parents passed down, so running the bracket math over her
+// ancestry again would count the same inheritance twice — and cap at A a
+// mare who finished at S.
 export function aptitudeRows(
   design: Design,
   i: number,
-  letters: AptitudeLetters | null
+  letters: AptitudeLetters | null,
+  mode: LetterMode = "project",
+  trained: AptitudeLetters | null = null
 ): AptitudeRow[] {
+  if (mode === "trained" && trained !== null) {
+    return APTITUDE_KEYS.map((key) => ({
+      key,
+      // Her card's base is still the honest "before": the gap between it and
+      // what she trained to is real, and worth highlighting as a boost.
+      base: letters?.[key] ?? null,
+      final: trained[key],
+      // An unrecognised base (stale reference data) indexes as -1, which
+      // would read as a boost on every row. Same guard the project branch
+      // applies below: if we can't place the base, we can't claim a gain.
+      boosted:
+        letters?.[key] !== undefined &&
+        LETTER_ORDER.indexOf(letters[key]) !== -1 &&
+        LETTER_ORDER.indexOf(trained[key]) > LETTER_ORDER.indexOf(letters[key]),
+      stars: 0,
+      bump: 0,
+      mode: "trained" as const,
+    }));
+  }
+  if (mode === "base") {
+    // The card, stated, and nothing added. See LetterMode.
+    return APTITUDE_KEYS.map((key) => ({
+      key,
+      base: letters?.[key] ?? null,
+      final: letters?.[key] ?? null,
+      boosted: false,
+      stars: 0,
+      bump: 0,
+      mode: "base" as const,
+    }));
+  }
   const stars = windowStars(design, i);
   return APTITUDE_KEYS.map((key) => {
     const st = stars.get(key) ?? 0;
@@ -74,9 +145,8 @@ export function aptitudeRows(
     const base = letters?.[key] ?? null;
     let final: string | null = null;
     let boosted = false;
-    let capExcess = 0;
     if (base !== null) {
-      const baseIdx = (LETTER_ORDER as readonly string[]).indexOf(base);
+      const baseIdx = LETTER_ORDER.indexOf(base);
       if (baseIdx === -1) {
         final = base; // unknown letter (stale reference) — pass through
       } else {
@@ -85,30 +155,39 @@ export function aptitudeRows(
         const finalIdx = Math.min(baseIdx + bump, capIdx);
         final = LETTER_ORDER[finalIdx];
         boosted = finalIdx > baseIdx;
-        capExcess = baseIdx + bump - capIdx;
-        if (capExcess < 0) capExcess = 0;
       }
     }
-    return { key, base, final, boosted, stars: st, bump, capExcess };
+    return { key, base, final, boosted, stars: st, bump, mode: "project" as const };
   });
 }
 
-// A typed pink on generations 1–2 whose matching aptitude resolves below A
+// A PLANNED pink on generations 1–2 whose matching aptitude resolves below A
 // couldn't exist: the game only generates pink sparks at A. Not checkable
 // when the card's letters are unknown, or on anonymous deep slots (no card
 // by design). The trainee carries no spark. This is the map's one badge
 // state — overstacking past 10★ is deliberately unflagged, since the extra
 // sparks are still inspiration-proc tickets toward S.
 //
+// Catalog slots only, and that restriction is load-bearing. A roster or
+// lineage node's pink came out of a real dump: it demonstrably dropped, so a
+// verdict that it couldn't is wrong by construction. It would also fire
+// constantly — a pulled grandparent's own bracket window is half empty by
+// design, because the game stores two generations per veteran and its
+// grandparents therefore have no sparks in the data. Its projected letters
+// are a lower bound; flagging a real pink against a lower bound is exactly
+// the false positive to avoid.
+//
 // Takes rows rather than letters: callers rendering a node already have
 // them, and the window scan behind them is the expensive part.
 export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number): boolean {
   if (i === 0 || i >= NAMED_COUNT) return false;
-  const spark = design.named[i]?.spark;
+  const slot = design.named[i];
+  const spark = slot?.spark;
   if (spark === undefined || spark === null) return false;
+  if (slot !== null && slot.source !== "catalog") return false;
   const row = rows.find((r) => r.key === spark.aptitude);
   const final = row?.final ?? null;
   if (final === null) return false;
-  const idx = (LETTER_ORDER as readonly string[]).indexOf(final);
+  const idx = LETTER_ORDER.indexOf(final);
   return idx !== -1 && idx < CAP;
 }

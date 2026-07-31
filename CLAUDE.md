@@ -11,11 +11,15 @@ Raspberry Pi behind Cloudflare Tunnel, Cloudflare Access in front of both.
 Local hosting in the interim — don't add cloud-specific config until that
 work starts.
 
-Current milestone: deep-tree designer V2. V1 shipped — `/designer` is a
-persisted four-generation aptitude calculator over the 31-node blueprint
-document v2 (DECISIONS.md #25/#26); V2 restores roster pulls (additive to
-manual entry, never replacing it), run affinity on the trainee, and
-inspiration proc estimates. Still planned: hunted-skill spark scoring
+Current milestone: deep-tree designer V2, over the 31-node blueprint document
+(DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation
+aptitude calculator, and roster pulls — any node but the trainee can be
+filled from your roster, which brings that veteran's real pedigree with her
+and makes the branch read-only (DECISIONS.md #28). Manual entry stays the
+primary path throughout. Still open in V2: run affinity on the trainee
+(the only backend code change left — `app/affinity.py` needs per-grandparent
+attribution), then inspiration proc estimates, labelled "est.".
+Still planned after that: hunted-skill spark scoring
 (port of the pure `expected_sparks` before/after-reroll math from the
 predecessor local tool). Leave room for it; don't build it early.
 
@@ -56,7 +60,13 @@ Frontend (from `frontend/`):
   never "everything new", so a blueprint you save from another tab mid-run is
   reported and left alone rather than deleted. Set
   `E2E_ARTIFACT_DIR` to capture screenshots at the moment of failure plus an
-  `e2e-results.json` summary; CI does this and uploads them (DECISIONS.md #27)
+  `e2e-results.json` summary; CI does this and uploads them (DECISIONS.md #27).
+  The roster-pull section derives its cast from `/api/veterans` and skips
+  itself when there's nothing usable there — the suite never imports, because
+  imports are full-replace and would wipe your roster. CI seeds
+  `backend/tests/fixtures/roster.json` first and sets `E2E_REQUIRE_ROSTER=1`
+  so the skip becomes a failure there (DECISIONS.md #28). To cover it
+  locally, import that fixture yourself into a throwaway database
 
 Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
 `.markdownlint.jsonc`; CI runs it as the `docs` job).
@@ -71,6 +81,14 @@ Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
 - Reference data in `app/data/` is committed and regenerated manually via the
   script — the app never fetches from uma.moe at runtime.
 - Schema changes go through Alembic migrations, not `create_all`.
+- The blueprint `slots` document only ever grows by adding optional fields to
+  the existing flat shapes. It's a JSONB column with no migration path, and
+  `BlueprintOut` validates strictly — one row it can't parse 500s the whole
+  blueprint list (backlog item, see DECISIONS.md #28 for the flat-vs-nested
+  reasoning). Adding a field is free; restructuring one is not.
+- The designer mirrors the game's tree rules client-side for grey-outs, but
+  `app/schemas.py` stays the authority — every rule lives in both, and the
+  server's 422 is what actually protects the document.
 
 ## Conventions
 

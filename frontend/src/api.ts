@@ -100,6 +100,23 @@ export interface PinkSpark {
   stars: number;
 }
 
+// A generation-3/4 slot: a pink, a character, or both. Flat rather than
+// nesting the spark under the identity, so every row written before
+// `card_id` existed is already this shape and parses unchanged.
+// aptitude/stars travel together — half a spark reads as a different one.
+export interface DeepSlot {
+  aptitude?: AptitudeKey | null;
+  stars?: number | null;
+  // Who the slot is. Filled by a roster pull, or chosen by hand the same way
+  // a character can be cast into an empty parent before its pink is decided.
+  // Decoration for the math; it's what puts a portrait on a node too deep to
+  // carry a name.
+  card_id?: number | null;
+  // Set only when a pull placed the character. Absent ⇒ hand-picked, which
+  // is also what every row written before this field means.
+  source?: "roster" | "lineage" | null;
+}
+
 export interface CatalogCard {
   card_id: number;
   outfit: string;
@@ -125,6 +142,10 @@ export interface BlueprintSlot {
   trained_chara_id?: number | null;
   position_id?: number | null;
   spark?: PinkSpark | null;
+  // A roster pick's own aptitude letters, as trained — snapshotted like the
+  // won saddles. Absent on catalog and lineage slots, which have no horse
+  // behind them to have trained.
+  aptitudes?: AptitudeLetters | null;
 }
 
 // Blueprint document v2 (DECISIONS.md #25): `named` is the identity triangle
@@ -132,7 +153,7 @@ export interface BlueprintSlot {
 // covers tree indices 7–30 (generations 3–4) as bare pinks. Both exact-length.
 export interface BlueprintSlots {
   named: (BlueprintSlot | null)[];
-  sparks: (PinkSpark | null)[];
+  sparks: (DeepSlot | null)[];
 }
 
 export interface BlueprintIn {
@@ -211,8 +232,8 @@ export const api = {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     }),
   catalog: () => fetch("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
-  // /api/affinity exists but v1 of the deep-tree designer doesn't call it —
-  // run affinity returns with the roster features (DECISIONS.md #26).
+  // /api/affinity exists but the designer doesn't call it yet — run affinity
+  // needs per-grandparent attribution, which lands in the next PR.
   blueprints: () => fetch("/api/blueprints").then((r) => json<Blueprint[]>(r)),
   createBlueprint: (body: BlueprintIn) =>
     fetch("/api/blueprints", {

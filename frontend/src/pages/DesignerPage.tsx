@@ -16,6 +16,7 @@ import {
   type CatalogCard,
   type CatalogEntry,
   type PinkSpark,
+  type Veteran,
 } from "../api";
 import { FocusPanel } from "../components/FocusPanel";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
@@ -23,20 +24,32 @@ import { TreeMap } from "../components/TreeMap";
 import {
   NAMED_COUNT,
   UNTITLED,
+  applyPull,
+  canPullInto,
+  catalogSlot,
+  clearNodes,
   copyName,
   emptyDesign,
   fromApi,
   halfOf,
+  lockedBy,
   nextUntitledName,
   nodeLabel,
+  ownedBranch,
+  planPull,
   readOpenId,
   slotConflicts,
+  sourceAt,
+  sparkLocked,
   toApi,
+  withDeep,
+  withDeepCard,
   withNamed,
   withSpark,
   writeOpenId,
   type Design,
 } from "../blueprint";
+import { charaPlaceholder } from "../domain";
 
 // Matches the styles.css breakpoint where the map drops below the panel.
 const HALF_TREE_QUERY = "(max-width: 860px)";
@@ -103,6 +116,7 @@ const TrashIcon = () => (
 );
 
 export function DesignerPage({
+  veterans,
   iconIndex,
   design,
   setDesign,
@@ -110,6 +124,14 @@ export function DesignerPage({
   setSavedJson,
   onError,
 }: {
+  // The shell's roster, not a copy: it already fetches this list for the
+  // roster page and replaces it after every import, and the import button
+  // sits in the header on this route too. Fetching our own would both
+  // duplicate the largest response the app makes and freeze it at mount, so
+  // a pull after an import would snapshot a veteran the full-replace just
+  // deleted. Optional throughout — an empty roster (or a failed fetch) costs
+  // you the shortcut, never the designer.
+  veterans: Veteran[];
   iconIndex: Record<string, string>;
   // design + savedJson live in the App shell so a route change can't
   // discard an unsaved design (see App.tsx). savedJson is the toApi()
@@ -123,6 +145,10 @@ export function DesignerPage({
 }) {
   const [saved, setSaved] = useState<Blueprint[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  // Whether the catalog fetch has SETTLED, which is not the same as whether
+  // it returned anything: a failed fetch leaves the list empty forever, and
+  // names have to degrade to ids then rather than staying blank.
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
@@ -348,6 +374,7 @@ export function DesignerPage({
       const [cat, bps] = await Promise.allSettled([api.catalog(), api.blueprints()]);
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
+      setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
       }
@@ -405,10 +432,15 @@ export function DesignerPage({
     () => new Map<number, CatalogCard>(catalog.flatMap((e) => e.cards.map((c) => [c.card_id, c]))),
     [catalog]
   );
-  // null when the catalog is unavailable — consumers fall back to ids/"?".
+  // "Not known yet" and "not known" are different answers, and only the
+  // second deserves a numeric placeholder. The blueprint fetch regularly
+  // lands before the catalog, so a shared null made every reload flash
+  // "Chara 1006" across the map for a frame. Null here means "no name to
+  // show yet"; consumers hold the space instead of inventing one.
   const charaName = useCallback(
-    (charaId: number) => charaById.get(charaId)?.name ?? null,
-    [charaById]
+    (charaId: number): string | null =>
+      charaById.get(charaId)?.name ?? (catalogLoaded ? charaPlaceholder(charaId) : null),
+    [charaById, catalogLoaded]
   );
   const aptitudesFor = useCallback(
     (cardId: number): AptitudeLetters | null => cardById.get(cardId)?.aptitudes ?? null,
@@ -421,33 +453,103 @@ export function DesignerPage({
 
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
+    // NOT closed yet: the roster branch below may still ask for confirmation,
+    // and cancelling that has to leave the picker exactly as it was — closing
+    // first would throw away the search and filters on the way to a dialog
+    // the user then declined.
+    if (target === null || lockedBy(design, target) !== null) {
+      setPickerFor(null);
+      return;
+    }
+    // A deep slot holds a bare spark, so a pick there is a face on the pink
+    // that's already in it — the character it came from, annotated by hand
+    // instead of by a pull. Nothing else about the node changes...
+    if (pick.kind === "catalog" && target >= NAMED_COUNT) {
+      setPickerFor(null);
+      setDesign((d) => {
+        // ...unless the node was itself pulled, in which case this is the
+        // same replace the named path does below and it takes the same
+        // cleanup: her gen-4 parents and her own pink go with her. Leaving
+        // them would hang her real ancestry under a hand-picked character
+        // who doesn't have it, unlocked because `lockedBy` no longer finds a
+        // roster node above it.
+        if (sourceAt(d, target) !== "roster") return withDeepCard(d, target, pick.card_id);
+        return withDeep(clearNodes(d, ownedBranch(d, target)), target, {
+          card_id: pick.card_id,
+        });
+      });
+      select(target);
+      return;
+    }
+    if (pick.kind === "catalog") {
+      setPickerFor(null);
+      setDesign((d) => {
+        // Replacing a roster pick drops its branch, exactly as clearing it
+        // would — otherwise that veteran's ancestry would hang under a
+        // hand-picked character who doesn't have it, unlocked and unowned.
+        // Her pink goes with it: it was hers, not a plan for this slot.
+        const owned = ownedBranch(d, target);
+        const spark = sourceAt(d, target) === "roster" ? null : (d.named[target]?.spark ?? null);
+        // A re-pick otherwise keeps the slot's typed spark: the pink is a
+        // plan input for the bracket math, not part of the card's identity,
+        // and re-typing it after every swap would be pure friction.
+        return withNamed(
+          clearNodes(d, owned),
+          target,
+          catalogSlot(pick.chara_id, pick.card_id, spark)
+        );
+      });
+      select(target);
+      return;
+    }
+    // A roster pull replaces the node's whole branch, so unlike a catalog
+    // pick it can destroy work you didn't click on. Ask once, listing
+    // everything hand-authored that would go — never once per node, which
+    // would be a dialog per generation for one pick and teach people to
+    // dismiss blind. Empty and already-pulled nodes go in silence: neither
+    // was ever authored by hand, so there is nothing to lose.
+    //
+    // Planned against the design as it stands on screen rather than inside
+    // the setDesign updater: window.confirm blocks, and blocking inside a
+    // state updater (which React may run twice) would prompt twice.
+    const plan = planPull(design, target, pick.veteran);
+    if (plan.clobbers.length > 0) {
+      const what = plan.clobbers.map(nodeLabel).join(", ");
+      // "Your own picks", not "what you entered by hand": the list covers
+      // catalog picks, earlier roster picks and typed sparks alike, and the
+      // last two aren't typed at all.
+      const ok = window.confirm(
+        `Pulling ${pick.veteran.name} replaces ${nodeLabel(target)} and everything ` +
+          `below it with its own pedigree.\n\nYour own picks at ${what} will be lost.` +
+          `\n\nContinue?`
+      );
+      // Cancel leaves the picker open on the list you were already looking
+      // at, so declining costs nothing but the click.
+      if (!ok) return;
+    }
     setPickerFor(null);
-    if (target === null) return;
-    // A re-pick keeps the slot's typed spark: the pink is a plan input for
-    // the bracket math, not part of the card's identity, and re-typing it
-    // after every swap would be pure friction.
-    setDesign((d) =>
-      withNamed(d, target, {
-        chara_id: pick.chara_id,
-        card_id: pick.card_id,
-        spark: d.named[target]?.spark ?? null,
-      })
-    );
+    setDesign((d) => applyPull(d, plan));
     select(target);
   };
 
-  // Clears only the node itself — character and planned spark together: in a
-  // catalog-only designer every pick is independent, nothing below "belongs"
-  // to the cleared member (unlike the old roster auto-fill), and the game
-  // rules apply between filled slots.
+  // A hand-placed node clears alone — nothing below it belongs to it. A
+  // roster pick takes its whole branch: those nodes ARE that veteran's
+  // ancestry, so leaving them would hang a pedigree under nobody, and leave
+  // it unlocked now that the veteran enforcing the lock is gone. No confirm,
+  // because nothing hand-authored can be down there — the branch has been
+  // read-only since the pull.
+  //
+  // The lock is re-checked inside the updater, not just in the panel that
+  // hides the controls: it's a rule about the design, and a stale render or
+  // a keyboard path shouldn't be able to slip an edit past it.
   const clearSlot = (target: number) => {
     setDesign((d) =>
-      target < NAMED_COUNT ? withNamed(d, target, null) : withSpark(d, target, null)
+      lockedBy(d, target) !== null ? d : clearNodes(d, [target, ...ownedBranch(d, target)])
     );
   };
 
   const setSpark = (target: number, spark: PinkSpark | null) => {
-    setDesign((d) => withSpark(d, target, spark));
+    setDesign((d) => (sparkLocked(d, target) ? d : withSpark(d, target, spark)));
   };
 
   // Every edit autosaves. Queued immediately (so nothing depends on this
@@ -787,8 +889,12 @@ export function DesignerPage({
         <SlotPicker
           title={`Choose ${nodeLabel(pickerFor)}`}
           catalog={catalog}
+          veterans={veterans}
+          rosterBlocked={!canPullInto(pickerFor)}
           iconIndex={iconIndex}
-          conflict={(charaId) => slotConflicts(design, pickerFor, charaId)}
+          conflict={(charaId, kind) =>
+            slotConflicts(design, pickerFor, charaId, kind === "roster")
+          }
           onPick={applyPick}
           onClose={() => setPickerFor(null)}
         />

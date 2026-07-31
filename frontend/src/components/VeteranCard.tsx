@@ -31,6 +31,8 @@ export function VeteranCard({
   v,
   icon,
   showSparks,
+  note,
+  disabledReason,
   selectMode = false,
   selectDisabled = false,
   selected = false,
@@ -39,6 +41,14 @@ export function VeteranCard({
   v: Veteran;
   icon: string | undefined;
   showSparks: boolean;
+  // Appended to the accessible name. The designer's slot picker uses it for
+  // the pink each veteran carries — two horses trained from one card are
+  // otherwise the same word twice.
+  note?: string;
+  // Set ⇒ this veteran is an illegal pick and the reason joins its tooltip.
+  // Distinct from selectDisabled, which is the batch-tagging "this wouldn't
+  // change anything" dim; this one is a rule, and has to say which.
+  disabledReason?: string;
   // In selection mode a click toggles membership instead of opening the
   // modal; the caller owns that branch — the card just renders the state.
   // selectDisabled = the batch target wouldn't change this veteran (it
@@ -49,18 +59,31 @@ export function VeteranCard({
   onOpen: () => void;
 }) {
   const [artFailed, setArtFailed] = useState(false);
-  const title = `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}`;
+  // Same composition as UmaCardChip's, so a picker showing one kind of chip
+  // or the other is addressable the same way.
+  const identity =
+    `${v.name}${v.outfit && v.outfit !== "Original" ? ` (${v.outfit})` : ""}` +
+    (note ? ` · ${note}` : "");
+  const blocked = disabledReason !== undefined;
+  const title = blocked ? `${identity} — ${disabledReason}` : identity;
   const tier = rankTier(v.rank_score);
   return (
     <button
       className={
-        selected ? "card selected" : selectDisabled ? "card select-disabled" : "card"
+        selected
+          ? "card selected"
+          : selectDisabled || blocked
+            ? "card select-disabled"
+            : "card"
       }
       title={title}
       aria-label={title}
       aria-pressed={selectMode && !selectDisabled ? selected : undefined}
-      aria-disabled={selectMode && selectDisabled ? true : undefined}
-      onClick={onOpen}
+      // aria-disabled + a no-op handler, not the disabled attribute:
+      // Chromium/WebKit don't dispatch pointer events to natively disabled
+      // controls, so the title explaining WHY would never show.
+      aria-disabled={blocked || (selectMode && selectDisabled) ? true : undefined}
+      onClick={blocked ? undefined : onOpen}
     >
       <span className="card-art">
         {icon && !artFailed ? (

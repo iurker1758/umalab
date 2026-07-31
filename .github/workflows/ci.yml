@@ -117,7 +117,12 @@ jobs:
 
       - name: Collect server logs
         if: failure()
-        run: cp "$RUNNER_TEMP"/*.log "$RUNNER_TEMP/e2e-artifacts/" || true
+        # mkdir first: only the e2e script creates this directory, so a failure
+        # before it runs (npm ci, browser install, a crash at import) would
+        # otherwise leave nothing to upload — exactly when the logs matter most.
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-artifacts"
+          cp "$RUNNER_TEMP"/*.log "$RUNNER_TEMP/e2e-artifacts/" || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

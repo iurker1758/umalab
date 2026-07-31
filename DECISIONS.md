@@ -893,9 +893,9 @@ Keep adding entries as the build evolves. This file is the interview.
   when someone remembers; the suite must stay safe to run against a
   real local database; a headless-only failure must be diagnosable
   without reproducing it locally.
-- **Choice:** move `verify-deep-tree.mjs` from local-only `.scratch/`
-  (excluded via `.git/info/exclude`, so it was unversioned, unshared,
-  and would die with the machine) to tracked `frontend/e2e/`, run by
+- **Choice:** move `verify-deep-tree.mjs` from an untracked local
+  working directory (unversioned and unshared, so it would die with the
+  machine) into tracked `frontend/e2e/`, run by
   `npm run e2e`, plus an `e2e` CI job on a `postgres:16` service.
   **Kept as a plain `.mjs` script rather than converted to
   `@playwright/test`.** The suite is one stateful narrative: a single
@@ -932,17 +932,24 @@ Keep adding entries as the build evolves. This file is the interview.
   dumping the server log on timeout) rather than slept, and the dev
   server takes `--strictPort` so a busy 5173 fails loudly instead of
   drifting to 5174 while the poll waits. The suite's self-restoring
-  `finally` (API list-diff, delete anything new) is kept even though
-  CI's database is disposable — it is what makes `npm run e2e` safe
-  against your own data.
+  `finally` is kept even though CI's database is disposable — it is
+  what makes `npm run e2e` safe against your own data — but it deletes
+  by **ownership, not by list-diff**: a plain "delete everything absent
+  from the startup snapshot" also matches a blueprint saved from
+  another tab during the ~2-minute run, which is data loss rather than
+  restoration. Ours are the `bpName`-prefixed rows (the timestamp makes
+  that unambiguous) plus ids claimed at each create; anything else that
+  appeared is reported and left alone. The whole loop is wrapped,
+  because a throw in `finally` would replace whatever the run was
+  actually failing on with a network error.
 - **Rejected:** converting to `@playwright/test` — a ~500-line
   restructure of the only regression net for the designer, before it
   has ever run in CI; the middle option of keeping the `.mjs` and
   wrapping it in a `test()` for `webServer` — the runner instruments
   its own browser, not a shelled-out child's `chromium.launch()`, so
   it buys server orchestration but not the traces that were the whole
-  point; committing the personal 159-veteran dump to unlock the other
-  three suites (`bulk-tags`, `refactor`, `router`), which all read
+  point; committing a personal roster dump to unlock the further
+  local suites that cover the roster surface and so read
   `/api/veterans` — those need a synthetic fixture built from
   `make_veteran()`/`make_lineage_member()` (`tests/test_ingest.py`),
   deferred as phase 2; a fixed `sleep` before the run.

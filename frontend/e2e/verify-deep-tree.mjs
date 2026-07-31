@@ -46,6 +46,7 @@ const catalog = await (await fetch(`${BASE}/api/catalog`)).json();
 const baselineIds = new Set(
   (await (await fetch(`${BASE}/api/blueprints`)).json()).map((b) => b.id)
 );
+const owned = new Set();
 
 // Cast: base cards only (picked by exact chip label), chosen so every
 // assertion is reachable regardless of which dump/reference is loaded.
@@ -176,6 +177,16 @@ const until = async (fn, ms = 8000) => {
   return false;
 };
 const rows = async () => await (await fetch(`${BASE}/api/blueprints`)).json();
+// Rows this run brought into existence. "Not in the startup snapshot" is not
+// the same thing — a blueprint saved from another tab mid-run is also absent
+// from it, and deleting that is real data loss against a live database. The
+// suite's own rows are either `bpName`-prefixed (the timestamp makes that
+// unambiguous) or untitled ones created through the UI, which is what this
+// claims. Called right after our own creates, so the window in which someone
+// else's row could be mistaken for ours is a moment rather than the whole run.
+const claimNew = async () => {
+  for (const b of await rows()) if (!baselineIds.has(b.id)) owned.add(b.id);
+};
 const rowById = async (id) => (await rows()).find((b) => b.id === id);
 const sparkOf = (bp, i = 0) => bp?.slots?.sparks?.[i] ?? null;
 const openedNamed = (label) =>
@@ -203,6 +214,7 @@ const newBlueprint = async () => {
     before,
     { timeout: 5000 }
   );
+  await claimNew();
 };
 const barButton = (action) => page.locator(`.designer-save button[aria-label^="${action}"]`);
 const aptRow = (label) =>
@@ -554,10 +566,14 @@ try {
   await newBlueprint();
   await page.waitForFunction(() => document.querySelectorAll(".vped .vnode.pick").length === 31);
   await switchTo(`${bpName} sparks-first`);
-  await page.waitForFunction(
-    () => document.querySelector('.vped button[aria-label="Parent 1 — 2★ Turf"]') !== null
-  );
-  check("character-less spark round-trips through the API", true);
+  const sparkRoundTripped = await page
+    .waitForFunction(
+      () => document.querySelector('.vped button[aria-label="Parent 1 — 2★ Turf"]') !== null,
+      null,
+      { timeout: 5000 }
+    )
+    .then(() => true, () => false);
+  check("character-less spark round-trips through the API", sparkRoundTripped);
   // Casting into it keeps the planned spark.
   await selectNode("Parent 1");
   await pickInto(P1);
@@ -620,11 +636,17 @@ try {
     return r.top >= window.innerHeight;
   });
   await mapChip("Grandparent 1-1").click();
-  await page.waitForFunction(() => {
-    const r = document.querySelector(".focus").getBoundingClientRect();
-    return window.scrollY > 0 && r.top < window.innerHeight && r.bottom > 0;
-  }, null, { timeout: 5000 });
-  check("390px: tapping a node pans the panel into view", panelOffscreenBefore);
+  // The wait IS the assertion, so let it resolve to a boolean: throwing here
+  // would abort the remaining checks and report a pan regression as a crash,
+  // and asserting `panelOffscreenBefore` alone only re-states the precondition.
+  const panned = await page
+    .waitForFunction(() => {
+      const r = document.querySelector(".focus").getBoundingClientRect();
+      return window.scrollY > 0 && r.top < window.innerHeight && r.bottom > 0;
+    }, null, { timeout: 5000 })
+    .then(() => true, () => false);
+  check("390px: tapping a node pans the panel into view", panelOffscreenBefore && panned,
+    `offscreen-before=${panelOffscreenBefore} panned=${panned}`);
   check("390px: the sticky toggle doesn't cover the panel",
     await page.evaluate(() => {
       const t = document.querySelector(".side-toggle").getBoundingClientRect();
@@ -718,13 +740,25 @@ try {
   await setSpark("Sparks 3-5", "late", 1);
   await barButton("Delete").click();
   await settled();
-  await page.waitForTimeout(1500); // past the debounce and one retry window
-  const rowsNow = await rows();
+  // A negative assertion is only as good as the window it watches, and the
+  // app's first re-create retry is DesignerPage's RETRY_MS (4 s) after the
+  // failure — so the old single read at 1.5 s could pass while the
+  // resurrection was still pending. Poll across the whole window instead of
+  // sampling once at the end, so a row that comes back and is deleted again
+  // can't slip between two reads.
+  let resurrected = null;
+  for (let waited = 0; waited < 6000; waited += 250) {
+    await page.waitForTimeout(250);
+    const now = await rows();
+    if (now.some((b) => b.id === idDoomed) || now.some((b) => sparkOf(b, 4)?.aptitude === "late")) {
+      resurrected = now.map((b) => [b.id, b.name]);
+      break;
+    }
+  }
   check(
     "deleting with an edit still queued doesn't resurrect the blueprint",
-    !rowsNow.some((b) => b.id === idDoomed) &&
-      !rowsNow.some((b) => sparkOf(b, 4)?.aptitude === "late"),
-    JSON.stringify(rowsNow.map((b) => [b.id, b.name]))
+    resurrected === null,
+    JSON.stringify(resurrected)
   );
 
   // A failing write says so, and recovers by itself when the backend is back.
@@ -779,13 +813,23 @@ try {
     );
   }
   await browser.close();
-  // Restore: delete anything this run created, even if it died mid-way.
-  const after = await (await fetch(`${BASE}/api/blueprints`)).json();
-  for (const bp of after) {
-    if (!baselineIds.has(bp.id)) {
-      await fetch(`${BASE}/api/blueprints/${bp.id}`, { method: "DELETE" });
-      console.log(`  cleanup: deleted blueprint ${bp.id} (${bp.name})`);
+  // Restore: delete the rows this run created, even if it died mid-way. Wrapped
+  // because an unguarded throw here would replace whatever the try block threw
+  // — reporting "fetch failed" instead of the assertion that actually broke.
+  try {
+    for (const bp of await rows()) {
+      if (baselineIds.has(bp.id)) continue;
+      if (bp.name.startsWith(bpName) || owned.has(bp.id)) {
+        await fetch(`${BASE}/api/blueprints/${bp.id}`, { method: "DELETE" });
+        console.log(`  cleanup: deleted blueprint ${bp.id} (${bp.name})`);
+      } else {
+        // Appeared during the run but isn't ours — almost certainly saved from
+        // another tab. Say so rather than deleting it or staying silent.
+        console.log(`  cleanup: LEFT blueprint ${bp.id} (${bp.name}) — not created by this run`);
+      }
     }
+  } catch (e) {
+    console.log(`  cleanup: FAILED to restore (${e}) — check for leftover "${bpName}" rows`);
   }
 }
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
-import type { CatalogEntry, Veteran } from "../api";
+import type { CatalogEntry } from "../api";
 import { UmaCardChip } from "./UmaCardChip";
 
-// What a pick resolves to: the chara (base card for catalog picks) plus the
-// backing veteran when it came from the My Veterans tab.
+// What a pick resolves to. Card-level, not chara-level: base letters are
+// per-CARD (Haru Urara's New Year outfit runs Mile A against her base B),
+// so an alt outfit is a genuinely different pick.
 export interface SlotPick {
   chara_id: number;
   card_id: number;
-  veteran: Veteran | null;
 }
 
+// Catalog-only in designer v1 — roster picks return with the roster update.
 export function SlotPicker({
   title,
   catalog,
-  veterans,
   iconIndex,
   conflict,
   onPick,
@@ -21,14 +21,11 @@ export function SlotPicker({
 }: {
   title: string;
   catalog: CatalogEntry[];
-  // null ⇒ catalog-only picker (the trainee never comes from the roster).
-  veterans: Veteran[] | null;
   iconIndex: Record<string, string>;
   conflict: (charaId: number) => string | null;
   onPick: (pick: SlotPick) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"catalog" | "roster">("catalog");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -40,15 +37,10 @@ export function SlotPicker({
   }, [onClose]);
 
   const q = query.trim().toLowerCase();
-  const queriedCatalog = q
-    ? catalog.filter((e) => e.name.toLowerCase().includes(q))
-    : catalog;
-  const queriedVeterans =
-    veterans === null
-      ? []
-      : q
-        ? veterans.filter((v) => `${v.name} ${v.outfit}`.toLowerCase().includes(q))
-        : veterans;
+  const cards = catalog.flatMap((e) => e.cards.map((c) => ({ entry: e, card: c })));
+  const queried = q
+    ? cards.filter(({ entry, card }) => `${entry.name} ${card.outfit}`.toLowerCase().includes(q))
+    : cards;
 
   return (
     <>
@@ -57,24 +49,6 @@ export function SlotPicker({
       <div className="uma-popout designer-picker" role="dialog" aria-label={title}>
         <header className="picker-head">
           <span className="filter-title">{title}</span>
-          {veterans !== null && (
-            <span className="seg-group" role="radiogroup" aria-label="Pick from">
-              <button
-                className={tab === "catalog" ? "seg active" : "seg"}
-                aria-pressed={tab === "catalog"}
-                onClick={() => setTab("catalog")}
-              >
-                Catalog
-              </button>
-              <button
-                className={tab === "roster" ? "seg active" : "seg"}
-                aria-pressed={tab === "roster"}
-                onClick={() => setTab("roster")}
-              >
-                My Veterans
-              </button>
-            </span>
-          )}
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -88,48 +62,18 @@ export function SlotPicker({
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="filter-chips">
-          {tab === "catalog" || veterans === null ? (
-            <>
-              {queriedCatalog.map((e) => (
-                <UmaCardChip
-                  key={e.chara_id}
-                  name={e.name}
-                  icon={iconIndex[String(e.card_ids[0])]}
-                  active={false}
-                  disabledReason={conflict(e.chara_id) ?? undefined}
-                  onToggle={() =>
-                    onPick({ chara_id: e.chara_id, card_id: e.card_ids[0], veteran: null })
-                  }
-                />
-              ))}
-              {queriedCatalog.length === 0 && (
-                <span className="empty">No characters match.</span>
-              )}
-            </>
-          ) : (
-            <>
-              {queriedVeterans.map((v) => (
-                <UmaCardChip
-                  key={v.id}
-                  name={v.name}
-                  outfit={v.outfit}
-                  icon={iconIndex[String(v.card_id)]}
-                  active={false}
-                  disabledReason={conflict(v.chara_id) ?? undefined}
-                  onToggle={() =>
-                    onPick({ chara_id: v.chara_id, card_id: v.card_id, veteran: v })
-                  }
-                />
-              ))}
-              {queriedVeterans.length === 0 && (
-                <span className="empty">
-                  {veterans.length === 0
-                    ? "No roster yet — import a dump on the Roster page."
-                    : "No veterans match."}
-                </span>
-              )}
-            </>
-          )}
+          {queried.map(({ entry, card }) => (
+            <UmaCardChip
+              key={card.card_id}
+              name={entry.name}
+              outfit={card.outfit}
+              icon={iconIndex[String(card.card_id)]}
+              active={false}
+              disabledReason={conflict(entry.chara_id) ?? undefined}
+              onToggle={() => onPick({ chara_id: entry.chara_id, card_id: card.card_id })}
+            />
+          ))}
+          {queried.length === 0 && <span className="empty">No characters match.</span>}
         </div>
       </div>
     </>

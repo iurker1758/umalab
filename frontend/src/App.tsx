@@ -19,9 +19,11 @@ export default function App() {
   // (e.g. a favorite mark no veteran carries yet).
   const [filters, setFilters] = useState<Filters>(loadFilters);
   // The working design lives in the shell for the same reason filters do:
-  // the page unmounts on every route change, and an unsaved design (up to
-  // 10+ picks, no autosave by scope decision) must survive a trip to the
-  // roster. savedJson is its explicit-save snapshot (see DesignerPage).
+  // the page unmounts on every route change, and re-fetching the open
+  // blueprint on every trip back from the roster would be pure churn.
+  // Durability is the server's job now — DesignerPage opens (or creates) a
+  // row on load and autosaves every edit. savedJson is the last-persisted
+  // snapshot, which is how the page knows there's something to autosave.
   const [design, setDesign] = useState<Design>(emptyDesign);
   const [designSavedJson, setDesignSavedJson] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,8 +165,6 @@ export default function App() {
           path="/designer"
           element={
             <DesignerPage
-              veterans={veterans}
-              loaded={loaded}
               iconIndex={iconIndex}
               design={design}
               setDesign={setDesign}

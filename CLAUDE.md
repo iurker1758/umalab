@@ -11,13 +11,13 @@ Raspberry Pi behind Cloudflare Tunnel, Cloudflare Access in front of both.
 Local hosting in the interim — don't add cloud-specific config until that
 work starts.
 
-Current milestone: the deep-tree designer. V1 replaces `/designer` with a
+Current milestone: deep-tree designer V2. V1 shipped — `/designer` is a
 persisted four-generation aptitude calculator over the 31-node blueprint
-document v2 (DECISIONS.md #25); V2 later restores roster pulls, run
-affinity, and inspiration proc estimates. Still planned: hunted-skill
-spark scoring (port of the pure `expected_sparks` before/after-reroll
-math from the predecessor local tool). Leave room for it; don't build it
-early.
+document v2 (DECISIONS.md #25/#26); V2 restores roster pulls (additive to
+manual entry, never replacing it), run affinity on the trainee, and
+inspiration proc estimates. Still planned: hunted-skill spark scoring
+(port of the pure `expected_sparks` before/after-reroll math from the
+predecessor local tool). Leave room for it; don't build it early.
 
 ## Commands
 

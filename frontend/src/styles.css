@@ -245,59 +245,210 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 /* ---------- Blueprint designer ---------- */
 .designer { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
 .designer-save { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.designer-name { flex: 1 1 12rem; min-width: 8rem; box-sizing: border-box; background: #1a2027; border: 1px solid #2a3340; border-radius: 8px; color: inherit; padding: 0.5rem 0.7rem; font-size: 0.95rem; }
-.designer-dirty { color: #e8c15a; font-size: 0.7rem; line-height: 1; }
+/* Blueprint picker: an editable name field with a caret that drops the list
+   of the OTHER blueprints. It takes the whole row bar the status — it names
+   what you're editing, so it reads as the page's title rather than a
+   control tucked in a corner. */
+.bp-picker { position: relative; flex: 1 1 auto; min-width: 0; }
+.bp-field { display: flex; align-items: center; gap: 0.45rem; width: 100%; box-sizing: border-box; background: #1a2027; border: 1px solid #2a3340; border-radius: 8px; padding-left: 0.5rem; }
+/* Deliberately no focus/open accent colour: the field and the menu are two
+   elements drawing one outline, and any state that lands on only one of
+   them (focus leaving the window while the menu is still open) splits the
+   panel in half. A neutral lift on hover is enough. */
+.bp-field:hover { border-color: #3a4756; }
+.bp-caret { flex: none; background: transparent; border: 0; border-radius: 0 8px 8px 0; color: inherit; opacity: 0.6; font-size: 0.7rem; padding: 0.6rem 0.7rem; }
+.bp-caret:hover { opacity: 1; }
+/* Open, the field and the menu are one component. The menu overlaps the
+   field's bottom border by exactly 1px so there is no seam to see, and the
+   shadow is offset downward with a negative spread so none of it washes
+   back up over the field and re-draws the join. */
+.bp-picker.open .bp-field { border-radius: 8px 8px 0 0; border-bottom-color: transparent; }
+/* Same reason: while open, hovering the top half must not recolour it
+   alone. */
+.bp-picker.open .bp-field:hover { border-color: #2a3340; border-bottom-color: transparent; }
+.bp-picker.open .bp-caret { border-radius: 0 8px 0 0; }
+/* Same width as the field it drops from — it's the same control. */
+.bp-menu { position: absolute; z-index: 12; top: 100%; margin-top: -1px; left: 0; display: grid; gap: 2px; width: 100%; box-sizing: border-box; padding: 2px 4px 4px; background: #1a2027; border: 1px solid #2a3340; border-top: 0; border-radius: 0 0 8px 8px; box-shadow: 0 16px 26px -10px rgba(0, 0, 0, 0.75); }
+/* The trainee labels a blueprint alongside its name. */
+.bp-icon { flex: none; width: 22px; height: 22px; object-fit: contain; }
+.bp-icon-blank { border-radius: 50%; background: #232b34; opacity: 0.5; }
+/* Type and row height match the field exactly — same control, so a name
+   must not change size or shift as it moves between the two. */
+.bp-row { display: flex; align-items: center; gap: 0.45rem; width: 100%; box-sizing: border-box; background: transparent; border: 0; border-radius: 6px; color: inherit; font-size: 0.95rem; font-weight: 600; text-align: left; padding: 0.5rem; }
+button.bp-row:hover { background: #1e2937; }
+/* No trainee icon, but its text still lines up with the names above it. */
+.bp-row-new { color: #8fb0d6; padding-left: calc(0.5rem + 22px + 0.45rem); }
+.designer-name { flex: 1 1 auto; min-width: 0; background: transparent; border: 0; color: inherit; padding: 0.5rem 0.2rem 0.5rem 0; font-size: 0.95rem; font-weight: 600; }
+.designer-name:focus { outline: none; }
+/* Whole-blueprint actions in the save bar, right of the status. */
+.bar-icon { flex: none; display: flex; align-items: center; justify-content: center; background: #1a2027; border: 1px solid #2a3340; border-radius: 8px; color: #9aa1ab; padding: 0.5rem; }
+.bar-icon:hover { border-color: #2a76c9; color: #cfe0f5; }
+.bar-icon-danger:hover { border-color: #a8474b; background: #2b1418; color: #ff8f8f; }
+.designer-autosave { font-size: 0.78rem; opacity: 0.55; white-space: nowrap; }
+/* The one status worth reading: full opacity and a warning colour, because
+   nothing else on the page says the work isn't being kept. */
+.designer-autosave.failed { opacity: 1; color: #ff8f8f; }
+.bar-icon:disabled { opacity: 0.4; cursor: default; }
+.bar-icon:disabled:hover { border-color: #2a3340; background: none; color: inherit; }
 .designer-secondary { background: #1a2027; border: 1px solid #2a3340; }
 .designer-secondary:hover { border-color: #2a76c9; }
 
-/* 7-slot tree: trainee column, parent column, grandparent column. */
-.designer-tree { display: grid; grid-template-areas: "t p1 g11" "t p1 g12" "t p2 g21" "t p2 g22"; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
-.slot-t { grid-area: t; }
-.slot-p1 { grid-area: p1; }
-.slot-p2 { grid-area: p2; }
-.slot-g11 { grid-area: g11; }
-.slot-g12 { grid-area: g12; }
-.slot-g21 { grid-area: g21; }
-.slot-g22 { grid-area: g22; }
-.slot-tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; box-sizing: border-box; background: #161c23; border: 1px solid #1f2833; border-radius: 10px; padding: 1.5rem 0.5rem 0.6rem; min-height: 7rem; }
-.slot-tile:hover { border-color: #2a3340; }
-.slot-label { position: absolute; top: 0.4rem; left: 0.55rem; font-size: 0.7rem; opacity: 0.55; }
-.slot-clear { position: absolute; top: 0.15rem; right: 0.25rem; background: transparent; color: inherit; font-size: 1rem; padding: 0.1rem 0.35rem; opacity: 0.6; line-height: 1; }
-.slot-clear:hover { opacity: 1; }
-.slot-open { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; }
-.slot-open img, .slot-open .lineage-icon-fallback { width: 56px; height: 56px; object-fit: contain; }
-.slot-empty-icon { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border: 1px dashed #3a4250; border-radius: 50%; font-size: 1.6rem; color: #9aa1ab; }
-.slot-name { font-size: 0.85rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slot-open:hover .slot-name { text-decoration: underline; }
-.slot-badges { display: flex; gap: 0.3rem; align-items: center; }
-.slot-source { font-size: 0.62rem; letter-spacing: 0.03em; border-radius: 5px; padding: 1px 5px; background: #232b34; opacity: 0.85; }
-.slot-source.roster { background: #1e3a5f; }
-.slot-source.lineage { background: #46345c; }
-.slot-missing { font-size: 0.62rem; border-radius: 5px; padding: 1px 5px; color: #ffb38a; background: #3d2a1a; border: 1px solid #5c4020; }
-/* Points for the link this slot terminates (win bonus folded in server-side). */
-.slot-link { font-size: 0.72rem; font-variant-numeric: tabular-nums; border-radius: 999px; padding: 1px 7px; background: #1e3a5f; border: 1px solid #2a76c9; }
+/* Option C (DECISIONS.md #26): 31-node vertical map beside a docked focus
+   panel. ≤860px the map collapses to a horizontal strip above the panel. */
+.designer-combo { display: grid; grid-template-columns: minmax(0, 2.6fr) minmax(280px, 1fr); gap: 1rem; align-items: start; }
+.tree-map-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
 
-.designer-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
-.designer-panel { box-sizing: border-box; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; }
-.designer-hint { margin: 0; opacity: 0.65; font-size: 0.9rem; }
-.aff-error { color: #ff8a80; opacity: 1; }
-.aff-total { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.2rem; }
-.aff-symbol { font-size: 1.6rem; line-height: 1; }
-.aff-low { color: #9aa1ab; }
-.aff-good { color: #4da3ff; }
-.aff-best { color: #ffd257; }
-.aff-number { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.aff-breakdown { opacity: 0.7; font-size: 0.85rem; margin-bottom: 0.6rem; }
-.aff-links { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.aff-links td { padding: 0.22rem 0.3rem; font-size: 0.85rem; border-top: 1px solid #1f2833; }
-.aff-link-name { opacity: 0.75; }
-.aff-link-pts { text-align: right; opacity: 0.65; }
-.aff-link-sum { text-align: right; font-weight: 600; }
-.aff-parents { display: flex; gap: 1rem; margin-top: 0.6rem; font-size: 0.82rem; opacity: 0.65; }
+/* 16-column pedigree grid: generation g's nodes span 16/2^g columns each,
+   so every node sits over its children. */
+.vped { --gap: 1.8rem; --wire: #33414f; display: grid; grid-template-columns: repeat(16, minmax(30px, 1fr)); row-gap: var(--gap); column-gap: 2px; width: max-content; min-width: 100%; }
+/* Narrow screens show one parent's half over 8 columns (see TreeMap). */
+.vped.half { grid-template-columns: repeat(8, minmax(30px, 1fr)); }
+.cell { display: flex; justify-content: center; position: relative; min-width: 0; }
 
-.spark-total-row { display: flex; align-items: baseline; gap: 0.5rem; margin-top: 0.5rem; }
-.spark-total-row:first-of-type { margin-top: 0; }
-.spark-total-label { flex-shrink: 0; width: 4.5rem; font-size: 0.8rem; opacity: 0.6; }
+/* Proper elbows rather than floating ticks: each kid runs a stub up to a
+   rail at mid-gap, then half the rail toward its sibling. A parent spans
+   exactly its two kids' columns, so the two halves meet under its centre —
+   where .vnode's own descender comes down to meet them. */
+/* The half-pixel back-off keeps a 1px wire actually centred on the 50% line
+   instead of sitting a hair to its right. */
+.cell:not(.g0)::before { content: ""; position: absolute; left: calc(50% - 0.5px); top: calc(var(--gap) / -2); height: calc(var(--gap) / 2); width: 1px; background: var(--wire); }
+.cell.kid-l::after, .cell.kid-r::after { content: ""; position: absolute; top: calc(var(--gap) / -2); height: 1px; background: var(--wire); }
+/* Left kid rails right to the parent's centre; right kid rails left. The
+   1px overshoot closes the seam where the two meet. */
+.cell.kid-l::after { left: calc(50% - 0.5px); right: -1px; }
+.cell.kid-r::after { left: -1px; right: calc(50% - 0.5px); }
+/* The parent's own drop to the rail. Only nodes that have kids on screen
+   get one: gen 4 is the floor, and the half tree's top parent hangs from a
+   sibling-less trainee, which still needs its drop. */
+.cell:not(.g4) .vnode::after { content: ""; position: absolute; top: 100%; left: calc(50% - 0.5px); height: calc(var(--gap) / 2); width: 1px; background: var(--wire); }
+/* Sibling-less (half tree): the stub alone, no rail to nowhere. */
+.cell.solo::after { display: none; }
+/* Full-width halves: it's the phone's primary control, and equal halves keep
+   the hit targets thumb-sized however long the parents' names are. Sticky,
+   because the half tree is taller than a phone screen — scrolled down among
+   the grandparents, which side you're looking at is otherwise a guess. */
+.side-toggle { position: sticky; top: 0; z-index: 6; display: flex; width: 100%; box-sizing: border-box; margin-bottom: 0.75rem; background: #101418; }
+.side-toggle .seg { display: flex; align-items: center; justify-content: center; gap: 0.4rem; flex: 1 1 0; min-width: 0; padding: 0.5rem; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-toggle .seg.active { background: #1e3a5f; box-shadow: inset 0 -3px 0 #2a76c9; }
+.seg-tag { flex: none; padding: 0.05rem 0.3rem; border-radius: 4px; background: #2a3340; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.04em; }
+.side-toggle .seg.active .seg-tag { background: #2a76c9; color: #fff; }
+/* Panning to the panel must clear the sticky toggle, which stays pinned
+   over whatever is at the top of the viewport. */
+.focus-dock { min-width: 0; scroll-margin-top: 3.1rem; }
+.vnode { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; box-sizing: border-box; background: #161c23; border: 1px solid #1f2833; border-radius: 8px; padding: 0.45rem; min-width: 0; max-width: 100%; color: inherit; font-size: 0.8rem; line-height: 1.35; cursor: pointer; }
+.vnode:hover { border-color: #2a3340; background: #1a2230; }
+.vnode.sel { border-color: #2a76c9; background: #1e3a5f; }
+/* Named chips are 4-row mini-cards: icon + name + track letters, then
+   distance, then style, then the typed pink. */
+.vnode.named { align-items: stretch; }
+/* Rows 1–3 share one 4-column grid, so every aptitude chip is the same
+   width and the columns line up down the card; the icon spans the two
+   columns the track pair leaves free. */
+.vnode .head, .vnode .apt-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; align-items: center; }
+/* The head row is as tall as the portrait, so the track pair sits at its
+   bottom edge — flush with the distance row below it, not floating mid-air. */
+.vnode .head { align-items: end; }
+.vnode .head img, .vnode .head .lineage-icon-fallback { grid-column: span 2; justify-self: center; align-self: center; width: 52px; height: 52px; object-fit: contain; font-size: 1.3rem; }
+/* Row 5: the name foots the card as its own tinted band, full width, so
+   it rarely truncates and reads apart from the letter grid. */
+.vnode .nname { align-self: stretch; text-align: center; background: #223247; color: #cfe0f5; border-radius: 5px; padding: 3px 4px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vnode.pick .nname { background: #1c2430; }
+.vnode.sel .nname { background: #2a76c9; color: #fff; }
+/* An empty card's band stays muted even when selected — a bright, wordless
+   bar reads as a broken label. */
+.vnode.sel.pick .nname { background: #24303f; }
+.g0 .nname, .g1 .nname { font-size: 0.78rem; }
+.vnode.pick { border-style: dashed; color: #6b7280; }
+/* Anonymous spark slots (the deepest two generations). */
+.vnode.anon { background: #1c1520; border-color: #3d2437; padding: 0.45rem 0.25rem; }
+.vnode.anon:hover { border-color: #5f1e46; }
+.vnode.anon.sel { border-color: #2a76c9; background: #1e3a5f; }
+/* nowrap keeps "2★ Medium" on one line; the ellipsis is the release valve
+   when the widest label meets the narrowest (gen-4) column on a phone. */
+.vnode .sp { max-width: 100%; font-size: 0.68rem; font-weight: 700; color: #ff7fb8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g4 .sp { font-size: 0.62rem; }
+.sp-name { max-width: 100%; font-size: 0.58rem; color: #ff7fb8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Empty spark slots wear the placeholder in the dashed-dim style. */
+.vnode.pick .sp, .vnode.pick .sp-name { color: inherit; font-weight: 400; }
+/* On-chip aptitude cells (u-ma.org-style labeled letters): label + letter
+   boxes grouped into the roster's three rows, boosted highlighted — the
+   graph reads without clicking into the panel. */
+.apt-row { display: flex; gap: 3px; }
+/* Uniform box: the grid fixes the width, this fixes the height. */
+/* The cell's own side padding is small because each letter now carries its
+   own (see .apt-cell b) — together they read as one 4px gutter. */
+.apt-cell { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; height: 1.5rem; background: #1a2027; border-radius: 5px; padding: 0 2px 0 4px; }
+/* Track cells share row 1 with the name — size to content so the name
+   keeps the leftover width instead of being crushed to an ellipsis. */
+.vnode.sel .apt-cell, .vnode:hover .apt-cell { background: #16202c; }
+.apt-cell-tag { font-size: 0.58rem; line-height: 1.2; opacity: 0.55; }
+/* Every letter carries the highlight's padding box whether or not it's
+   boosted, so the glyph sits in the same place either way — otherwise a
+   boost nudges the letter and the column stops lining up. */
+.apt-cell b { font-size: 0.68rem; font-weight: 700; line-height: 1.25; padding: 0 2px; border-radius: 3px; text-align: center; }
+.apt-cell b.boosted { background: #5f1e46; }
+/* Empty slots (and letter-less cards) hold the space with a dash. */
+.apt-cell b.blank { opacity: 0.35; font-weight: 400; }
+/* Row 4: the member's typed pink — centered, name + out-of-3 stars. */
+.spark-row { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.68rem; font-weight: 700; color: #ff7fb8; }
+.spark-row.none { color: #6b7280; font-weight: 400; }
+/* The only tooltip on a chip, so it has to advertise itself: a red-tinted
+   plate with a dotted underline reads as "there's more here on hover". */
+.spark-row.warn { align-self: center; padding: 0 6px; border-radius: 5px; background: #2b1418; color: #ff8f8f; border-bottom: 1px dotted #a8474b; }
+.vnode .star { font-size: 0.62rem; }
+.vnode .star.filled { color: #ff7fb8; }
+/* The grandparent row runs four mini-cards abreast — compact them so the
+   whole tree stays inside the map column. */
+.g2 .vnode.named { padding: 0.35rem 0.3rem; gap: 3px; }
+.g2 .head img, .g2 .head .lineage-icon-fallback { width: 40px; height: 40px; font-size: 1rem; }
+.g2 .nname { font-size: 0.66rem; }
+.g2 .head, .g2 .apt-row { gap: 2px; }
+.g2 .apt-cell { gap: 2px; height: 1.35rem; padding: 0 0 0 2px; }
+.g2 .apt-cell-tag { font-size: 0.5rem; }
+.g2 .apt-cell b { font-size: 0.63rem; }
+.g2 .spark-row { font-size: 0.63rem; }
+.node-warns { position: absolute; top: -4px; right: -4px; display: flex; gap: 2px; }
+.node-warn { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #101418; }
+.node-warn.red { background: #ff5c5c; }
+
+/* Docked focus panel: everything about the selected node in one place. */
+.focus { box-sizing: border-box; background: #141a21; border: 1px solid #2a3340; border-radius: 12px; padding: 0.9rem 1rem 1rem; align-self: start; }
+.focus h4 { margin: 0.9rem 0 0.35rem; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; font-weight: 600; }
+.focus-who { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+.focus-icon { width: 44px; height: 44px; object-fit: contain; }
+span.focus-icon { display: inline-flex; font-size: 1.1rem; }
+.focus-name { font-size: 1.05rem; font-weight: 600; }
+.focus-role { opacity: 0.6; font-size: 0.8rem; }
+.focus-actions { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.focus-actions button { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+.focus-pick { width: 100%; border: 1px dashed #3a4250; background: #1a2027; color: #9aa1ab; }
+.focus-pick:hover { border-color: #2a76c9; color: inherit; }
+.focus-note { margin: 0.5rem 0 0; opacity: 0.65; font-size: 0.85rem; }
+
+/* The ten-letter table: final letters only, boosted highlighted (no
+   strikethrough — the cause math lives in the From column). */
+.apt-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+/* Group headers read as section bands, not as another table row: the ten
+   letters scan much faster when Track/Distance/Style are visibly a level up
+   from the aptitude names under them. */
+.apt-table th { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.09em; color: #8fb0d6; background: #1a2431; font-weight: 700; text-align: left; padding: 0.28rem 0.5rem; border-radius: 4px; }
+/* Air above each band but the first, without the background bleeding into
+   it (the border is part of the box, so clip the fill to the padding). */
+.apt-table tr:not(:first-child) th { border-top: 0.5rem solid transparent; background-clip: padding-box; }
+.apt-table th::before { content: ""; display: inline-block; width: 3px; height: 0.62rem; margin-right: 0.4rem; vertical-align: -0.08rem; background: #2a76c9; border-radius: 2px; }
+.apt-table td { padding: 0.14rem 0.2rem; border-top: 1px solid #1f2833; }
+.apt-key { opacity: 0.75; }
+/* Same trick as the map chips: the padding box is always there, only the
+   background comes and goes, so the letter column stays straight. */
+.apt-final { display: inline-block; font-weight: 700; padding: 0 6px; border-radius: 5px; }
+.apt-final.boosted { background: #5f1e46; }
+.apt-unknown { display: inline-block; padding: 0 6px; opacity: 0.5; }
+.apt-from { opacity: 0.75; font-size: 0.75rem; }
+.apt-cap { opacity: 0.55; }
+
+.spark-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.spark-editor select { font-size: 0.9rem; padding: 0.35rem 0.5rem; }
+.spark-warn { margin: 0.5rem 0 0; color: #ff8a80; background: #2a1517; border: 1px solid #5c2b2e; border-radius: 8px; padding: 0.4rem 0.6rem; font-size: 0.8rem; }
 
 .picker-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
 .picker-head .filter-title { margin-right: auto; }
@@ -306,10 +457,18 @@ select { background: #1a2027; color: inherit; border: 1px solid #2a3340; border-
 .card-chip.disabled { opacity: 0.2; cursor: default; }
 .card-chip.disabled:hover { opacity: 0.2; }
 
-/* Phones: trainee gets its own row, each parent stacks over its GPs. */
+/* The B-degradation: map becomes a horizontal strip above the panel, one
+   parent's half at a time (see TreeMap's `side`). */
+@media (max-width: 860px) {
+  .designer-combo { grid-template-columns: 1fr; }
+}
+/* Phones: shave the column gutters so the half tree clears a 390px screen
+   without an inner scroll. */
 @media (max-width: 640px) {
-  .designer-tree { grid-template-areas: "t t" "p1 g11" "p1 g12" "p2 g21" "p2 g22"; grid-template-columns: repeat(2, 1fr); }
-  .slot-tile { min-height: 6rem; padding: 1.4rem 0.35rem 0.5rem; }
-  .slot-open img, .slot-open .lineage-icon-fallback, .slot-empty-icon { width: 44px; height: 44px; }
-  .designer-panels { grid-template-columns: 1fr; }
+  .vped { column-gap: 1px; }
+  .g2 .vnode.named { padding: 0.35rem 0.25rem; }
+  /* Phone gen-4 columns are ~40px: the longest label ("Medium") only clears
+     them a size down, and an ellipsis there costs the word itself. */
+  .g4 .sp-name { font-size: 0.5rem; }
+  .vnode.anon { padding: 0.45rem 0.15rem; }
 }

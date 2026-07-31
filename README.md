@@ -22,12 +22,15 @@ parent/grandparent lineage, decoded to human-readable names.
   sparks carried by all six lineage slots (2 parents + 4 grandparents).
 
 There's also an inheritance-blueprint designer (in the spirit of
-design.u-ma.org), currently being rebuilt as a four-generation aptitude
-calculator: pick the named lineage from the character catalog, type in the
-deeper generations' pink sparks, and see each ancestor's career-start
-letters after inheritance. Planned next: hunted-skill spark scoring
-(expected sparks before/after reroll, ported from the predecessor tkinter
-app).
+design.u-ma.org): a four-generation aptitude calculator over a 31-node
+pedigree map with a docked detail panel — pick the named lineage from the
+character catalog, type in the deeper generations' pink sparks, and read
+each member's computed career-start letters, flagging any planned pink the
+game couldn't actually drop. Every design is a saved blueprint that
+autosaves as you edit it. Roster-driven fills, run affinity, and inspiration
+estimates return in the designer's v2. Planned next: hunted-skill spark
+scoring (expected sparks before/after reroll, ported from the predecessor
+tkinter app).
 
 ## Stack
 
@@ -80,15 +83,13 @@ The affinity tables (`relations.json`, `races.json`) and base aptitudes
 (`aptitudes.json`) come from the local game client's own database;
 `--mdb-only` refreshes just those, no key needed.
 
-Game art is **not** committed (DECISIONS.md entry 10); fetch it once per
-clone or game update:
+Game art is **not** committed (DECISIONS.md entry 10). Fetch the character
+icons once per clone or game update: `python scripts/fetch_icons.py` (no key
+needed). Without them the roster falls back to initials.
 
-- Character icons: `python scripts/fetch_icons.py` (no key needed).
-- Favorite-mark icons (tag badges): extracted from your own installed
-  Uma Musume (Global) client — the only place they exist — by a small tool
-  kept **outside this repo** (it embeds the client's asset decryption keys,
-  which a public repo shouldn't carry; DECISIONS.md entry 10). Without the
-  icons the UI falls back to numbered badges.
+The favorite-mark icons (tag badges) are not game art — they're original
+committed SVGs under `frontend/src/assets/marks/`, mostly recolored Twemoji
+derivatives (DECISIONS.md #22). No fetch step, nothing to set up.
 
 ## Credits
 
@@ -102,12 +103,8 @@ characters and game data are the property of Cygames, Inc.
 - [xancia/UmaExtractor](https://github.com/xancia/UmaExtractor) (a fork of
   [rockisch/umadump](https://github.com/rockisch/umadump)) — the veteran-dump
   tool whose `data.json` format UmaLab imports.
-- [Vali-98/umamusu-utils](https://github.com/Vali-98/umamusu-utils) (MIT) —
-  the meta-DB key derivation and asset-bundle decryption scheme that the
-  out-of-repo favorite-mark extraction tool adapts to read the icons from a
-  local game client.
 - [ウマ娘設計図 (design.u-ma.org)](https://design.u-ma.org/) — the inspiration
-  for the planned inheritance-blueprint designer.
+  for the inheritance-blueprint designer.
 - [ayaliz/hakuraku](https://github.com/ayaliz/hakuraku) (MIT) — the
   inheritance-affinity algorithm structure in `app/affinity.py` is adapted
   from its `VeteransHelper.ts` (with constants updated for the 2026 Global

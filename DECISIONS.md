@@ -209,7 +209,7 @@ Keep adding entries as the build evolves. This file is the interview.
   favorite-mark icons exist only inside the client's UI asset bundles — on
   no CDN or fan site — so an extraction tool pulls them from your own
   installed Global client (meta-DB and bundle decryption adapted from
-  Vali-98/umamusu-utils, MIT; credited in README) into `icons/marks/`,
+  Vali-98/umamusu-utils, MIT) into `icons/marks/`,
   same posture: read-only against the game, local only. That tool is kept
   **outside the repo**: it embeds the client's decryption keys, and
   publishing those in a public repo is a bigger exposure than the art this
@@ -556,7 +556,11 @@ Keep adding entries as the build evolves. This file is the interview.
   needs it in Python, for a saving of one debounced 24 us request;
   autosave and localStorage drafts -- Postgres is the single store by
   scope decision, and autosaving partially-edited designs turns every
-  misclick into a persisted state; letting a parent pick displace a
+  misclick into a persisted state (reversed in #26, which went further
+  still — every design is a row from the moment it exists: losing a
+  plan to a closed tab proved worse than persisting a misclick, which
+  the map makes visible and one click undoes); letting a parent pick
+  displace a
   conflicting filled grandparent -- silent deletion of work, and
   greying out is consistent with every other illegal pick.
 - **Would change my mind:** an offline/PWA designer story would revive
@@ -743,3 +747,135 @@ Keep adding entries as the build evolves. This file is the interview.
   deep slots become possible and the anonymous tier shrinks); a
   feature needing non-pink sparks in the document (the editors are
   pink-only by ruling — the spark shape gains a kind field then).
+
+## 26. Designer v1: client-side bracket math, map + focus panel
+
+- **Requirements:** show every named node's computed career-start
+  letters over the 31-node document (#25) using the verified bracket
+  table (total matching ★ over a node's two generations below:
+  1★/4★/7★/10★ → +1/+2/+3/+4 letters, cap A, deterministic); 31 nodes
+  can't all show full detail at once, but configuration problems must
+  surface without clicking through them; v2 of the designer (roster
+  fills, run affinity, inspiration estimates) must layer on without
+  rework.
+- **Choice:** replace `/designer` wholesale with the Option-C layout
+  from the mockup pass: a vertical 16-column pedigree map (a node spans
+  its children's columns; named chips on gens 0–2 carry the full
+  ten-letter grid, gens 3–4 the single spark) beside a docked
+  focus panel that reads and edits the selected node; ≤860px the map
+  collapses to a horizontal strip above the panel (the run-navigator
+  degradation). All bracket math is frontend-pure (`aptitude.ts`) —
+  deterministic integer arithmetic over data the client already holds
+  (catalog per-card letters + the design), so no endpoint and no
+  debounce; the backend's job stays document validity and reference
+  data. Display rulings (Jason): the letter cell shows the **final**
+  letter only, boosted = highlighted, no strikethrough — cause math
+  ("7★ → +3") lives in a From column; stacking past the 10★ bracket
+  max and bump past the A cap are both un-warned — the From column
+  just reports them, and past-cap gets a soft info note, because
+  overstacking is deliberate S-fishing (every matching spark is an
+  independent inspiration-proc ticket, so it is not a mistake to
+  flag); the one real warning is a typed gen-1/2 pink whose own
+  aptitude resolves below A = red "undroppable" (the game only
+  generates pinks at A) — advisory, not a proof of impossibility,
+  since a mid-career inspiration can lift the aptitude to A after
+  career start — and not checkable on anonymous slots by design;
+  map chips carry that badge; the trainee gets no spark editor
+  (nothing is bred from it)
+  and editors are pink-only. v1 picks are catalog-only and card-aware
+  (outfits differ — #23); the affinity panel is gone until v2 restores
+  it (the endpoint stays). `fromApi` parses catalog slots only —
+  roster/lineage shapes are future documents this client treats as
+  unknown, since the #25 wipe emptied the table and nothing else
+  writes them. A re-pick keeps the slot's typed spark: the pink is a
+  plan input, not part of the card's identity. Persistence reverses
+  #19's explicit-Save ruling outright: **there is no unsaved state**.
+  The page opens a blueprint on load — the one it had (a route
+  round-trip), the one last open here, the most recently updated, or a
+  brand-new row created on the spot if the table is empty — and every
+  edit autosaves by debounced PUT (800 ms, so a burst of picks is one
+  request). "+ New Blueprint" creates the row immediately, named
+  "Untitled Blueprint" for the first (a lone " - 1" is noise when
+  there is nothing to be the first of) and "Untitled Blueprint - N"
+  after that, numbering from 1 and always taking the lowest free
+  number — so deleting "- 1" of three reuses 1 rather than counting
+  upward. Deleting the last blueprint creates a fresh blank
+  rather than leaving the designer on nothing: it has no empty state
+  to fall back to. localStorage holds only the id of the open
+  blueprint, not a document — durability is the server's job.
+  Removing the Save button removes the user's ability to make saving
+  happen, so the autosave carries that guarantee itself, as a write
+  queue rather than an effect: pending bodies live in a ref keyed by
+  the row they belong to, not in the debounce closure, and every
+  identity change (switch, new, duplicate, unmount) flushes them
+  first — cancelling a pending write on the way out of a blueprint
+  loses exactly the edits the user made most recently. Writes are
+  serialized, so a slow PUT can't land after a newer one and restore
+  an older document under a "Saved" label; a write that resolves after
+  a switch may update the list but never marks the newly opened design
+  clean. A design with no row (failed bootstrap, unparseable document,
+  failed post-delete create, or a row deleted from another tab — a
+  404) is **created** rather than dropped, so "nowhere to save" is
+  never a state where later edits vanish. A blank name saves as
+  "Untitled Blueprint" instead of suspending the autosave: the server
+  rejects an empty name, but not saving is worse than saving under the
+  placeholder, and the field is normalized on blur so it agrees with
+  what was stored. Failures are visible ("Not saved", with the reason
+  on hover) and retried on a widening delay — silent-until-the-next-
+  edit was indistinguishable from a healthy save and could cost an
+  afternoon, while a toast per attempt would be unusable with the
+  backend down. The save bar is one picker plus a
+  Saving…/Saved status: no Save button at all, since a button that
+  does nothing new invites doubt about whether the work is safe. It's
+  an editable text field with a caret, not a `<select>`: the field IS
+  the name, so renaming is typing where the name already is, with no
+  mode and no Rename button, and the menu lists only the OTHER
+  blueprints plus "+ New Blueprint" — the one you're in is already in
+  front of you. Duplicate and delete are icon buttons beside the
+  status rather than menu rows: they act on the blueprint you're in,
+  which is what the bar is about, and the menu stays a list of places
+  to go. Duplicating copies the design as it stands on screen (not the
+  last autosaved body, so an in-flight edit rides along) into
+  "X (copy)", then "X (copy 2)". The picker spans the row — it names
+  what you're editing — and the menu matches its width exactly and
+  joins it at a squared-off seam, because they are one control:
+  focusing the name field opens the list, so reaching for the name and
+  reaching for another blueprint start the same way and the caret is a
+  shortcut rather than the only door. Both the field and the menu rows
+  carry the blueprint's trainee icon (a fixed-size blank holds the
+  space when there's no pick yet) — the trainee is what a plan is
+  about, and it tells two "Untitled Blueprint - N" apart at a glance.
+  The autosave status sits after the icon buttons, not before: it
+  changes width as it flips between Saving… and Saved, which between
+  the picker and the buttons would shove the buttons sideways. For the same reason a
+  named slot's `chara_id`/`card_id` are nullable (a v2-document
+  amendment): planning starts from the sparks you're hunting, so a
+  parent or grandparent can carry its planned pink before anyone is
+  cast in it, and the bracket math — which only reads the pinks below
+  a node — works at once. Such a slot must actually carry a spark
+  (an untouched node stays a null slot, so the unsaved-changes check
+  stays honest), identity is all-or-nothing, and a slot naming no
+  character sits out every chara rule on both sides.
+- **Rejected:** server-side letter computation — a network round-trip
+  and stale-result debouncing for pure local arithmetic;
+  popover editors on the map — the panel exists so the chart never
+  needs them; strikethrough old→new letters — ruled out in favor of
+  final-letter-plus-From; keeping the old run-affinity panel rendered
+  beside the calculator while its roster inputs are absent — dead
+  weight that v2 restores properly, trainee-only.
+- **Would change my mind:** v2's roster fill lands (roster/lineage
+  slot parsing and the affinity panel return); letter math turning
+  out to vary by card in ways aptitudes.json doesn't capture (would
+  force a backend authority); the map outgrowing its column in the
+  860–1150px band, where it is 735px against a 544–688px column and
+  `.tree-map-wrap` scrolls horizontally (measured; ≥1152px it fits
+  exactly, 783 in 783). The sixteen gen-4 chips set that floor at
+  44px/column — but abbreviating their labels only moves the map to
+  713px, because the four gen-2 letter grids take over as the binding
+  constraint right behind them (measured per-generation intrinsics:
+  gen-2 wants 57px/column, gen-3 39, gen-4 44). So the band is
+  structural — a ten-letter grid on gens 0–2 and sixteen labelled
+  tracks on gen 4 in one row — and gen-4 abbreviation, which is what
+  the earlier laptop-width pass did, is not a fix for it. The real
+  levers are shrinking the named chips' letter grid or collapsing to
+  the half-tree above 860px.

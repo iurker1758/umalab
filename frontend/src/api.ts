@@ -117,8 +117,10 @@ export interface CatalogEntry {
 
 export interface BlueprintSlot {
   source: "catalog" | "roster" | "lineage";
-  chara_id: number;
-  card_id: number;
+  // Null together on a spark-only slot — a node whose pink is planned but
+  // whose character isn't chosen yet.
+  chara_id: number | null;
+  card_id: number | null;
   win_saddle_ids: number[];
   trained_chara_id?: number | null;
   position_id?: number | null;

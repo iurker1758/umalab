@@ -1,18 +1,8 @@
 import type { AptitudeLetters, PinkSpark } from "../api";
 import { APTITUDE_LABELS, aptitudeRows, undroppableSpark } from "../aptitude";
-import {
-  NAMED_COUNT,
-  genOf,
-  kidsOf,
-  nodeLabel,
-  parentOf,
-  sparkAt,
-  type Design,
-} from "../blueprint";
+import { NAMED_COUNT, nodeLabel, sparkAt, type Design } from "../blueprint";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
-
-const BRACKET_LEGEND = "1–3★ +1 · 4–6★ +2 · 7–9★ +3 · 10★ +4 · cap A";
 
 // The docked focus panel (Option C): everything about the selected node —
 // read and edit — lives here, so the map never needs popovers.
@@ -23,7 +13,6 @@ export function FocusPanel({
   charaName,
   outfitFor,
   aptitudesFor,
-  onSelect,
   onOpenPicker,
   onClear,
   onSetSpark,
@@ -34,110 +23,82 @@ export function FocusPanel({
   charaName: (charaId: number) => string | null;
   outfitFor: (cardId: number) => string | null;
   aptitudesFor: (cardId: number) => AptitudeLetters | null;
-  onSelect: (i: number) => void;
   onOpenPicker: (i: number) => void;
   onClear: (i: number) => void;
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
 }) {
-  const gen = genOf(index);
-
-  // The named ancestors whose career-start brackets count this slot's spark:
-  // its parent and grandparent in the tree, when they're identity nodes.
-  const feeds = [parentOf(index), parentOf(parentOf(index))]
-    .filter((a) => a >= 0 && a < NAMED_COUNT)
-    .map((a) => {
-      const slot = design.named[a];
-      const name = slot === null ? null : charaName(slot.chara_id);
-      return name === null ? nodeLabel(a) : `${nodeLabel(a)} (${name})`;
-    });
-
-  // Rows for the node's breeding parents — one hop down the tree, named or
-  // anonymous — doubling as quick navigation.
-  const kidRows = (i: number) =>
-    kidsOf(i).map((k) => {
-      if (k < NAMED_COUNT) {
-        const slot = design.named[k];
-        if (slot === null) {
-          return (
-            <button key={k} className="focus-row dashed" onClick={() => onSelect(k)}>
-              + pick {nodeLabel(k)}
-            </button>
-          );
-        }
-        const name = charaName(slot.chara_id) ?? `Chara ${slot.chara_id}`;
-        const icon = iconIndex[String(slot.card_id)];
-        return (
-          <button key={k} className="focus-row" onClick={() => onSelect(k)}>
-            {icon ? (
-              <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />
-            ) : (
-              <span className="lineage-icon-fallback">{name.charAt(0)}</span>
-            )}
-            <span className="focus-row-name">{name}</span>
-            {slot.spark !== null && (
-              <span className="focus-row-spark">
-                {slot.spark.stars}★ {APTITUDE_LABELS[slot.spark.aptitude]}
-              </span>
-            )}
-          </button>
-        );
-      }
-      const spark = sparkAt(design, k);
-      return (
-        <button key={k} className={`focus-row${spark === null ? " dashed" : ""}`} onClick={() => onSelect(k)}>
-          {spark === null ? (
-            <>+ spark ({nodeLabel(k)})</>
-          ) : (
-            <span className="focus-row-spark">
-              {spark.stars}★ {APTITUDE_LABELS[spark.aptitude]}
-            </span>
-          )}
-        </button>
-      );
-    });
+  // No lineage lists here: the map already shows every node and is the one
+  // place you navigate from, so a second, worse copy of it in the panel was
+  // pure duplication.
 
   // ---------- anonymous spark slot ----------
   if (index >= NAMED_COUNT) {
+    const spark = sparkAt(design, index);
     return (
       <div className="focus">
         <div className="focus-who">
-          <div>
-            <div className="focus-name">{nodeLabel(index)}</div>
-            <div className="focus-role">generation {gen} ancestor · spark only, no identity</div>
-          </div>
+          <div className="focus-name">{nodeLabel(index)}</div>
         </div>
+        {spark !== null && (
+          <div className="focus-actions">
+            <button
+              className="designer-secondary"
+              onClick={() => onClear(index)}
+              aria-label={`Clear ${nodeLabel(index)}`}
+            >
+              Clear
+            </button>
+          </div>
+        )}
         <h4>Pink spark</h4>
         <PinkSparkEditor
           label={nodeLabel(index)}
-          spark={sparkAt(design, index)}
+          spark={spark}
           onChange={(s) => onSetSpark(index, s)}
         />
-        <h4>Feeds into</h4>
-        <p className="focus-note">
-          Counted in the career-start brackets of {feeds.join(" and ")}.
-        </p>
-        <p className="focus-legend">{BRACKET_LEGEND}</p>
       </div>
     );
   }
 
   const slot = design.named[index];
 
-  // ---------- empty named slot ----------
-  if (slot === null) {
+  // ---------- no character chosen (with or without a planned spark) ----------
+  // The spark editor is here too: which pink a parent carries is a plan
+  // input the bracket math needs, and planning usually starts from the
+  // sparks you're hunting rather than from a cast. The trainee is exempt —
+  // nothing is bred from it.
+  if (slot === null || slot.chara_id === null || slot.card_id === null) {
     return (
       <div className="focus">
         <div className="focus-who">
-          <div>
-            <div className="focus-name">{nodeLabel(index)}</div>
-            <div className="focus-role">empty · generation {gen}</div>
-          </div>
+          <div className="focus-name">{nodeLabel(index)}</div>
         </div>
         <button className="focus-pick" onClick={() => onOpenPicker(index)}>
           Choose from catalog…
         </button>
-        <h4>This run's parents</h4>
-        <div className="focus-rows">{kidRows(index)}</div>
+        {/* A planned spark is state worth undoing, so Clear appears for it
+            too — not only once a character is cast. */}
+        {slot?.spark != null && (
+          <div className="focus-actions">
+            <button
+              className="designer-secondary"
+              onClick={() => onClear(index)}
+              aria-label={`Clear ${nodeLabel(index)}`}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+        {index > 0 && (
+          <>
+            <h4>Pink spark</h4>
+            <PinkSparkEditor
+              label={nodeLabel(index)}
+              spark={slot?.spark ?? null}
+              onChange={(s) => onSetSpark(index, s)}
+            />
+          </>
+        )}
       </div>
     );
   }
@@ -191,16 +152,16 @@ export function FocusPanel({
             onChange={(s) => onSetSpark(index, s)}
           />
           {undroppable && slot.spark !== null && (
-            <p className="spark-warn" role="alert">
-              This spark couldn't drop in game — {name}'s{" "}
-              {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A here, and pink sparks
-              only generate at A.
+            <p
+              className="spark-warn"
+              role="alert"
+              title="Pink sparks only generate on aptitudes the member reached A in."
+            >
+              {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A — pinks only drop at A.
             </p>
           )}
         </>
       )}
-      <h4>This run's parents</h4>
-      <div className="focus-rows">{kidRows(index)}</div>
     </div>
   );
 }

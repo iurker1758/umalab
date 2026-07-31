@@ -5,9 +5,9 @@ import { gradeClass } from "../domain";
 // The ten career-start letters in the game's three groups. Display rulings
 // (DECISIONS.md #26): the letter cell shows the FINAL letter only, boosted =
 // highlighted, no strikethrough — the cause math lives in the From column.
-// Overflow (>10★ on one aptitude) is an amber warning; bump past the A cap
-// is a softer info note, because overstacking is sometimes intentional
-// (every matching spark is an independent inspiration-proc ticket toward S).
+// Bump past the A cap is a soft info note, never a warning — overstacking is
+// often intentional, since every matching spark is an independent
+// inspiration-proc ticket toward S.
 export function AptitudeTable({ rows }: { rows: AptitudeRow[] }) {
   const byKey = new Map(rows.map((r) => [r.key, r]));
   return (
@@ -41,16 +41,7 @@ export function AptitudeTable({ rows }: { rows: AptitudeRow[] }) {
                         {/* Without a base the bump has nothing to land on —
                             show the raw ★ total only. */}
                         {r.base === null ? `${r.stars}★` : `${r.stars}★ → +${r.bump}`}
-                        {r.overflow && (
-                          <span
-                            className="apt-over"
-                            title="Total matching ★ past 10 add nothing to the career-start bracket"
-                          >
-                            {" "}
-                            · over 10★
-                          </span>
-                        )}
-                        {!r.overflow && r.capExcess > 0 && (
+                        {r.capExcess > 0 && (
                           <span
                             className="apt-cap"
                             title="Bump past the A cap is lost at career start — but each matching spark is still an independent inspiration chance toward S"

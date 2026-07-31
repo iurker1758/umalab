@@ -556,7 +556,11 @@ Keep adding entries as the build evolves. This file is the interview.
   needs it in Python, for a saving of one debounced 24 us request;
   autosave and localStorage drafts -- Postgres is the single store by
   scope decision, and autosaving partially-edited designs turns every
-  misclick into a persisted state; letting a parent pick displace a
+  misclick into a persisted state (reversed in #26, which went further
+  still — every design is a row from the moment it exists: losing a
+  plan to a closed tab proved worse than persisting a misclick, which
+  the map makes visible and one click undoes); letting a parent pick
+  displace a
   conflicting filled grandparent -- silent deletion of work, and
   greying out is consistent with every other illegal pick.
 - **Would change my mind:** an offline/PWA designer story would revive
@@ -766,21 +770,76 @@ Keep adding entries as the build evolves. This file is the interview.
   debounce; the backend's job stays document validity and reference
   data. Display rulings (Jason): the letter cell shows the **final**
   letter only, boosted = highlighted, no strikethrough — cause math
-  ("7★ → +3") lives in a From column; >10★ of one aptitude in one
-  window = amber overflow warning; bump past the A cap = a softer
-  info note, never a warning (overstacking is deliberate S-fishing —
-  every matching spark is an independent inspiration-proc ticket);
-  a typed gen-1/2 pink whose own aptitude resolves below A = red
-  "undroppable" warning (the game only generates pinks at A), not
-  checkable on anonymous slots by design; map chips carry the warning
-  badges; the trainee gets no spark editor (nothing is bred from it)
+  ("7★ → +3") lives in a From column; stacking past the 10★ bracket
+  max and bump past the A cap are both un-warned — the From column
+  just reports them, and past-cap gets a soft info note, because
+  overstacking is deliberate S-fishing (every matching spark is an
+  independent inspiration-proc ticket, so it is not a mistake to
+  flag); the one real warning is a typed gen-1/2 pink whose own
+  aptitude resolves below A = red "undroppable" (the game only
+  generates pinks at A) — advisory, not a proof of impossibility,
+  since a mid-career inspiration can lift the aptitude to A after
+  career start — and not checkable on anonymous slots by design;
+  map chips carry that badge; the trainee gets no spark editor
+  (nothing is bred from it)
   and editors are pink-only. v1 picks are catalog-only and card-aware
   (outfits differ — #23); the affinity panel is gone until v2 restores
   it (the endpoint stays). `fromApi` parses catalog slots only —
   roster/lineage shapes are future documents this client treats as
   unknown, since the #25 wipe emptied the table and nothing else
   writes them. A re-pick keeps the slot's typed spark: the pink is a
-  plan input, not part of the card's identity.
+  plan input, not part of the card's identity. Persistence reverses
+  #19's explicit-Save ruling outright: **there is no unsaved state**.
+  The page opens a blueprint on load — the one it had (a route
+  round-trip), the one last open here, the most recently updated, or a
+  brand-new row created on the spot if the table is empty — and every
+  edit autosaves by debounced PUT (800 ms, so a burst of picks is one
+  request). "+ New Blueprint" creates the row immediately, named
+  "Untitled Blueprint" for the first (a lone " - 1" is noise when
+  there is nothing to be the first of) and "Untitled Blueprint - N"
+  after that, numbering from 1 and always taking the lowest free
+  number — so deleting "- 1" of three reuses 1 rather than counting
+  upward. Deleting the last blueprint creates a fresh blank
+  rather than leaving the designer on nothing: it has no empty state
+  to fall back to. localStorage holds only the id of the open
+  blueprint, not a document — durability is the server's job.
+  Autosave is skipped while a create/delete is in flight (so the two
+  can't race for one row) and while the name is blank (the server
+  rejects it, and mid-rename the field is empty for a keystroke).
+  Failures stay silent and leave the design dirty so the next edit
+  retries — a background loop that toasted every failure would be
+  unusable with the backend down. The save bar is one picker plus a
+  Saving…/Saved status: no Save button at all, since a button that
+  does nothing new invites doubt about whether the work is safe. It's
+  an editable text field with a caret, not a `<select>`: the field IS
+  the name, so renaming is typing where the name already is, with no
+  mode and no Rename button, and the menu lists only the OTHER
+  blueprints plus "+ New Blueprint" — the one you're in is already in
+  front of you. Duplicate and delete are icon buttons beside the
+  status rather than menu rows: they act on the blueprint you're in,
+  which is what the bar is about, and the menu stays a list of places
+  to go. Duplicating copies the design as it stands on screen (not the
+  last autosaved body, so an in-flight edit rides along) into
+  "X (copy)", then "X (copy 2)". The picker spans the row — it names
+  what you're editing — and the menu matches its width exactly and
+  joins it at a squared-off seam, because they are one control:
+  focusing the name field opens the list, so reaching for the name and
+  reaching for another blueprint start the same way and the caret is a
+  shortcut rather than the only door. Both the field and the menu rows
+  carry the blueprint's trainee icon (a fixed-size blank holds the
+  space when there's no pick yet) — the trainee is what a plan is
+  about, and it tells two "Untitled Blueprint - N" apart at a glance.
+  The autosave status sits after the icon buttons, not before: it
+  changes width as it flips between Saving… and Saved, which between
+  the picker and the buttons would shove the buttons sideways. For the same reason a
+  named slot's `chara_id`/`card_id` are nullable (a v2-document
+  amendment): planning starts from the sparks you're hunting, so a
+  parent or grandparent can carry its planned pink before anyone is
+  cast in it, and the bracket math — which only reads the pinks below
+  a node — works at once. Such a slot must actually carry a spark
+  (an untouched node stays a null slot, so the unsaved-changes check
+  stays honest), identity is all-or-nothing, and a slot naming no
+  character sits out every chara rule on both sides.
 - **Rejected:** server-side letter computation — a network round-trip
   and stale-result debouncing for pure local arithmetic; full-detail
   map chips (Option A's density) — the panel is the one stable read

@@ -21,21 +21,6 @@ export const APTITUDE_LABELS: Record<AptitudeKey, string> = {
   end: "End",
 };
 
-// Gen-4 map chips only: sixteen columns leave ~4ch per chip, and the full
-// names would force the map into a horizontal scroll beside the panel.
-export const APTITUDE_ABBR: Record<AptitudeKey, string> = {
-  turf: "Turf",
-  dirt: "Dirt",
-  sprint: "Sprt",
-  mile: "Mile",
-  medium: "Med",
-  long: "Long",
-  front: "Frnt",
-  pace: "Pace",
-  late: "Late",
-  end: "End",
-};
-
 // Grouped the way the game's detail screen shows them.
 export const APTITUDE_GROUPS: [group: string, keys: AptitudeKey[]][] = [
   ["Track", ["turf", "dirt"]],
@@ -47,9 +32,6 @@ export const APTITUDE_GROUPS: [group: string, keys: AptitudeKey[]][] = [
 // career start — inheritance caps at A.
 export const LETTER_ORDER = ["G", "F", "E", "D", "C", "B", "A", "S"] as const;
 const CAP = LETTER_ORDER.indexOf("A");
-// Total ★ beyond this add nothing to the bracket (they still matter as
-// inspiration-proc tickets — see capExcess's soft framing).
-export const BRACKET_MAX_STARS = 10;
 
 // Verified thresholds (triangulated vs GameWith/Kamigame): total matching ★
 // over the window → +1/+2/+3/+4 letters at 1★/4★/7★/10★; 11★+ adds nothing.
@@ -75,7 +57,6 @@ export interface AptitudeRow {
   boosted: boolean; // final ended up above base
   stars: number; // total matching ★ in the window
   bump: number; // bracket letters those ★ are worth
-  overflow: boolean; // stars past the 10★ bracket max — amber warning
   capExcess: number; // bump letters wasted past the A cap — soft info only
 }
 
@@ -108,18 +89,8 @@ export function aptitudeRows(
         if (capExcess < 0) capExcess = 0;
       }
     }
-    return { key, base, final, boosted, stars: st, bump, overflow: st > BRACKET_MAX_STARS, capExcess };
+    return { key, base, final, boosted, stars: st, bump, capExcess };
   });
-}
-
-// The map chip's terse delta: the strongest boost (ties break in display
-// order), plus how many other aptitudes also changed.
-export function bestDelta(rows: AptitudeRow[]): { row: AptitudeRow; more: number } | null {
-  const changed = rows.filter((r) => r.boosted);
-  if (changed.length === 0) return null;
-  let best = changed[0];
-  for (const r of changed) if (r.bump > best.bump) best = r;
-  return { row: best, more: changed.length - 1 };
 }
 
 // A typed pink on generations 1–2 whose matching aptitude resolves below A
@@ -137,20 +108,15 @@ export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number)
   return idx !== -1 && idx < CAP;
 }
 
-// Badge states for the map, so issues surface without clicking through.
-// Warnings only exist on filled named nodes — an empty slot has no trained
-// member to overflow and no typed spark to be undroppable.
-export function nodeWarnings(
+// The map's one badge state, so the issue surfaces without clicking through.
+// Only filled named nodes can carry it — an empty slot has no typed spark.
+// (Overstacking past 10★ is deliberately unflagged: the extra sparks are
+// still inspiration-proc tickets toward S, so it isn't a mistake.)
+export function hasUndroppableSpark(
   design: Design,
   i: number,
   letters: AptitudeLetters | null
-): { overflow: boolean; undroppable: boolean } {
-  if (i >= NAMED_COUNT || design.named[i] === null) {
-    return { overflow: false, undroppable: false };
-  }
-  const rows = aptitudeRows(design, i, letters);
-  return {
-    overflow: rows.some((r) => r.overflow),
-    undroppable: undroppableSpark(rows, design, i),
-  };
+): boolean {
+  if (i >= NAMED_COUNT || design.named[i] === null) return false;
+  return undroppableSpark(aptitudeRows(design, i, letters), design, i);
 }

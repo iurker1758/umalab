@@ -18,6 +18,14 @@ export const parentOf = (i: number): number => (i - 1) >> 1;
 // Generation = floor(log2(i+1)); clz avoids float edges.
 export const genOf = (i: number): number => 31 - Math.clz32(i + 1);
 
+// Which half of the tree a node sits in — 1 or 2, the parent whose branch
+// contains it (0 for the trainee, which belongs to both).
+export function halfOf(i: number): number {
+  let j = i;
+  while (j > 2) j = parentOf(j);
+  return j;
+}
+
 // A node's 2-generation window: its kids and grandkids — the six lineage
 // members whose pink sparks feed its career-start brackets.
 export function windowIndices(i: number): number[] {
@@ -48,9 +56,12 @@ export function nodeLabel(i: number): string {
 // fromApi treats them like any other shape this client doesn't understand.
 // `spark` is the member's typed-in pink: catalog picks have no dump to read
 // it from, and the bracket math needs it. The trainee never carries one.
+// chara/card are null on a spark-only node — you can type the pink you're
+// hunting before deciding who carries it (the bracket math only reads the
+// sparks below a node). A node with neither identity nor spark is null.
 export interface SlotValue {
-  chara_id: number;
-  card_id: number;
+  chara_id: number | null;
+  card_id: number | null;
   spark: PinkSpark | null;
 }
 
@@ -82,12 +93,19 @@ export function withNamed(design: Design, i: number, value: SlotValue | null): D
   return { ...design, named };
 }
 
-// Setting a named node's spark on an empty slot is a no-op — the editor is
-// only rendered on filled nodes.
+// A spark on an empty named node creates an identity-less slot; clearing the
+// spark off one prunes it back to null, so an untouched node never persists
+// as a husk (and the unsaved-changes check stays honest).
 export function withSpark(design: Design, i: number, spark: PinkSpark | null): Design {
   if (i < NAMED_COUNT) {
     const slot = design.named[i];
-    return slot === null ? design : withNamed(design, i, { ...slot, spark });
+    if (slot === null) {
+      return spark === null
+        ? design
+        : withNamed(design, i, { chara_id: null, card_id: null, spark });
+    }
+    if (spark === null && slot.card_id === null) return withNamed(design, i, null);
+    return withNamed(design, i, { ...slot, spark });
   }
   const sparks = design.sparks.slice();
   sparks[i - NAMED_COUNT] = spark;
@@ -167,10 +185,73 @@ function slotFromApi(raw: BlueprintSlot | null | undefined): SlotValue | null {
   // Roster/lineage sources are v2-of-the-designer shapes; nothing writes
   // them today (the v1 wipe emptied the table), so they parse as unknown.
   if (raw.source !== "catalog") throw new Error(`unsupported slot source ${String(raw.source)}`);
+  const spark = sparkFromApi(raw.spark);
+  // Spark-only slot: no character chosen yet.
+  if (raw.chara_id === null && raw.card_id === null) {
+    if (spark === null) throw new Error("malformed blueprint slot");
+    return { chara_id: null, card_id: null, spark };
+  }
   if (typeof raw.chara_id !== "number" || typeof raw.card_id !== "number") {
     throw new Error("malformed blueprint slot");
   }
-  return { chara_id: raw.chara_id, card_id: raw.card_id, spark: sparkFromApi(raw.spark) };
+  return { chara_id: raw.chara_id, card_id: raw.card_id, spark };
+}
+
+// ---------- which blueprint was open ----------
+// Every design is a server row (DECISIONS.md #26): the page creates one on
+// first load and autosaves from then on, so there is no local document to
+// persist — only a pointer to the row you were last looking at, so a reload
+// reopens it instead of whichever was edited most recently.
+export const DESIGN_STORE = "umalab.designer.open";
+
+export function readOpenId(): number | null {
+  try {
+    const raw = localStorage.getItem(DESIGN_STORE);
+    const id = raw === null ? NaN : Number(JSON.parse(raw));
+    return Number.isInteger(id) ? id : null;
+  } catch {
+    // blocked storage or a hand-edited value — fall back to "most recent"
+    return null;
+  }
+}
+
+export function writeOpenId(id: number | null): void {
+  try {
+    if (id === null) localStorage.removeItem(DESIGN_STORE);
+    else localStorage.setItem(DESIGN_STORE, JSON.stringify(id));
+  } catch {
+    // storage full/blocked — the session still works, reloads just forget
+  }
+}
+
+// New blueprints are born named. The first is plain "Untitled Blueprint" —
+// a lone " - 1" is noise when there's nothing to be the first OF — and the
+// numbering starts at 1 for the next one, taking the lowest free number, so
+// deleting "- 2" of three reuses 2 rather than counting ever upward.
+export const UNTITLED = "Untitled Blueprint";
+
+// "X (copy)", then "X (copy 2)" — the same lowest-free-number rule as the
+// untitled names, so duplicating twice doesn't collide.
+export function copyName(name: string, existing: readonly { name: string }[]): string {
+  const names = new Set(existing.map((b) => b.name.trim()));
+  const base = `${name.trim()} (copy)`;
+  if (!names.has(base)) return base;
+  let n = 2;
+  while (names.has(`${name.trim()} (copy ${n})`)) n++;
+  return `${name.trim()} (copy ${n})`;
+}
+
+export function nextUntitledName(existing: readonly { name: string }[]): string {
+  const names = new Set(existing.map((b) => b.name.trim()));
+  if (!names.has(UNTITLED)) return UNTITLED;
+  const taken = new Set<number>();
+  for (const name of names) {
+    const m = new RegExp(`^${UNTITLED} - (\\d+)$`).exec(name);
+    if (m !== null) taken.add(Number(m[1]));
+  }
+  let n = 1;
+  while (taken.has(n)) n++;
+  return `${UNTITLED} - ${n}`;
 }
 
 export const fromApi = (bp: Blueprint): Design => {

@@ -225,11 +225,17 @@ class BlueprintSlotIn(BaseModel):
     full-replace imports), with position_id saying which lineage member a
     `lineage` slot came from. `spark` is the member's typed-in pink —
     catalog picks have no dump to read it from, and the bracket math needs
-    it (the trainee slot never carries one; nothing is bred from it)."""
+    it (the trainee slot never carries one; nothing is bred from it).
+
+    chara_id/card_id are nullable so a named node can carry a spark with no
+    character chosen yet: the bracket math only needs the pinks below a node,
+    and planning usually starts from the sparks you're hunting rather than
+    from a cast. Such a slot must actually carry a spark — an empty node is
+    written as a null slot, not as an identity-less husk."""
 
     source: Literal["catalog", "roster", "lineage"]
-    chara_id: int
-    card_id: int
+    chara_id: int | None = None
+    card_id: int | None = None
     win_saddle_ids: list[int] = []
     trained_chara_id: int | None = None
     position_id: int | None = None
@@ -237,7 +243,14 @@ class BlueprintSlotIn(BaseModel):
 
     @model_validator(mode="after")
     def _check_slot(self) -> BlueprintSlotIn:
-        if ingest.derive_chara_id(self.card_id) != self.chara_id:
+        if (self.chara_id is None) != (self.card_id is None):
+            raise ValueError("chara_id and card_id must be set together")
+        if self.card_id is None:
+            if self.spark is None:
+                raise ValueError("a slot without a character must carry a spark")
+            if self.source != "catalog":
+                raise ValueError(f"a {self.source} slot needs a character")
+        elif ingest.derive_chara_id(self.card_id) != self.chara_id:
             raise ValueError(
                 f"card {self.card_id} does not belong to chara {self.chara_id}"
             )
@@ -285,9 +298,16 @@ class BlueprintIn(BaseModel):
         trainee = named[0]
         if trainee is not None and trainee.spark is not None:
             raise ValueError("the trainee slot can't carry a spark")
+        # Identity-less (spark-only) slots sit out every chara rule — they
+        # name no character to collide with.
         for i, kid in enumerate(named[1:], start=1):
             parent = named[(i - 1) // 2]
-            if kid is not None and parent is not None and kid.chara_id == parent.chara_id:
+            if (
+                kid is not None
+                and parent is not None
+                and kid.chara_id is not None
+                and kid.chara_id == parent.chara_id
+            ):
                 raise ValueError(
                     "a parent can't be the trainee's own character"
                     if i <= 2
@@ -295,7 +315,12 @@ class BlueprintIn(BaseModel):
                 )
         for i in range(NAMED_SLOT_COUNT // 2):
             a, b = named[2 * i + 1], named[2 * i + 2]
-            if a is not None and b is not None and a.chara_id == b.chara_id:
+            if (
+                a is not None
+                and b is not None
+                and a.chara_id is not None
+                and a.chara_id == b.chara_id
+            ):
                 raise ValueError(
                     "the two parents must be different characters"
                     if i == 0

@@ -42,6 +42,16 @@ def pink(aptitude: str = "mile", stars: int = 3) -> dict[str, Any]:
     return {"aptitude": aptitude, "stars": stars}
 
 
+def spark_only(aptitude: str = "mile", stars: int = 3) -> dict[str, Any]:
+    """A named slot carrying a planned pink with nobody cast in it yet."""
+    return {
+        "source": "catalog",
+        "chara_id": None,
+        "card_id": None,
+        "spark": pink(aptitude, stars),
+    }
+
+
 def doc(
     named: Mapping[int, dict[str, Any] | None] | None = None,
     sparks: Mapping[int, dict[str, Any] | None] | None = None,
@@ -110,6 +120,22 @@ def test_spark_slots_accept_pinks() -> None:
     )
     assert body.slots.sparks[0] == PinkSparkIn(aptitude="mile", stars=3)
     assert body.slots.sparks[23] == PinkSparkIn(aptitude="end", stars=1)
+
+
+def test_named_slot_may_carry_a_spark_without_a_character() -> None:
+    # Planning usually starts from the pinks you're hunting, not from a cast.
+    body = BlueprintIn.model_validate(doc(named={1: spark_only(), 3: spark_only("turf", 1)}))
+    parent1 = body.slots.named[1]
+    assert parent1 is not None
+    assert parent1.chara_id is None
+    assert parent1.card_id is None
+    assert parent1.spark == PinkSparkIn(aptitude="mile", stars=3)
+
+
+def test_spark_only_slots_sit_out_the_chara_rules() -> None:
+    # No character named ⇒ nothing to collide with, in either rule family.
+    BlueprintIn.model_validate(doc(named={1: spark_only(), 2: spark_only()}))
+    BlueprintIn.model_validate(doc(named={1: spark_only(), 3: spark_only()}))
 
 
 # ---------- tree rules ----------
@@ -199,6 +225,35 @@ def test_card_chara_mismatch_rejected() -> None:
     _rejects(
         doc(named={0: slot(1001, card_id=100201)}),
         "does not belong to chara",
+    )
+
+
+def test_identity_less_slot_without_a_spark_rejected() -> None:
+    # An untouched node is written as a null slot, not as an empty husk.
+    _rejects(
+        doc(named={1: {"source": "catalog", "chara_id": None, "card_id": None}}),
+        "must carry a spark",
+    )
+
+
+def test_half_an_identity_rejected() -> None:
+    _rejects(
+        doc(named={1: {"source": "catalog", "chara_id": 1002, "card_id": None,
+                       "spark": pink()}}),
+        "must be set together",
+    )
+
+
+def test_trainee_cannot_be_spark_only() -> None:
+    # It would need a spark to be legal, and the trainee can't carry one.
+    _rejects(doc(named={0: spark_only()}), "the trainee slot can't carry a spark")
+
+
+def test_roster_slot_needs_a_character() -> None:
+    _rejects(
+        doc(named={1: {"source": "roster", "chara_id": None, "card_id": None,
+                       "spark": pink(), "trained_chara_id": 5}}),
+        "needs a character",
     )
 
 

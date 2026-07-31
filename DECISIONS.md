@@ -760,8 +760,8 @@ Keep adding entries as the build evolves. This file is the interview.
   rework.
 - **Choice:** replace `/designer` wholesale with the Option-C layout
   from the mockup pass: a vertical 16-column pedigree map (a node spans
-  its children's columns; chips are terse — name + strongest-delta
-  badge on gens 0–2, the single spark on gens 3–4) beside a docked
+  its children's columns; named chips on gens 0–2 carry the full
+  ten-letter grid, gens 3–4 the single spark) beside a docked
   focus panel that reads and edits the selected node; ≤860px the map
   collapses to a horizontal strip above the panel (the run-navigator
   degradation). All bracket math is frontend-pure (`aptitude.ts`) —
@@ -803,12 +803,28 @@ Keep adding entries as the build evolves. This file is the interview.
   rather than leaving the designer on nothing: it has no empty state
   to fall back to. localStorage holds only the id of the open
   blueprint, not a document — durability is the server's job.
-  Autosave is skipped while a create/delete is in flight (so the two
-  can't race for one row) and while the name is blank (the server
-  rejects it, and mid-rename the field is empty for a keystroke).
-  Failures stay silent and leave the design dirty so the next edit
-  retries — a background loop that toasted every failure would be
-  unusable with the backend down. The save bar is one picker plus a
+  Removing the Save button removes the user's ability to make saving
+  happen, so the autosave carries that guarantee itself, as a write
+  queue rather than an effect: pending bodies live in a ref keyed by
+  the row they belong to, not in the debounce closure, and every
+  identity change (switch, new, duplicate, unmount) flushes them
+  first — cancelling a pending write on the way out of a blueprint
+  loses exactly the edits the user made most recently. Writes are
+  serialized, so a slow PUT can't land after a newer one and restore
+  an older document under a "Saved" label; a write that resolves after
+  a switch may update the list but never marks the newly opened design
+  clean. A design with no row (failed bootstrap, unparseable document,
+  failed post-delete create, or a row deleted from another tab — a
+  404) is **created** rather than dropped, so "nowhere to save" is
+  never a state where later edits vanish. A blank name saves as
+  "Untitled Blueprint" instead of suspending the autosave: the server
+  rejects an empty name, but not saving is worse than saving under the
+  placeholder, and the field is normalized on blur so it agrees with
+  what was stored. Failures are visible ("Not saved", with the reason
+  on hover) and retried on a widening delay — silent-until-the-next-
+  edit was indistinguishable from a healthy save and could cost an
+  afternoon, while a toast per attempt would be unusable with the
+  backend down. The save bar is one picker plus a
   Saving…/Saved status: no Save button at all, since a button that
   does nothing new invites doubt about whether the work is safe. It's
   an editable text field with a caret, not a `<select>`: the field IS
@@ -841,9 +857,7 @@ Keep adding entries as the build evolves. This file is the interview.
   stays honest), identity is all-or-nothing, and a slot naming no
   character sits out every chara rule on both sides.
 - **Rejected:** server-side letter computation — a network round-trip
-  and stale-result debouncing for pure local arithmetic; full-detail
-  map chips (Option A's density) — the panel is the one stable read
-  surface, terse chips are the price of overview-plus-detail;
+  and stale-result debouncing for pure local arithmetic;
   popover editors on the map — the panel exists so the chart never
   needs them; strikethrough old→new letters — ruled out in favor of
   final-letter-plus-From; keeping the old run-affinity panel rendered
@@ -852,6 +866,16 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** v2's roster fill lands (roster/lineage
   slot parsing and the affinity panel return); letter math turning
   out to vary by card in ways aptitudes.json doesn't capture (would
-  force a backend authority); the map's terseness failing in practice
-  on real 13" screens (first fallback: initials-only chips at gens
-  3–4).
+  force a backend authority); the map outgrowing its column in the
+  860–1150px band, where it is 735px against a 544–688px column and
+  `.tree-map-wrap` scrolls horizontally (measured; ≥1152px it fits
+  exactly, 783 in 783). The sixteen gen-4 chips set that floor at
+  44px/column — but abbreviating their labels only moves the map to
+  713px, because the four gen-2 letter grids take over as the binding
+  constraint right behind them (measured per-generation intrinsics:
+  gen-2 wants 57px/column, gen-3 39, gen-4 44). So the band is
+  structural — a ten-letter grid on gens 0–2 and sixteen labelled
+  tracks on gen 4 in one row — and gen-4 abbreviation, which is what
+  the earlier laptop-width pass did, is not a fix for it. The real
+  levers are shrinking the named chips' letter grid or collapsing to
+  the half-tree above 860px.

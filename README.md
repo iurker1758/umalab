@@ -25,8 +25,9 @@ There's also an inheritance-blueprint designer (in the spirit of
 design.u-ma.org): a four-generation aptitude calculator over a 31-node
 pedigree map with a docked detail panel — pick the named lineage from the
 character catalog, type in the deeper generations' pink sparks, and read
-each member's computed career-start letters, with warnings for overstacked
-and impossible sparks. Roster-driven fills, run affinity, and inspiration
+each member's computed career-start letters, flagging any planned pink the
+game couldn't actually drop. Every design is a saved blueprint that
+autosaves as you edit it. Roster-driven fills, run affinity, and inspiration
 estimates return in the designer's v2. Planned next: hunted-skill spark
 scoring (expected sparks before/after reroll, ported from the predecessor
 tkinter app).

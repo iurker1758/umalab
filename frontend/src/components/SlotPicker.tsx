@@ -2,15 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { CatalogEntry, Veteran } from "../api";
 import { APTITUDE_LABELS } from "../aptitude";
 import { pinkOf } from "../blueprint";
+import { DEFAULT_ASC, SORTS, blueSparkRank, type SortKey, type SortPref } from "../domain";
+import { countFilters, defaultFilters, isCommonKind, matchesFilters, type Filters } from "../filters";
+import { FilterPanel } from "./FilterPanel";
 import { UmaCardChip } from "./UmaCardChip";
-
-// Two veterans trained from the same card are two chips with the same name.
-// The pink each carries is what you'd pick between, so it labels them —
-// and it's the value the pull is really after.
-const vetNote = (v: Veteran): string => {
-  const pink = pinkOf(v.factors);
-  return pink === null ? "no pink" : `${pink.stars}★ ${APTITUDE_LABELS[pink.aptitude]}`;
-};
+import { VeteranCard } from "./VeteranCard";
 
 // What a pick resolves to. Card-level, not chara-level: base letters are
 // per-CARD (Haru Urara's New Year outfit runs Mile A against her base B),
@@ -24,11 +20,19 @@ export type SlotPick =
 
 type Source = "catalog" | "roster";
 
+// Two veterans trained from the same card are two chips with the same name.
+// The pink each carries is what you'd pick between, so it labels them —
+// and it's the value the pull is really after.
+const vetNote = (v: Veteran): string => {
+  const pink = pinkOf(v.factors);
+  return pink === null ? "no pink" : `${pink.stars}★ ${APTITUDE_LABELS[pink.aptitude]}`;
+};
+
 export function SlotPicker({
   title,
   catalog,
   veterans,
-  rosterBlocked = null,
+  rosterBlocked = false,
   iconIndex,
   conflict,
   onPick,
@@ -37,10 +41,10 @@ export function SlotPicker({
   title: string;
   catalog: CatalogEntry[];
   veterans: Veteran[];
-  // Why this node can't take a roster pick, or null when it can. Shown
-  // rather than silently dropping the tab — a control that vanishes on one
-  // node out of thirty-one reads as a bug.
-  rosterBlocked?: string | null;
+  // Set when this node can't take a roster pick (the trainee isn't in your
+  // roster). The tab strip simply doesn't render — the trainee is the one
+  // node nobody expects to find in a list of horses they've trained.
+  rosterBlocked?: boolean;
   iconIndex: Record<string, string>;
   conflict: (charaId: number) => string | null;
   onPick: (pick: SlotPick) => void;
@@ -51,14 +55,24 @@ export function SlotPicker({
   // sparks you're hunting has to work against an empty roster — pulling a
   // veteran you already own is the shortcut, not the entry point.
   const [source, setSource] = useState<Source>("catalog");
+  // Sort and filters are the picker's own and deliberately NOT persisted:
+  // narrowing the list to find one mare shouldn't silently reorder or filter
+  // the roster page you go back to. Starts where the roster does — best
+  // first — so the list opens on your strongest veterans.
+  const [sort, setSort] = useState<SortPref>({ key: "rank_score", asc: false });
+  const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
+    // The filter panel owns Escape while it's open — it has its own layered
+    // handler (uma/spark popouts first, then itself). Without this guard both
+    // fire and one Escape closes the picker out from under it.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !filterOpen) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, filterOpen]);
 
   const q = query.trim().toLowerCase();
   const cards = useMemo(
@@ -68,15 +82,59 @@ export function SlotPicker({
   const queriedCards = q
     ? cards.filter(({ entry, card }) => `${entry.name} ${card.outfit}`.toLowerCase().includes(q))
     : cards;
-  const queriedVets = q
-    ? veterans.filter((v) => `${v.name} ${v.outfit}`.toLowerCase().includes(q))
-    : veterans;
 
   // The roster tab is offered only when there's a roster to pull from and
   // this node can take one — an empty tab reads as a broken feature rather
   // than an unused one.
-  const hasRoster = veterans.length > 0 && rosterBlocked === null;
+  const hasRoster = veterans.length > 0 && !rosterBlocked;
   const showing: Source = hasRoster ? source : "catalog";
+
+  // Same two lists the roster page feeds its panel: one entry per distinct
+  // card for the Umas section, every common-spark name for the search.
+  const rosterCards = useMemo(() => {
+    const seen = new Map<number, Veteran>();
+    for (const v of veterans) if (!seen.has(v.card_id)) seen.set(v.card_id, v);
+    return [...seen.values()].sort(
+      (a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id
+    );
+  }, [veterans]);
+  const commonSparkNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const v of veterans) {
+      for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
+      for (const m of v.lineage) {
+        for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [veterans]);
+
+  // Filtered first, then name-searched: the count the panel reports is about
+  // ITS filters, so the search box narrowing further mustn't change it.
+  const filteredVets = useMemo(
+    () => veterans.filter((v) => matchesFilters(v, filters)),
+    [veterans, filters]
+  );
+  // Not name-searched: that box is the catalog's. A stale query left behind
+  // by the other tab must not silently narrow this list from a control that
+  // isn't on screen.
+  const shownVets = useMemo(() => {
+    const list = [...filteredVets];
+    const val = (v: Veteran) => (sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key]);
+    list.sort((a, b) => {
+      const av = val(a);
+      const bv = val(b);
+      // register_time is ISO, so string compare doubles as date order.
+      const cmp =
+        typeof av === "string" && typeof bv === "string"
+          ? av.localeCompare(bv)
+          : Number(av) - Number(bv);
+      return sort.asc ? cmp : -cmp;
+    });
+    return list;
+  }, [filteredVets, sort]);
+
+  const empty = showing === "catalog" ? queriedCards.length === 0 : shownVets.length === 0;
 
   return (
     <>
@@ -103,19 +161,28 @@ export function SlotPicker({
               aria-pressed={showing === "roster"}
               onClick={() => setSource("roster")}
             >
-              My roster
+              My Roster
             </button>
           </div>
         )}
-        <input
-          className="uma-search"
-          type="search"
-          placeholder="Search by name…"
-          value={query}
-          autoFocus
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="filter-chips">
+        {/* Catalog only. It's the sole way to find one of ~95 characters
+            there, whereas the roster has the panel's Umas section — and a
+            search box that only narrows by name is the weakest of the three
+            controls the roster tab now offers. */}
+        {showing === "catalog" && (
+          <input
+            className="uma-search"
+            type="search"
+            placeholder="Search by name…"
+            value={query}
+            autoFocus
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        )}
+        {/* Catalog chips wrap as a chip cloud; roster cards are the roster
+            page's tiles and want its grid, so rank badges and score lines
+            align across rows instead of stair-stepping. */}
+        <div className={showing === "roster" ? "picker-grid" : "filter-chips"}>
           {showing === "catalog"
             ? queriedCards.map(({ entry, card }) => (
                 <UmaCardChip
@@ -130,38 +197,96 @@ export function SlotPicker({
                   }
                 />
               ))
-            : queriedVets.map((v) => (
-                // Keyed by trained_chara_id, not card_id: the same card can
-                // appear many times in a roster, once per veteran you trained.
-                <UmaCardChip
+            : shownVets.map((v) => (
+                // The roster page's own card, not a bare chip: picking a
+                // veteran is the same act of recognition as browsing them, so
+                // the rank badge, mark and rating/sparks readout all come
+                // along. Keyed by trained_chara_id, not card_id — the same
+                // card appears once per veteran you trained.
+                <VeteranCard
                   key={v.trained_chara_id}
-                  name={v.name}
-                  outfit={v.outfit}
+                  v={v}
                   icon={iconIndex[String(v.card_id)]}
-                  active={false}
+                  // Follows the sort, exactly as the roster grid does: order
+                  // by Sparks and the sparks are what you want to read.
+                  showSparks={sort.key === "blue_spark"}
                   note={vetNote(v)}
                   disabledReason={conflict(v.chara_id) ?? undefined}
-                  onToggle={() => onPick({ kind: "roster", veteran: v })}
+                  onOpen={() => onPick({ kind: "roster", veteran: v })}
                 />
               ))}
-          {(showing === "catalog" ? queriedCards : queriedVets).length === 0 && (
+          {empty && (
             <span className="empty">
-              {showing === "catalog" ? "No characters match." : "No veterans match."}
+              {showing === "catalog"
+                ? "No characters match."
+                : countFilters(filters) > 0
+                  ? "No veterans match the filters."
+                  : "No veterans in your roster."}
             </span>
           )}
         </div>
+        {/* Roster only: the catalog is one card per outfit, with no rating,
+            acquisition date or marks to act on. Sticky at the picker's
+            bottom-right like the roster's own dock — the chip list is the
+            thing that scrolls, and these have to stay reachable through all
+            159 of them. Last in the DOM so it doesn't precede the list it
+            controls for a screen reader. */}
         {showing === "roster" && (
-          <p className="picker-note">
-            Pulling a veteran replaces everything below this node with its own
-            pedigree — parents, grandparents and their sparks.
-          </p>
-        )}
-        {/* Only when there IS a roster: with none imported, the absence of a
-            roster tab needs no explaining. */}
-        {rosterBlocked !== null && veterans.length > 0 && (
-          <p className="picker-note">{rosterBlocked}</p>
+          <div className="pill-dock picker-dock">
+            <button className="filter-float" onClick={() => setFilterOpen(true)}>
+              Filters
+              {countFilters(filters) > 0 && (
+                <span className="filter-count">{countFilters(filters)}</span>
+              )}
+            </button>
+            <label className="sort-float">
+              <select
+                aria-label="Sort roster by"
+                value={sort.key}
+                onChange={(e) => {
+                  const key = e.target.value as SortKey;
+                  setSort({ key, asc: DEFAULT_ASC[key] });
+                }}
+              >
+                {SORTS.map(([label, key]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="sort-dir"
+                title={
+                  sort.asc
+                    ? "Ascending — click for descending"
+                    : "Descending — click for ascending"
+                }
+                aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
+                onClick={() => setSort((s) => ({ ...s, asc: !s.asc }))}
+              >
+                {sort.asc ? "▲" : "▼"}
+              </button>
+            </label>
+          </div>
         )}
       </div>
+      {filterOpen && (
+        // The roster page's own panel, unchanged. Wrapped so it can be lifted
+        // above the picker: its z-index sits below the popout layer, having
+        // only ever opened from the roster's dock before.
+        <div className="picker-filters">
+          <FilterPanel
+            filters={filters}
+            cards={rosterCards}
+            whiteNames={commonSparkNames}
+            iconIndex={iconIndex}
+            matchCount={filteredVets.length}
+            total={veterans.length}
+            onChange={setFilters}
+            onClose={() => setFilterOpen(false)}
+          />
+        </div>
+      )}
     </>
   );
 }

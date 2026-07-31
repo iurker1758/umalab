@@ -27,16 +27,21 @@ import {
   applyPull,
   canPullInto,
   catalogSlot,
+  clearNodes,
   copyName,
   emptyDesign,
   fromApi,
   halfOf,
+  lockedBy,
   nextUntitledName,
   nodeLabel,
+  ownedBranch,
   planPull,
   readOpenId,
   slotConflicts,
+  sparkLocked,
   toApi,
+  withDeepCard,
   withNamed,
   withSpark,
   writeOpenId,
@@ -128,6 +133,10 @@ export function DesignerPage({
 }) {
   const [saved, setSaved] = useState<Blueprint[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  // Whether the catalog fetch has SETTLED, which is not the same as whether
+  // it returned anything: a failed fetch leaves the list empty forever, and
+  // names have to degrade to ids then rather than staying blank.
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   // Optional throughout: an empty roster (or a roster fetch that failed)
   // costs you the shortcut, never the designer. The picker hides its roster
   // tab and manual entry carries on exactly as before.
@@ -369,6 +378,7 @@ export function DesignerPage({
       const [cat, bps] = await Promise.allSettled([api.catalog(), api.blueprints()]);
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
+      setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
       }
@@ -426,10 +436,15 @@ export function DesignerPage({
     () => new Map<number, CatalogCard>(catalog.flatMap((e) => e.cards.map((c) => [c.card_id, c]))),
     [catalog]
   );
-  // null when the catalog is unavailable — consumers fall back to ids/"?".
+  // "Not known yet" and "not known" are different answers, and only the
+  // second deserves a numeric placeholder. The blueprint fetch regularly
+  // lands before the catalog, so a shared null made every reload flash
+  // "Chara 1006" across the map for a frame. Null here means "no name to
+  // show yet"; consumers hold the space instead of inventing one.
   const charaName = useCallback(
-    (charaId: number) => charaById.get(charaId)?.name ?? null,
-    [charaById]
+    (charaId: number): string | null =>
+      charaById.get(charaId)?.name ?? (catalogLoaded ? `Chara ${charaId}` : null),
+    [charaById, catalogLoaded]
   );
   const aptitudesFor = useCallback(
     (cardId: number): AptitudeLetters | null => cardById.get(cardId)?.aptitudes ?? null,
@@ -443,14 +458,32 @@ export function DesignerPage({
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
     setPickerFor(null);
-    if (target === null) return;
+    if (target === null || lockedBy(design, target) !== null) return;
+    // A deep slot holds a bare spark, so a pick there is a face on the pink
+    // that's already in it — the character it came from, annotated by hand
+    // instead of by a pull. Nothing else about the node changes.
+    if (pick.kind === "catalog" && target >= NAMED_COUNT) {
+      setDesign((d) => withDeepCard(d, target, pick.card_id));
+      select(target);
+      return;
+    }
     if (pick.kind === "catalog") {
-      // A re-pick keeps the slot's typed spark: the pink is a plan input for
-      // the bracket math, not part of the card's identity, and re-typing it
-      // after every swap would be pure friction.
-      setDesign((d) =>
-        withNamed(d, target, catalogSlot(pick.chara_id, pick.card_id, d.named[target]?.spark ?? null))
-      );
+      setDesign((d) => {
+        // Replacing a roster pick drops its branch, exactly as clearing it
+        // would — otherwise that veteran's ancestry would hang under a
+        // hand-picked character who doesn't have it, unlocked and unowned.
+        // Her pink goes with it: it was hers, not a plan for this slot.
+        const owned = ownedBranch(d, target);
+        const spark = owned.length > 0 ? null : (d.named[target]?.spark ?? null);
+        // A re-pick otherwise keeps the slot's typed spark: the pink is a
+        // plan input for the bracket math, not part of the card's identity,
+        // and re-typing it after every swap would be pure friction.
+        return withNamed(
+          clearNodes(d, owned),
+          target,
+          catalogSlot(pick.chara_id, pick.card_id, spark)
+        );
+      });
       select(target);
       return;
     }
@@ -481,19 +514,24 @@ export function DesignerPage({
     select(target);
   };
 
-  // Clears only the node itself — character and planned spark together —
-  // even for a node a roster pull filled. A pull is a bulk edit, not an
-  // ownership claim: once its lineage nodes are on the tree they're plan
-  // inputs like any other, and cascading a clear down two generations would
-  // be a second, invisible way to lose work. Re-pull to replace them.
+  // A hand-placed node clears alone — nothing below it belongs to it. A
+  // roster pick takes its whole branch: those nodes ARE that veteran's
+  // ancestry, so leaving them would hang a pedigree under nobody, and leave
+  // it unlocked now that the veteran enforcing the lock is gone. No confirm,
+  // because nothing hand-authored can be down there — the branch has been
+  // read-only since the pull.
+  //
+  // The lock is re-checked inside the updater, not just in the panel that
+  // hides the controls: it's a rule about the design, and a stale render or
+  // a keyboard path shouldn't be able to slip an edit past it.
   const clearSlot = (target: number) => {
     setDesign((d) =>
-      target < NAMED_COUNT ? withNamed(d, target, null) : withSpark(d, target, null)
+      lockedBy(d, target) !== null ? d : clearNodes(d, [target, ...ownedBranch(d, target)])
     );
   };
 
   const setSpark = (target: number, spark: PinkSpark | null) => {
-    setDesign((d) => withSpark(d, target, spark));
+    setDesign((d) => (sparkLocked(d, target) ? d : withSpark(d, target, spark)));
   };
 
   // Every edit autosaves. Queued immediately (so nothing depends on this
@@ -834,11 +872,7 @@ export function DesignerPage({
           title={`Choose ${nodeLabel(pickerFor)}`}
           catalog={catalog}
           veterans={veterans}
-          rosterBlocked={
-            canPullInto(pickerFor)
-              ? null
-              : "The trainee is the horse you're about to train, so it isn't in your roster yet."
-          }
+          rosterBlocked={!canPullInto(pickerFor)}
           iconIndex={iconIndex}
           conflict={(charaId) => slotConflicts(design, pickerFor, charaId)}
           onPick={applyPick}

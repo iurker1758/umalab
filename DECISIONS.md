@@ -785,10 +785,14 @@ Keep adding entries as the build evolves. This file is the interview.
   letter only, boosted = highlighted, no strikethrough — cause math
   ("7★ → +3") lives in a From column; stacking past the 10★ bracket
   max and bump past the A cap are both un-warned — the From column
-  just reports them, and past-cap gets a soft info note, because
-  overstacking is deliberate S-fishing (every matching spark is an
-  independent inspiration-proc ticket, so it is not a mistake to
-  flag); the one real warning is a typed gen-1/2 pink whose own
+  just reports the stars behind a letter and says nothing about the
+  excess, because overstacking is deliberate S-fishing (every matching
+  spark is an independent inspiration-proc ticket, so it is not a
+  mistake to flag). *(v2 note: past-cap originally got a soft "+N past
+  A" annotation. It was cut — the row already read "12★ → +4 · +4
+  past A", two numbers that cancel, and calling the excess waste
+  contradicted the very reason it was left un-warned.)* The one real
+  warning is a typed gen-1/2 pink whose own
   aptitude resolves below A = red "undroppable" (the game only
   generates pinks at A) — advisory, not a proof of impossibility,
   since a mid-career inspiration can lift the aptitude to A after
@@ -971,8 +975,8 @@ Keep adding entries as the build evolves. This file is the interview.
 ## 28. Roster pulls are additive, and overwrite only after asking
 
 - **Requirements:** designer v2 brings back pulling real veterans out
-  of your roster, which fills seven tree nodes from one pick — the
-  node itself, its two grandparents and four generation-3 sparks. It
+  of your roster, which rewrites a whole branch of the tree from one
+  pick — the node itself and everything descended from it. It
   must not take away manual entry, which stays the primary path and
   the only one that works before you have imported anything; it must
   not silently destroy work a pull lands on top of; and the roster
@@ -986,8 +990,20 @@ Keep adding entries as the build evolves. This file is the interview.
   appears when there is something to pull. A plan that starts from the
   pinks you are hunting has to work against an empty roster, so the
   pull is the shortcut and never the entry point. The roster fetch is
-  deliberately outside the "couldn't load designer data" toast: an
-  empty or failed roster costs you the shortcut, never the designer.
+  deliberately outside the "couldn't load designer data" toast, and
+  issued on its own rather than joined to the catalog/blueprint pair:
+  it is the largest response the app fetches and nothing waits on it,
+  so joining it put the bootstrap — which decides whether a blueprint
+  exists to edit at all — behind a whole dump.
+
+  The roster tab is the roster page, not a second implementation of
+  it: the same `VeteranCard` (rank badge, favourite mark, rating or
+  spark strip), the same sort control, and the same `FilterPanel`
+  lifted above the picker. Its sort and filters are the picker's own
+  and are not persisted — narrowing the list to find one mare must not
+  silently reorder the roster page you go back to. There is no name
+  search on that tab; the catalog keeps one, because it is the only
+  way to find one of ~95 characters and has no filter panel.
 
   **A pull replaces a branch; it does not patch one.** Pulling a
   veteran into a node empties that node's entire subtree and then
@@ -1009,59 +1025,115 @@ Keep adding entries as the build evolves. This file is the interview.
   grandparent — the classic off-by-one-generation error, and the thing
   `pullTargets` exists to state once.
 
-  **The trainee can't be pulled into.** It is the horse you are about
-  to train: it is not in your roster, that being the point of it, and
-  nothing is bred from it. A pull there would also be the single click
-  that empties all 31 nodes. The picker offers catalog only at node 0
-  and says why, rather than dropping a control on one node in
-  thirty-one with no explanation.
+  **Every node but the trainee takes a pull.** The trainee is the
+  horse you are about to train: not in your roster, that being the
+  point of it, and a pull there would be the single click that empties
+  all 31 nodes. Its picker offers catalog only, with no note
+  explaining the absence — nobody expects to find the horse they are
+  about to train in a list of ones they already have. Deeper targets
+  simply reach less: a pull into a generation-3 slot fills its two
+  generation-4 kids, one into generation 4 fills nothing. That falls
+  out of the bounds check in `pullTargets` rather than needing a rule.
 
-  **Identity stops at generation 3.** Those slots keep the member's
-  `card_id` — the identity arrives in the same fetch, so discarding it
-  would mean loading real data to throw it away, and `slots` is JSONB
-  so it costs a Pydantic widening and **no migration**. Generation 4
-  does not, even though a grandparent-level pull knows those names
-  too: nothing that deep reaches the trainee (a node's brackets read
-  only its own two generations), so the name would be trivia carried
-  in every saved document forever. Their **sparks** still land — those
-  feed the grandparent's own letters, which is how you tell whether
-  the pink you want could drop there. The cost is that a pulled
-  generation-4 spark reads as hand-authored, so re-pulling the same
-  grandparent asks about it needlessly; that errs toward asking, which
-  is the safe direction.
+  **A generation-3/4 slot holds a pink, a character, or both.** It
+  used to hold only a pink, which made those nodes anonymous. They now
+  keep the member's `card_id` at every depth the dump reaches — the
+  identity arrives in the same fetch, so discarding it would mean
+  loading real data to throw it away, and it is what puts a portrait
+  on a node with no room for a name. A character can also be picked
+  there by hand, before its pink is decided, exactly as one can be
+  cast into an empty parent.
+
+  The document shape stayed **flat** — `{aptitude?, stars?, card_id?,
+  source?}`, aptitude and stars set together — specifically so every
+  row written before those fields existed is already this shape and
+  parses unchanged: a Pydantic widening, **no migration and no
+  compatibility shim**. Nesting the pink under the identity would have
+  read cleaner and broken every saved blueprint.
+
+  `sparkAt()` still answers "the pink here" and returns null for a
+  face-only slot, which is why the bracket math, the window scan and
+  the undroppable check needed no changes at all — "no pink here"
+  already meant "contributes nothing".
+
+  **The tree rules reach every node.** No node may repeat the
+  character directly above it; two nodes sharing a parent must differ.
+  Both used to stop at the grandparents because nothing below named a
+  character. They now run over all 31 indices on the server, with the
+  picker greying out illegal picks to match. Still allowed, unchanged:
+  a grandparent repeating the *trainee* (the game permits it), and
+  repeats across branches — only the direct line and the pairing
+  matter.
+
+  **A pulled branch is read-only.** Everything under a roster pick is
+  that veteran's recorded pedigree, so it has no Replace, no Clear and
+  no spark editor — editing it would leave the tree asserting
+  something false about a horse you own. Her own pink is fixed for the
+  same reason; her *identity* stays replaceable, because swapping
+  which veteran sits in a slot is a plan decision. The lock is derived
+  by walking up for the nearest roster ancestor, so it survives a
+  reload and releases the moment she is cleared or replaced — which is
+  the way out. Enforced in the state updaters, not just by hiding
+  controls.
+
+  **Clearing or replacing a roster pick takes her branch with it.**
+  Those nodes are her ancestry; leaving them would hang a pedigree
+  under nobody, and unlocked, since she was the lock. No confirm,
+  because nothing hand-authored can be down there — the branch has
+  been read-only since the pull.
 
   **The overwrite confirm is conditional, and native.** Because a pull
   clears a whole branch, the prompt covers that branch and not merely
-  the seven nodes it writes. Empty nodes go silently; nodes an earlier
-  pull filled go silently (they were never hand-authored, so there is
-  nothing to lose); only hand-authored ones prompt, in **one** dialog
-  per pull naming all of them. "Your own picks", not "what you typed":
-  the list covers catalog picks, earlier roster picks and typed sparks
-  alike.
+  the nodes it writes. Empty nodes go silently; nodes an earlier pull
+  filled go silently (never hand-authored, so nothing to lose); only
+  your own work prompts, in **one** dialog per pull naming all of it.
+  A dialog per node would be worse than no protection — people learn
+  to dismiss blind, and then the guard is decoration. `window.confirm`,
+  matching the designer's existing delete and discard prompts rather
+  than inventing a modal.
 
-  **A real pink beats a planned one.** V1 ruled that a re-pick keeps
-  the node's typed spark, but that was a ruling about *catalog* picks,
-  which carry no spark at all — keeping yours was the only available
-  answer, and re-typing after every outfit swap is friction for
-  nothing. A roster pick is the first thing that arrives *with* a real
-  pink, so the question is genuinely new: a node standing for one
-  specific horse in your barn must not advertise a pink she does not
-  carry, or every bracket above it describes a plan you cannot
-  execute. The typed spark is hand-authored, so it is named in the
-  prompt before it goes — nothing is lost silently. Planning a
-  *better* version of a mare you own is what a catalog pick is for. Six sequential dialogs for one pick would be worse than no
-  protection — people learn to dismiss blind, and then the guard is
-  decoration. `window.confirm`, matching the designer's existing
-  delete and discard prompts rather than inventing a modal. What
-  makes a deep spark hand-authored is the *absence* of a `card_id`:
-  only a pull sets one, and the spark editor writes a fresh
-  `{aptitude, stars}` — so editing a pulled spark's stars makes it
-  yours, and the next pull will ask before taking it.
+  The node you aimed at is excluded when it already holds a roster
+  pick: swapping one veteran for another is the action you just took,
+  and since the lock guarantees the rest of that branch is the
+  previous pull's work, naming it would put a dialog on every re-pull
+  reading only "the thing you asked to replace will be replaced". It
+  stays in the list when it holds a catalog pick or a typed pink,
+  which are work you would lose.
 
-  **Clear still clears only the node it names.** The cascade belongs
-  to the pull, which is replacing an ancestry with another one;
-  `Clear` is a single-node edit and stays one, or the button would
-  mean two different things depending on where the node came from.
+  What marks a node as the pull's rather than yours is an explicit
+  `source` on the slot, at every depth. Deep slots first inferred it
+  from position — an identified spark sitting under a roster node —
+  which held only while a pull was the sole thing that could set an
+  identity. Letting you pick a character there by hand broke that, so
+  the slot now says so outright; the positional rule survives as a
+  fallback for rows written before the field.
+
+  **Three letter modes, one per source.** A node's aptitudes are
+  arrived at differently depending on where it came from, and the From
+  column says which: a catalog pick **projects** (card base plus the
+  brackets its window earns, `6★ → +2`); a roster pick **reports**
+  what she actually trained to, read off her own record (`as
+  trained`); a pulled lineage member **states her card** and no more
+  (`card base`).
+
+  Projecting a roster pick was a real bug, not just noise: her career
+  already consumed whatever her parents passed down, so running the
+  brackets over the ancestry the pull had just filled counted the same
+  inheritance twice — and capped at A a mare who finished at S. Her
+  letters are snapshotted onto the slot like her won saddles, so a
+  veteran who leaves the roster keeps the numbers she was scored on.
+
+  Lineage members get no projection because there is nothing honest to
+  project from: the dump gives them no aptitudes, and their own
+  bracket window is missing two thirds of its slots *permanently* —
+  the game stores two generations per veteran, so their grandparents
+  are not in the data, and the branch is locked so you cannot fill
+  them either. The old display ran the brackets anyway and produced a
+  floor that rendered identically to a real forecast. The same
+  truncation is why the undroppable-pink warning is now **catalog
+  only**: a roster or lineage node's pink came out of a dump, so it
+  demonstrably dropped, and flagging it against a permanently
+  truncated projection fired constantly and was wrong every time.
 
   **e2e phase 2 ships here, seeded in CI only.** A committed synthetic
   dump (`backend/tests/fixtures/roster.json`, eight veterans with full
@@ -1096,19 +1168,19 @@ Keep adding entries as the build evolves. This file is the interview.
   people to dismiss, the second makes the guard meaningless; an in-app
   modal — more code and a second confirm idiom in a page that already
   has one; deferring generation-3 identity to a later PR — it arrives
-  in this fetch, so deferring means discarding it; giving deep sparks
-  an explicit `source` field — `card_id`'s presence already carries
-  exactly that information and needs no migration; seeding the fixture
-  from inside the suite so local runs cover the roster too — it would
-  wipe a real roster, and no coverage is worth that; committing a real
-  dump as the fixture (#24 keeps game data out, and it is personal
-  data besides); storing generation-4 identity because a
-  grandparent-level pull happens to carry it — having the data is not
-  a reason to keep it when nothing reads it.
-  Also rejected: holding V1's "a re-pick keeps the typed spark"
-  literally for roster pulls, so you would `Clear` a planned pink to
-  adopt the real one — it makes a node claim a pink its horse doesn't
-  have, which is the one thing a roster pick exists to get right.
+  in this fetch, so deferring means discarding it; inferring a deep
+  slot's origin from `card_id`'s presence rather than storing it — it
+  held only while a pull was the sole way to set one, and stopped the
+  moment those slots became hand-pickable; nesting the pink under the
+  identity, which reads cleaner and breaks every saved blueprint;
+  seeding the fixture from inside the suite so local runs cover the
+  roster too — it would wipe a real roster, and no coverage is worth
+  that; committing a real dump as the fixture (#24 keeps game data
+  out, and it is personal data besides); showing a pulled lineage
+  member's projected letters marked `≥` — a true lower bound, but on a
+  quantity nothing reads, and ten rows of hedging for information that
+  changes no decision; hiding those letters entirely, which discards
+  the card base we do know and breaks the map's uniform geometry.
 - **Would change my mind:** the one-dialog-per-pull summary proving
   unreadable once pulls routinely hit five or six hand-authored nodes
   (then an in-app modal listing them with their contents earns its
@@ -1118,4 +1190,7 @@ Keep adding entries as the build evolves. This file is the interview.
   thin for the three roster suites still to be ported (extend it
   rather than importing a real dump); wanting the roster section
   covered on local runs too, which needs a second disposable database
-  rather than a seeding step.
+  rather than a seeding step; `card base` reading as too pessimistic
+  on a pulled grandparent — the next lever is flooring the row she
+  demonstrably dropped a pink in at A, which is derived from a rule we
+  already trust rather than projected.

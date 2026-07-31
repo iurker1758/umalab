@@ -205,24 +205,54 @@ AptitudeKey = Literal[
 # that exist only to feed the bracket math of the generations above.
 NAMED_SLOT_COUNT = 7
 SPARK_SLOT_COUNT = 24
+NODE_SLOT_COUNT = NAMED_SLOT_COUNT + SPARK_SLOT_COUNT
 
 
 class PinkSparkIn(BaseModel):
-    """One pink (aptitude) spark. Single, not a list: every lineage member
-    carries exactly one pink — verified against a real 159-veteran dump
-    (all 954 lineage members included).
+    """A generation-3/4 slot: a pink (aptitude) spark, a character, or both.
 
-    `card_id` is optional identity for the generation-3 slots, which a roster
-    pull fills from the picked veteran's own grandparents (position_id
-    11/12/21/22). Anonymous everywhere else, and anonymous forever at
-    generation 4 — the game stores only two generations per veteran, so no
-    real data exists below that. Purely decorative: the bracket math reads
-    aptitude/stars only. `slots` is a JSONB column, so rows written before
-    this field simply lack it and parse unchanged (no migration)."""
+    Every lineage member carries exactly one pink — verified against a real
+    159-veteran dump, all 954 lineage members included — so the spark is a
+    single value, not a list.
 
-    aptitude: AptitudeKey
-    stars: int = Field(ge=1, le=3)
+    `card_id` names who the slot is. A roster pull fills it from the picked
+    veteran's own succession members; it can also be chosen by hand, the
+    same way a character can be cast into an empty parent before its pink is
+    decided. It is decoration for the math — the brackets read aptitude and
+    stars only — but it is what puts a portrait on a node too deep to carry
+    a name.
+
+    aptitude/stars are optional so a slot can hold a character with no pink
+    yet, mirroring the named slots above. They are set TOGETHER: half a
+    spark would silently read as a different one downstream. A slot with
+    neither a spark nor a character is written as null, not as an empty
+    husk.
+
+    Deliberately kept flat rather than nesting the spark under the identity:
+    `slots` is JSONB and every row written before `card_id` existed is
+    exactly this shape already, so it parses unchanged with no migration and
+    no compatibility shim.
+    """
+
+    aptitude: AptitudeKey | None = None
+    stars: int | None = Field(default=None, ge=1, le=3)
     card_id: int | None = None
+    # Where the character came from, when one was pulled rather than picked:
+    # `roster` for the veteran a pull was aimed at, `lineage` for the members
+    # it brought with her. Absent means hand-picked, which is what every row
+    # written before this field means too. It is what marks a branch as
+    # recorded history — see the designer's lock rules.
+    source: Literal["roster", "lineage"] | None = None
+
+    @model_validator(mode="after")
+    def _check_spark(self) -> PinkSparkIn:
+        if (self.aptitude is None) != (self.stars is None):
+            raise ValueError("aptitude and stars must be set together")
+        if self.aptitude is None and self.card_id is None:
+            raise ValueError("a slot must carry a spark, a character, or both")
+        if self.source is not None and self.card_id is None:
+            raise ValueError("a pulled slot needs a character")
+        return self
 
 
 class BlueprintSlotIn(BaseModel):
@@ -249,6 +279,12 @@ class BlueprintSlotIn(BaseModel):
     trained_chara_id: int | None = None
     position_id: int | None = None
     spark: PinkSparkIn | None = None
+    # A roster pick's OWN aptitude letters, as trained. Snapshotted for the
+    # same reason as win_saddle_ids: a veteran that leaves the roster must
+    # keep the numbers she was scored on. Only roster slots carry these —
+    # a catalog pick is a card, not a horse, and the dump gives a lineage
+    # member no aptitudes at all.
+    aptitudes: dict[AptitudeKey, str] | None = None
 
     @model_validator(mode="after")
     def _check_slot(self) -> BlueprintSlotIn:
@@ -265,6 +301,13 @@ class BlueprintSlotIn(BaseModel):
             )
         if self.source != "catalog" and self.trained_chara_id is None:
             raise ValueError(f"a {self.source} slot needs a trained_chara_id")
+        if self.aptitudes is not None and self.source != "roster":
+            raise ValueError("only a roster slot carries its own aptitudes")
+        # PinkSparkIn doubles as the generation-3/4 slot model, where a bare
+        # character with no pink is legal. Here it is only ever a spark: a
+        # named node keeps its identity in its own fields.
+        if self.spark is not None and self.spark.aptitude is None:
+            raise ValueError("a named slot's spark needs an aptitude")
         if self.source == "lineage" and self.position_id is None:
             raise ValueError("a lineage slot needs a position_id")
         return self
@@ -296,46 +339,60 @@ class BlueprintIn(BaseModel):
         self.name = self.name.strip()
         if not self.name:
             raise ValueError("name must not be blank")
-        # The game's breeding rules over the named triangle, so a saved
-        # design is always one the parent-select screen would accept.
-        # Partial designs are fine — rules apply only between filled slots.
-        # A grandparent repeating the TRAINEE's chara is deliberately not
-        # rejected: the game allows it (and app/affinity.py scores it
-        # correctly). The anonymous spark slots carry no identity, so no
-        # chara rule can apply below the grandparents.
-        named = self.slots.named
-        trainee = named[0]
+        # The game's breeding rules over the WHOLE tree, so a saved design is
+        # always one the parent-select screen would accept. Two rules, and
+        # both are about the same fact — a horse is not its own ancestor and
+        # a pairing is between two different horses:
+        #
+        #   * no node may repeat the character of the node directly above it;
+        #   * two nodes sharing a parent must be different characters.
+        #
+        # They apply at every depth now that generation 3/4 slots can name a
+        # character (they used to be anonymous, so no rule could reach them).
+        # Partial designs are fine: a slot naming nobody collides with
+        # nothing. A grandparent repeating the TRAINEE's chara is deliberately
+        # allowed — the game permits it, and app/affinity.py scores it
+        # correctly.
+        trainee = self.slots.named[0]
         if trainee is not None and trainee.spark is not None:
             raise ValueError("the trainee slot can't carry a spark")
-        # Identity-less (spark-only) slots sit out every chara rule — they
-        # name no character to collide with.
-        for i, kid in enumerate(named[1:], start=1):
-            parent = named[(i - 1) // 2]
-            if (
-                kid is not None
-                and parent is not None
-                and kid.chara_id is not None
-                and kid.chara_id == parent.chara_id
-            ):
+
+        charas = [self._chara_at(i) for i in range(NODE_SLOT_COUNT)]
+        for i in range(1, NODE_SLOT_COUNT):
+            parent = (i - 1) // 2
+            if charas[i] is not None and charas[i] == charas[parent]:
                 raise ValueError(
                     "a parent can't be the trainee's own character"
                     if i <= 2
                     else "a grandparent can't repeat its own parent's character"
+                    if i < NAMED_SLOT_COUNT
+                    else "a slot can't repeat the character of the slot above it"
                 )
-        for i in range(NAMED_SLOT_COUNT // 2):
-            a, b = named[2 * i + 1], named[2 * i + 2]
-            if (
-                a is not None
-                and b is not None
-                and a.chara_id is not None
-                and a.chara_id == b.chara_id
-            ):
+        for parent in range(NODE_SLOT_COUNT // 2):
+            a, b = 2 * parent + 1, 2 * parent + 2
+            if charas[a] is not None and charas[a] == charas[b]:
                 raise ValueError(
                     "the two parents must be different characters"
-                    if i == 0
+                    if parent == 0
                     else "a parent's two grandparents must be different"
+                    if parent < 3
+                    else "two slots sharing a parent must be different characters"
                 )
         return self
+
+    def _chara_at(self, i: int) -> int | None:
+        """The character at a tree index, or None where none is named.
+
+        Named nodes carry chara_id outright; a generation-3/4 slot stores
+        only a card, so its chara is derived the same way the ingest does it.
+        """
+        if i < NAMED_SLOT_COUNT:
+            slot = self.slots.named[i]
+            return None if slot is None else slot.chara_id
+        deep = self.slots.sparks[i - NAMED_SLOT_COUNT]
+        if deep is None or deep.card_id is None:
+            return None
+        return ingest.derive_chara_id(deep.card_id)
 
 
 class BlueprintOut(BaseModel):

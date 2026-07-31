@@ -1,14 +1,17 @@
 import {
   APTITUDE_KEYS,
   type AptitudeKey,
+  type AptitudeLetters,
   type Blueprint,
   type BlueprintIn,
   type BlueprintSlot,
+  type DeepSlot,
   type Factor,
   type LineageMember,
   type PinkSpark,
   type Veteran,
 } from "./api";
+import { apt } from "./domain";
 
 // ---------- the designed lineage ----------
 // Pure designer domain (the analog of filters.ts): the 31-node tree shape,
@@ -92,6 +95,12 @@ export interface SlotValue {
   // parents, 11/12/21/22 grandparents). Lineage slots only.
   position_id: number | null;
   spark: PinkSpark | null;
+  // A roster pick's OWN letters, as trained. When set they ARE the node's
+  // aptitudes — the career that produced them already consumed whatever her
+  // parents passed down, so re-applying the bracket math on top would count
+  // the same inheritance twice. Null on catalog picks (a card, not a horse)
+  // and on lineage slots (the dump gives its members no aptitudes).
+  aptitudes: AptitudeLetters | null;
 }
 
 // A hand-picked node: everything a catalog pick knows, which is only who.
@@ -107,28 +116,41 @@ export const catalogSlot = (
   trained_chara_id: null,
   position_id: null,
   spark,
+  aptitudes: null,
 });
 
 export interface Design {
   id: number | null; // null until first saved
   name: string;
   named: (SlotValue | null)[]; // length 7, breadth-first; [0] = trainee
-  sparks: (PinkSpark | null)[]; // length 24, tree indices 7–30
+  sparks: (DeepSlot | null)[]; // length 24, tree indices 7–30
 }
 
 export const emptyDesign = (): Design => ({
   id: null,
   name: "",
   named: Array<SlotValue | null>(NAMED_COUNT).fill(null),
-  sparks: Array<PinkSpark | null>(SPARK_COUNT).fill(null),
+  sparks: Array<DeepSlot | null>(SPARK_COUNT).fill(null),
 });
 
 // ---------- reading and writing nodes ----------
 
-// The pink spark at any tree index — a named member's typed pink or an
-// anonymous deep slot's value.
+// The pink spark at any tree index — a named member's typed pink, or the
+// pink half of a deep slot. Null when a deep slot holds only a character,
+// which is why every consumer of this can stay exactly as it was: "no pink
+// here" already meant "contributes nothing to the brackets".
 export function sparkAt(design: Design, i: number): PinkSpark | null {
-  return i < NAMED_COUNT ? (design.named[i]?.spark ?? null) : design.sparks[i - NAMED_COUNT];
+  if (i < NAMED_COUNT) return design.named[i]?.spark ?? null;
+  const slot = design.sparks[i - NAMED_COUNT];
+  return slot?.aptitude == null || slot.stars == null
+    ? null
+    : { aptitude: slot.aptitude, stars: slot.stars };
+}
+
+// Who a deep slot is, if anyone. Named nodes keep identity in their own
+// fields, so this only answers for generations 3 and 4.
+export function deepCardAt(design: Design, i: number): number | null {
+  return i < NAMED_COUNT ? null : (design.sparks[i - NAMED_COUNT]?.card_id ?? null);
 }
 
 export function withNamed(design: Design, i: number, value: SlotValue | null): Design {
@@ -149,40 +171,89 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
     if (spark === null && slot.card_id === null) return withNamed(design, i, null);
     return withNamed(design, i, { ...slot, spark });
   }
+  // Deep slot: replace the pink half, keeping whoever is in it. Clearing the
+  // pink off a slot with nobody in it prunes it back to null, so an
+  // untouched node never persists as a husk — the same rule the named
+  // slots follow, and what keeps the unsaved-changes check honest.
+  const card = design.sparks[i - NAMED_COUNT]?.card_id ?? null;
+  return withDeep(
+    design,
+    i,
+    spark === null
+      ? card === null
+        ? null
+        : { card_id: card }
+      : { aptitude: spark.aptitude, stars: spark.stars, ...(card === null ? {} : { card_id: card }) }
+  );
+}
+
+// Replace a deep slot wholesale.
+export function withDeep(design: Design, i: number, slot: DeepSlot | null): Design {
   const sparks = design.sparks.slice();
-  sparks[i - NAMED_COUNT] = spark;
+  sparks[i - NAMED_COUNT] = slot;
   return { ...design, sparks };
 }
 
+// Set (or drop) who a deep slot is, keeping its pink. Dropping the character
+// off a slot with no pink prunes it away, as clearing the pink does.
+export function withDeepCard(design: Design, i: number, cardId: number | null): Design {
+  const slot = design.sparks[i - NAMED_COUNT];
+  const pink = slot?.aptitude == null || slot.stars == null ? null : slot;
+  if (cardId === null) {
+    return withDeep(design, i, pink === null ? null : { aptitude: pink.aptitude, stars: pink.stars });
+  }
+  return withDeep(
+    design,
+    i,
+    pink === null
+      ? { card_id: cardId }
+      : { aptitude: pink.aptitude, stars: pink.stars, card_id: cardId }
+  );
+}
+
 // ---------- game-rule mirror ----------
-// Grey-out reasons for the picker, generalized over the tree arithmetic.
-// The server stays the authority (its 422 still surfaces in the toast);
-// this only spares obviously dead clicks. Deliberately absent: a grandparent
-// repeating the TRAINEE's chara — the game allows it.
+// Grey-out reasons for the picker, generalized over the tree arithmetic and
+// applied at every depth — generations 3 and 4 name characters now, so the
+// same two rules reach them: no node repeats the one above it, and two nodes
+// sharing a parent differ. The server stays the authority (its 422 still
+// surfaces in the toast); this only spares obviously dead clicks.
+// Deliberately absent: a grandparent repeating the TRAINEE's chara — the
+// game allows it.
 export function slotConflicts(design: Design, target: number, charaId: number): string | null {
-  const at = (i: number) => design.named[i]?.chara_id;
+  const at = (i: number) => charaAt(design, i);
   if (target > 0) {
     if (at(parentOf(target)) === charaId) {
       return target <= 2
         ? "A parent can't be the trainee's own character"
-        : "A grandparent can't repeat its own parent's character";
+        : target < NAMED_COUNT
+          ? "A grandparent can't repeat its own parent's character"
+          : `Already ${nodeLabel(parentOf(target))} — a horse can't be its own parent`;
     }
     const sibling = target % 2 === 1 ? target + 1 : target - 1;
     if (at(sibling) === charaId) {
       return target <= 2
         ? "The two parents must be different characters"
-        : "This parent's two grandparents must be different";
+        : target < NAMED_COUNT
+          ? "This parent's two grandparents must be different"
+          : `Already ${nodeLabel(sibling)} — a pair must be two different horses`;
     }
   }
-  if (target <= 2) {
-    const [a, b] = kidsOf(target);
-    if (at(a) === charaId || at(b) === charaId) {
-      return target === 0
-        ? "Already a parent — the trainee must differ from both parents"
-        : "Already one of this parent's grandparents — a grandparent can't repeat its parent";
-    }
+  const [a, b] = kidsOf(target);
+  if (a < NODE_COUNT && (at(a) === charaId || at(b) === charaId)) {
+    return target === 0
+      ? "Already a parent — the trainee must differ from both parents"
+      : `Already one of ${nodeLabel(target)}'s own parents below — a horse can't be its own parent`;
   }
   return null;
+}
+
+// The character at any tree index. Named nodes carry chara_id outright; a
+// generation-3/4 slot stores only a card, so its chara is derived — the same
+// rule the server uses, since these checks exist to agree with it.
+export function charaAt(design: Design, i: number): number | null {
+  if (i < NAMED_COUNT) return design.named[i]?.chara_id ?? null;
+  const card = deepCardAt(design, i);
+  return card === null ? null : deriveCharaId(card);
 }
 
 // ---------- roster pulls ----------
@@ -208,18 +279,14 @@ const PINK_KEY_APTITUDE: Readonly<Record<number, AptitudeKey>> = {
 // the first so a future multi-pink record degrades to the useful answer
 // instead of an arbitrary one. `card_id` is the member's identity, which is
 // what makes a pulled gen-3/4 spark distinguishable from a typed one.
-export function pinkOf(factors: readonly Factor[], cardId?: number): PinkSpark | null {
+export function pinkOf(factors: readonly Factor[]): PinkSpark | null {
   let best: PinkSpark | null = null;
   for (const f of factors) {
     const aptitude = PINK_KEY_APTITUDE[f.key];
     // Both checks: no non-pink factor uses a key in this range today, and
     // the kind is what keeps that true if one ever does.
     if (f.kind !== "pink" || aptitude === undefined || f.star < 1 || f.star > 3) continue;
-    if (best === null || f.star > best.stars) {
-      best = cardId === undefined
-        ? { aptitude, stars: f.star }
-        : { aptitude, stars: f.star, card_id: cardId };
-    }
+    if (best === null || f.star > best.stars) best = { aptitude, stars: f.star };
   }
   return best;
 }
@@ -261,10 +328,71 @@ export function subtreeOf(i: number): number[] {
   return out;
 }
 
-// The trainee is the horse you are about to train. It is not in your roster
-// — that is the whole point of it — and nothing is bred from it, so a roster
-// pick has nothing to mean at node 0. It would also be the one click that
-// empties all 31 nodes. Catalog only, there.
+// Which roster node, if any, owns this one — the nearest ancestor filled
+// from your roster. Everything under a real veteran is that veteran's actual
+// pedigree: her parents and their sparks are recorded history, not a plan,
+// so they are read-only. Editing them would leave the tree asserting
+// something false about a horse you own.
+//
+// Derived from the design rather than remembered from the pull, so it stays
+// true after a reload, and stops applying the moment the roster node above
+// is cleared or replaced — which is the way out.
+export function lockedBy(design: Design, i: number): number | null {
+  let j = i;
+  while (j > 0) {
+    j = parentOf(j);
+    if (sourceAt(design, j) === "roster") return j;
+  }
+  return null;
+}
+
+// Where a node's character came from, at any depth. Named nodes always
+// declare it; a deep slot declares it only when a pull placed it, so absent
+// means hand-picked.
+export function sourceAt(design: Design, i: number): SlotSource | null {
+  if (i < NAMED_COUNT) return design.named[i]?.source ?? null;
+  return design.sparks[i - NAMED_COUNT]?.source ?? null;
+}
+
+// The nodes a roster pick brought with it — its descendants, empty list for
+// anything else. Clearing or replacing that pick takes them too: every one
+// of them describes THAT veteran's ancestry, so leaving them would hang a
+// pedigree under someone who doesn't have it, and leave it unlocked now that
+// the veteran enforcing the lock is gone.
+//
+// Nothing hand-authored can be in there, which is why this needs no confirm:
+// the branch was read-only from the moment of the pull, and the pull itself
+// cleared whatever preceded it.
+export function ownedBranch(design: Design, i: number): number[] {
+  return sourceAt(design, i) === "roster" ? subtreeOf(i).slice(1) : [];
+}
+
+// Empty a set of nodes, named or deep.
+export function clearNodes(design: Design, indices: readonly number[]): Design {
+  let next = design;
+  for (const i of indices) {
+    next = i < NAMED_COUNT ? withNamed(next, i, null) : withDeep(next, i, null);
+  }
+  return next;
+}
+
+// Is this node's pink fixed? True for everything inside a locked branch, and
+// also for the roster node at its head: that pink is the one the horse
+// actually carries, so typing over it would be a fiction about a veteran you
+// own. Her IDENTITY stays editable — swapping which veteran sits in the slot
+// is a plan decision; rewriting her sparks is not.
+export function sparkLocked(design: Design, i: number): boolean {
+  return lockedBy(design, i) !== null || sourceAt(design, i) === "roster";
+}
+
+// Every node but the trainee takes a roster pull. The trainee is the horse
+// you are about to train — not in your roster, that being the point of it,
+// and a pull there would be the one click that empties all 31 nodes.
+//
+// A pull deeper in simply reaches less: it fills whatever the tree has room
+// for beneath the target, which is one generation at gen 3 and nothing at
+// gen 4. That falls out of pullTargets' bounds check rather than needing a
+// rule of its own.
 export const canPullInto = (i: number): boolean => i > 0;
 
 // One node a pull would write. Named indices carry a whole slot; the deeper
@@ -273,7 +401,7 @@ export const canPullInto = (i: number): boolean => i > 0;
 export interface PullWrite {
   index: number;
   slot?: SlotValue;
-  spark?: PinkSpark;
+  deep?: DeepSlot;
 }
 
 export interface PullPlan {
@@ -293,21 +421,20 @@ export interface PullPlan {
 }
 
 // Was this node's content authored by hand? Deep spark slots have no source
-// field, and don't need one: only a pull sets a spark's card_id, and the
-// spark editor writes a fresh {aptitude, stars} — so carrying an identity IS
-// the mark of a pulled spark.
-//
-// Since generation 4 stores no identity, a spark a pull put there reads as
-// hand-authored and the next pull into that grandparent asks about it
-// needlessly. That errs toward asking, which is the safe direction, and only
-// arises when you re-pull the same grandparent.
+// field: a pull records `lineage` on what it placed, so anything without one
+// is yours — a typed pink, or a character you picked.
 function handAuthored(design: Design, i: number): boolean {
   if (i < NAMED_COUNT) {
     const slot = design.named[i];
     return slot !== null && slot.source !== "lineage";
   }
-  const spark = design.sparks[i - NAMED_COUNT];
-  return spark !== null && spark.card_id == null;
+  const slot = design.sparks[i - NAMED_COUNT];
+  if (slot === null) return false;
+  if (slot.source != null) return slot.source !== "lineage";
+  // Rows written before deep slots recorded a source: back then a pull was
+  // the only thing that set an identity, and it always left it beneath the
+  // roster node that produced it.
+  return slot.card_id == null || lockedBy(design, i) === null;
 }
 
 const lineageSlot = (
@@ -321,7 +448,34 @@ const lineageSlot = (
   trained_chara_id: trainedCharaId,
   position_id: member.position_id,
   spark: pinkOf(member.factors),
+  // A dump's succession members carry no aptitude fields — only the veteran
+  // record itself does. So a lineage node falls back to card base + brackets.
+  aptitudes: null,
 });
+
+// Which dump field holds each aptitude, in the API's key order. The values
+// are the game's 1..8 scale; `apt` maps them onto G..S.
+const APTITUDE_FIELDS: Record<AptitudeKey, keyof Veteran> = {
+  turf: "proper_ground_turf",
+  dirt: "proper_ground_dirt",
+  sprint: "proper_distance_short",
+  mile: "proper_distance_mile",
+  medium: "proper_distance_middle",
+  long: "proper_distance_long",
+  front: "proper_running_style_nige",
+  pace: "proper_running_style_senko",
+  late: "proper_running_style_sashi",
+  end: "proper_running_style_oikomi",
+};
+
+// A trained veteran's actual letters, off her own dump record. These are
+// what she finished her career with — inheritance, inspirations and any
+// aptitude gained in training, all already in the number.
+export function veteranAptitudes(v: Veteran): AptitudeLetters {
+  const out = {} as AptitudeLetters;
+  for (const key of APTITUDE_KEYS) out[key] = apt(v[APTITUDE_FIELDS[key]] as number);
+  return out;
+}
 
 // What pulling `veteran` into `target` would do: replace that node's whole
 // branch — the node and everything descended from it — with as much of the
@@ -342,19 +496,35 @@ const lineageSlot = (
 export function planPull(design: Design, target: number, veteran: Veteran): PullPlan {
   if (!canPullInto(target)) throw new Error("the trainee can't be pulled from the roster");
   const byPosition = new Map(veteran.lineage.map((m) => [m.position_id, m]));
+  const ownPink = pinkOf(veteran.factors);
+  // A deep slot has room for a face and a pink and nothing else — no won
+  // saddles, no trained_chara_id, no trained letters. None of those are read
+  // below the grandparents: affinity scores the named triangle only, and the
+  // bracket math reads stars. So the pull carries what fits, and the `source`
+  // is what still marks the branch as recorded history.
   const writes: PullWrite[] = [
-    {
-      index: target,
-      slot: {
-        source: "roster",
-        chara_id: veteran.chara_id,
-        card_id: veteran.card_id,
-        win_saddle_ids: veteran.win_saddles,
-        trained_chara_id: veteran.trained_chara_id,
-        position_id: null,
-        spark: pinkOf(veteran.factors),
-      },
-    },
+    target < NAMED_COUNT
+      ? {
+          index: target,
+          slot: {
+            source: "roster",
+            chara_id: veteran.chara_id,
+            card_id: veteran.card_id,
+            win_saddle_ids: veteran.win_saddles,
+            trained_chara_id: veteran.trained_chara_id,
+            position_id: null,
+            spark: ownPink,
+            aptitudes: veteranAptitudes(veteran),
+          },
+        }
+      : {
+          index: target,
+          deep: {
+            card_id: veteran.card_id,
+            source: "roster",
+            ...(ownPink === null ? {} : { aptitude: ownPink.aptitude, stars: ownPink.stars }),
+          },
+        },
   ];
   for (const { index, position } of pullTargets(target)) {
     const member = byPosition.get(position);
@@ -367,37 +537,49 @@ export function planPull(design: Design, target: number, veteran: Veteran): Pull
       writes.push({ index, slot: lineageSlot(member, veteran.trained_chara_id) });
       continue;
     }
-    // Below the grandparents there is nowhere to put a name, only a spark.
-    // Generation 3 keeps the member's identity; generation 4 doesn't, even
-    // when a grandparent-level pull happens to know it. Nothing that deep
-    // reaches the trainee — a node's brackets read only its own two
-    // generations — so the name would be trivia carried forever. Its SPARK
-    // still lands: that feeds the grandparent's own letters, which is how
-    // you tell whether the pink you want could drop there.
-    const spark = pinkOf(member.factors, genOf(index) === 3 ? member.card_id : undefined);
-    if (spark !== null) writes.push({ index, spark });
+    // Below the grandparents there is nowhere to put a NAME, but the card id
+    // still rides along at every depth the dump reaches: it's what draws the
+    // character's icon on the map, which is how a deep slot is recognisable
+    // at all. Generation 4 only ever gets one from a grandparent-level pull
+    // — a parent-level pull has no data that deep and clears it instead.
+    // A member with no pink still lands, as a face: that is real information
+    // about who is there, and the slot now has somewhere to keep it.
+    const pink = pinkOf(member.factors);
+    writes.push({
+      index,
+      deep: {
+        card_id: member.card_id,
+        source: "lineage",
+        ...(pink === null ? {} : { aptitude: pink.aptitude, stars: pink.stars }),
+      },
+    });
   }
   const written = new Set(writes.map((w) => w.index));
   const branch = subtreeOf(target);
+  // Swapping one veteran for another is the action you just took, so the
+  // node you aimed at isn't collateral and doesn't belong in the warning —
+  // naming it would put a dialog on every re-pull saying only "the thing
+  // you asked to replace will be replaced". It stays in the list when it
+  // holds something you authored yourself: a catalog pick, or a typed pink
+  // (which a roster pick can't have — its pink is the horse's own).
+  const collateral = (i: number) =>
+    handAuthored(design, i) && !(i === target && sourceAt(design, i) === "roster");
   return {
     writes,
     clears: branch.filter((i) => !written.has(i)),
-    clobbers: branch.filter((i) => handAuthored(design, i)),
+    clobbers: branch.filter(collateral),
   };
 }
 
 export function applyPull(design: Design, plan: PullPlan): Design {
-  let next = design;
   // Clear first, then fill: the two sets are disjoint, so the order only
   // matters for readability, and "empty the branch, then populate it" is
   // what the rule actually says.
-  for (const i of plan.clears) {
-    next = i < NAMED_COUNT ? withNamed(next, i, null) : withSpark(next, i, null);
-  }
+  let next = clearNodes(design, plan.clears);
   for (const w of plan.writes) {
     next = w.slot !== undefined
       ? withNamed(next, w.index, w.slot)
-      : withSpark(next, w.index, w.spark ?? null);
+      : withDeep(next, w.index, w.deep ?? null);
   }
   return next;
 }
@@ -415,6 +597,7 @@ const slotToApi = (s: SlotValue | null): BlueprintSlot | null =>
         trained_chara_id: s.trained_chara_id,
         position_id: s.position_id,
         spark: s.spark,
+        aptitudes: s.aptitudes,
       };
 
 export const toApi = (design: Design): BlueprintIn => ({
@@ -429,25 +612,51 @@ export const toApi = (design: Design): BlueprintIn => ({
 // a future version) — the caller degrades to a toast, not a crash. Turning
 // malformed into silently-blank is the data-loss shape DECISIONS.md #26 is
 // about, so every one of these stays strict.
-function sparkFromApi(raw: PinkSpark | null | undefined): PinkSpark | null {
-  if (raw === null || raw === undefined) return null;
+// The pink half. Both fields present and valid, or neither.
+function pinkFromApi(raw: DeepSlot): PinkSpark | null {
+  if (raw.aptitude == null && raw.stars == null) return null;
   const ok =
+    raw.aptitude != null &&
     APTITUDE_KEYS.includes(raw.aptitude) &&
     typeof raw.stars === "number" &&
     Number.isInteger(raw.stars) &&
     raw.stars >= 1 &&
     raw.stars <= 3;
   if (!ok) throw new Error("malformed pink spark");
-  // Optional gen-3/4 identity. Absent on every hand-typed spark and on every
-  // row written before the roster pull existed, so undefined is normal —
-  // only a present-but-wrong value is malformed.
+  return { aptitude: raw.aptitude as AptitudeKey, stars: raw.stars as number };
+}
+
+// A named slot's spark, which must be a real pink — identity lives in the
+// slot's own fields there, so a face-only value is a shape this client
+// doesn't understand rather than a legal spark.
+function sparkFromApi(raw: DeepSlot | null | undefined): PinkSpark | null {
+  if (raw === null || raw === undefined) return null;
+  const pink = pinkFromApi(raw);
+  if (pink === null) throw new Error("a named slot's spark needs an aptitude");
+  return pink;
+}
+
+// A generation-3/4 slot: a pink, a character, or both. Neither ⇒ the row
+// should have been written as null, so it's malformed rather than empty.
+function deepFromApi(raw: DeepSlot | null | undefined): DeepSlot | null {
+  if (raw === null || raw === undefined) return null;
+  const pink = pinkFromApi(raw);
   const card = raw.card_id;
   if (card !== null && card !== undefined && !Number.isInteger(card)) {
-    throw new Error("malformed pink spark identity");
+    throw new Error("malformed deep slot identity");
   }
-  return card === null || card === undefined
-    ? { aptitude: raw.aptitude, stars: raw.stars }
-    : { aptitude: raw.aptitude, stars: raw.stars, card_id: card };
+  const cardId = card ?? null;
+  if (pink === null && cardId === null) throw new Error("malformed deep slot");
+  const source = raw.source ?? null;
+  if (source !== null && source !== "roster" && source !== "lineage") {
+    throw new Error(`unsupported slot source ${String(source)}`);
+  }
+  if (source !== null && cardId === null) throw new Error("a pulled slot needs a character");
+  return {
+    ...(pink === null ? {} : { aptitude: pink.aptitude, stars: pink.stars }),
+    ...(cardId === null ? {} : { card_id: cardId }),
+    ...(source === null ? {} : { source }),
+  };
 }
 
 const SOURCES: readonly string[] = ["catalog", "roster", "lineage"];
@@ -490,7 +699,28 @@ function slotFromApi(raw: BlueprintSlot | null | undefined): SlotValue | null {
     trained_chara_id: trained,
     position_id: position,
     spark,
+    aptitudes: lettersFromApi(raw.aptitudes, source),
   };
+}
+
+// A roster pick's stored letters. Absent on every catalog and lineage slot,
+// and on every row written before roster pulls existed, so undefined is
+// normal — but a partial or mislabelled set is a shape this client doesn't
+// understand, and silently dropping it would show card base letters for a
+// horse whose real ones were right there.
+function lettersFromApi(
+  raw: AptitudeLetters | null | undefined,
+  source: SlotSource
+): AptitudeLetters | null {
+  if (raw === null || raw === undefined) return null;
+  if (source !== "roster") throw new Error("only a roster slot carries its own aptitudes");
+  const out = {} as AptitudeLetters;
+  for (const key of APTITUDE_KEYS) {
+    const letter = raw[key];
+    if (typeof letter !== "string" || letter === "") throw new Error("malformed aptitudes");
+    out[key] = letter;
+  }
+  return out;
 }
 
 // ---------- which blueprint was open ----------
@@ -569,6 +799,6 @@ export const fromApi = (bp: Blueprint): Design => {
     id: bp.id,
     name: bp.name,
     named: slots.named.map(slotFromApi),
-    sparks: slots.sparks.map(sparkFromApi),
+    sparks: slots.sparks.map(deepFromApi),
   };
 };

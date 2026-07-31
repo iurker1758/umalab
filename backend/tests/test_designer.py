@@ -179,6 +179,53 @@ def test_duplicate_sibling_grandparents_rejected() -> None:
     )
 
 
+def deep(chara_id: int) -> dict[str, Any]:
+    """A generation-3/4 slot naming a character, with no pink."""
+    return {"card_id": chara_id * 100 + 1}
+
+
+def test_deep_slot_repeating_the_slot_above_it_rejected() -> None:
+    # The rules reach past the grandparents now that these slots can name a
+    # character. Node 7 sits under node 3; node 15 sits under node 7.
+    _rejects(
+        doc(named={3: slot(1004)}, sparks={7: deep(1004)}),
+        "can't repeat the character of the slot above it",
+    )
+    _rejects(
+        doc(sparks={7: deep(1004), 15: deep(1004)}),
+        "can't repeat the character of the slot above it",
+    )
+
+
+def test_deep_siblings_must_differ() -> None:
+    _rejects(
+        doc(sparks={7: deep(1004), 8: deep(1004)}),
+        "two slots sharing a parent must be different characters",
+    )
+    _rejects(
+        doc(sparks={29: deep(1004), 30: deep(1004)}),
+        "two slots sharing a parent must be different characters",
+    )
+
+
+def test_deep_repeats_across_branches_are_legal() -> None:
+    # Same rule as the named nodes: only the pairing and the direct line
+    # matter. Nodes 7 and 9 sit under different parents, and node 15's
+    # grandparent is node 3 — not its parent, so no rule applies.
+    BlueprintIn.model_validate(doc(sparks={7: deep(1004), 9: deep(1004)}))
+    BlueprintIn.model_validate(
+        doc(named={3: slot(1004)}, sparks={7: deep(1005), 15: deep(1004)})
+    )
+
+
+def test_a_deep_slot_naming_nobody_collides_with_nothing() -> None:
+    # A pink with no character sits out every chara rule, exactly as a
+    # spark-only named slot does.
+    BlueprintIn.model_validate(
+        doc(named={3: slot(1004)}, sparks={7: pink(), 8: pink("turf", 1)})
+    )
+
+
 def test_trainee_spark_rejected() -> None:
     # Nothing is bred from the trainee — its slot never carries a pink.
     _rejects(
@@ -313,6 +360,40 @@ def test_gen3_spark_carries_optional_card_identity() -> None:
     # card id rather than discarding it. JSONB column ⇒ no migration.
     body = BlueprintIn.model_validate(doc(sparks={7: {**pink(), "card_id": 100401}}))
     assert body.slots.sparks[0] == PinkSparkIn(aptitude="mile", stars=3, card_id=100401)
+
+
+def test_deep_slot_may_name_a_character_with_no_pink() -> None:
+    # The mirror of a named node holding a character before its pink is
+    # decided — casting first is a normal way to plan.
+    body = BlueprintIn.model_validate(doc(sparks={7: {"card_id": 100401}}))
+    slot7 = body.slots.sparks[0]
+    assert slot7 is not None
+    assert slot7.card_id == 100401
+    assert slot7.aptitude is None
+    assert slot7.stars is None
+
+
+@pytest.mark.parametrize("raw", [{"aptitude": "mile"}, {"stars": 2}])
+def test_half_a_spark_rejected(raw: dict[str, Any]) -> None:
+    # Half a spark would read as a different one downstream: a missing
+    # aptitude silently contributes nothing, a missing star count reads as 0.
+    _rejects(doc(sparks={7: raw}), "aptitude and stars must be set together")
+
+
+def test_wholly_empty_deep_slot_rejected() -> None:
+    # An untouched node is written as null, not as an empty husk — same rule
+    # the named slots follow.
+    _rejects(doc(sparks={7: {}}), "must carry a spark, a character, or both")
+
+
+def test_named_slot_spark_must_be_a_real_pink() -> None:
+    # PinkSparkIn doubles as the deep-slot model, where a bare character is
+    # legal. A named node keeps identity in its own fields, so a face-only
+    # value there is a shape the document doesn't have a meaning for.
+    _rejects(
+        doc(named={1: slot(1002, spark={"card_id": 100401})}),
+        "a named slot's spark needs an aptitude",
+    )
 
 
 def test_spark_without_identity_still_parses() -> None:

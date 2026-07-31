@@ -95,14 +95,26 @@ export type AptitudeLetters = Record<AptitudeKey, string>;
 
 // One pink (aptitude) spark. Single, not a list — every lineage member
 // carries exactly one pink (verified against a real full dump). stars 1–3.
-// card_id is optional identity for the generation-3 slots, filled by a
-// roster pull from the picked veteran's own grandparents. Decorative only:
-// the bracket math reads aptitude/stars. Generation 4 stays anonymous —
-// the game stores two generations per veteran, so no real data exists.
 export interface PinkSpark {
   aptitude: AptitudeKey;
   stars: number;
+}
+
+// A generation-3/4 slot: a pink, a character, or both. Flat rather than
+// nesting the spark under the identity, so every row written before
+// `card_id` existed is already this shape and parses unchanged.
+// aptitude/stars travel together — half a spark reads as a different one.
+export interface DeepSlot {
+  aptitude?: AptitudeKey | null;
+  stars?: number | null;
+  // Who the slot is. Filled by a roster pull, or chosen by hand the same way
+  // a character can be cast into an empty parent before its pink is decided.
+  // Decoration for the math; it's what puts a portrait on a node too deep to
+  // carry a name.
   card_id?: number | null;
+  // Set only when a pull placed the character. Absent ⇒ hand-picked, which
+  // is also what every row written before this field means.
+  source?: "roster" | "lineage" | null;
 }
 
 export interface CatalogCard {
@@ -130,6 +142,10 @@ export interface BlueprintSlot {
   trained_chara_id?: number | null;
   position_id?: number | null;
   spark?: PinkSpark | null;
+  // A roster pick's own aptitude letters, as trained — snapshotted like the
+  // won saddles. Absent on catalog and lineage slots, which have no horse
+  // behind them to have trained.
+  aptitudes?: AptitudeLetters | null;
 }
 
 // Blueprint document v2 (DECISIONS.md #25): `named` is the identity triangle
@@ -137,7 +153,7 @@ export interface BlueprintSlot {
 // covers tree indices 7–30 (generations 3–4) as bare pinks. Both exact-length.
 export interface BlueprintSlots {
   named: (BlueprintSlot | null)[];
-  sparks: (PinkSpark | null)[];
+  sparks: (DeepSlot | null)[];
 }
 
 export interface BlueprintIn {

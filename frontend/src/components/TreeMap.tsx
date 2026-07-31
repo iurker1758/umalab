@@ -3,10 +3,20 @@ import {
   APTITUDE_GROUPS,
   APTITUDE_LABELS,
   aptitudeRows,
+  letterModeOf,
   undroppableSpark,
   type AptitudeRow,
 } from "../aptitude";
-import { NAMED_COUNT, NODE_COUNT, genOf, nodeLabel, sparkAt, type Design } from "../blueprint";
+import {
+  NAMED_COUNT,
+  NODE_COUNT,
+  deepCardAt,
+  deriveCharaId,
+  genOf,
+  nodeLabel,
+  sparkAt,
+  type Design,
+} from "../blueprint";
 import { gradeClass } from "../domain";
 
 // The 31-node vertical pedigree map (Option C, mockup rev 2): a 16-column
@@ -46,6 +56,24 @@ export function TreeMap({
     </span>
   );
 
+  // A deep slot's portrait, at the same scale in every state so the spark row
+  // below never shifts. Falls back exactly as the named nodes do: the
+  // character's initial when a pull named the slot but the art isn't on disk
+  // (it's gitignored — DECISIONS.md #10), and "+" on a slot nothing has
+  // filled yet.
+  const deepIcon = (card: number | null) => {
+    const icon = card === null ? undefined : iconIndex[String(card)];
+    if (icon !== undefined) {
+      return <img className="sp-ico" src={`/icons/chara/${icon}`} alt="" loading="lazy" />;
+    }
+    const name = card === null ? null : charaName(deriveCharaId(card));
+    return (
+      <span className="lineage-icon-fallback sp-ico" aria-hidden="true">
+        {name?.charAt(0) ?? "+"}
+      </span>
+    );
+  };
+
   const chip = (i: number, gen: number) => {
     const sel = selected === i;
     if (i < NAMED_COUNT) {
@@ -62,9 +90,22 @@ export function TreeMap({
       // One generic placeholder for every empty card — role names vary too
       // much in length ("Grandparent 2-1" ellipsizes at the g2 width); the
       // role stays on the tooltip and in the aria-label.
-      const name = chara === null ? null : charaName(chara) ?? `Chara ${chara}`;
+      // Null while the catalog is still in flight — the band below holds its
+      // space blank rather than showing a placeholder that's about to change.
+      const name = chara === null ? null : charaName(chara);
       const icon = empty ? undefined : iconIndex[String(card)];
-      const rows = empty ? [] : aptitudeRows(design, i, aptitudesFor(card));
+      // Three modes, one per source — see LetterMode. A catalog pick
+      // projects, a roster pick reports what she trained to, a pulled
+      // lineage member states her card and no more.
+      const rows = empty
+        ? []
+        : aptitudeRows(
+            design,
+            i,
+            aptitudesFor(card),
+            letterModeOf(slot),
+            slot?.aptitudes ?? null
+          );
       const byKey = new Map<AptitudeKey, AptitudeRow>(rows.map((r) => [r.key, r]));
       // Takes the rows already in hand — the window scan and bracket math
       // behind them are the expensive part, and this runs for every named
@@ -101,9 +142,15 @@ export function TreeMap({
       return (
         <button
           className={`vnode named${empty ? " pick" : ""}${sel ? " sel" : ""}`}
+          // Keyed off whether a character is CAST, not off whether its name
+          // has arrived: a cast node whose catalog entry is still loading
+          // must not read as an empty one.
           aria-label={`${nodeLabel(i)} — ${
-            name ??
-            (spark === null ? "empty" : `${spark.stars}★ ${APTITUDE_LABELS[spark.aptitude]}`)
+            chara !== null
+              ? (name ?? "…")
+              : spark === null
+                ? "empty"
+                : `${spark.stars}★ ${APTITUDE_LABELS[spark.aptitude]}`
           }`}
           title={empty ? nodeLabel(i) : undefined}
           aria-pressed={sel}
@@ -157,17 +204,25 @@ export function TreeMap({
         </button>
       );
     }
+    // A deep slot holds a pink, a character, or both — like the named nodes
+    // above, where a character can be cast before its pink is decided.
     const spark = sparkAt(design, i);
+    const card = deepCardAt(design, i);
     if (spark === null) {
       // The named cards' row-4 placeholder, at slot scale: "Aptitude" over
-      // three unfilled stars — empty slots keep the filled footprint.
+      // three unfilled stars — a slot with no pink keeps the filled
+      // footprint. Only one with nobody in it either reads as empty.
+      const who = card === null ? null : charaName(deriveCharaId(card));
       return (
         <button
-          className={`vnode anon pick${sel ? " sel" : ""}`}
-          aria-label={`${nodeLabel(i)} — empty`}
+          className={`vnode anon${card === null ? " pick" : ""}${sel ? " sel" : ""}`}
+          // Keyed off the card, not the name: a slot with somebody in it
+          // whose name hasn't loaded yet is not empty.
+          aria-label={`${nodeLabel(i)} — ${card === null ? "empty" : (who ?? "…")}`}
           aria-pressed={sel}
           onClick={() => onSelect(i)}
         >
+          {deepIcon(card)}
           {gen === 4 ? (
             <>
               {starTrio(0)}
@@ -180,6 +235,10 @@ export function TreeMap({
       );
     }
     const label = APTITUDE_LABELS[spark.aptitude];
+    // Deep slots are anonymous by name — there's no room for one down here —
+    // but the portrait is what makes them recognisable at a glance.
+    // Decorative: the aria-label still reads "Sparks 3-1 — 3★ Mile", so
+    // nothing depends on the art being on disk.
     return (
       <button
         className={`vnode anon${sel ? " sel" : ""}`}
@@ -187,6 +246,7 @@ export function TreeMap({
         aria-pressed={sel}
         onClick={() => onSelect(i)}
       >
+        {deepIcon(card)}
         {/* Gen 4's sixteen columns are too tight for one line — stack. */}
         {gen === 4 ? (
           <>

@@ -20,9 +20,16 @@ import json
 from pathlib import Path
 from typing import Any, get_args
 
+import pytest
+
 from app import reference
 from app.ingest import derive_chara_id, parse_dump
-from app.schemas import AptitudeKey
+from app.schemas import (
+    NAMED_SLOT_COUNT,
+    SPARK_SLOT_COUNT,
+    AptitudeKey,
+    BlueprintIn,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "roster.json"
 
@@ -102,6 +109,52 @@ def test_every_lineage_is_a_legal_blueprint_triangle() -> None:
         charas = [veteran["chara_id"]] + [m["chara_id"] for m in parents]
         assert len(set(charas)) == 3, (veteran["trained_chara_id"], charas)
         assert all(derive_chara_id(m["card_id"]) == m["chara_id"] for m in veteran["lineage"])
+
+
+def _pulled_document(veteran: dict[str, Any], target: int) -> dict[str, Any]:
+    """The document the designer writes when `veteran` is pulled into `target`:
+    the veteran itself, its succession parents (10/20) at that node's kids, and
+    their parents (11/12/21/22) at its grandkids."""
+    named: list[dict[str, Any] | None] = [None] * NAMED_SLOT_COUNT
+    sparks: list[dict[str, Any] | None] = [None] * SPARK_SLOT_COUNT
+
+    def put(i: int, card_id: int, chara_id: int, source: str, position: int | None) -> None:
+        if i < NAMED_SLOT_COUNT:
+            named[i] = {
+                "source": source,
+                "chara_id": chara_id,
+                "card_id": card_id,
+                "trained_chara_id": veteran["trained_chara_id"],
+                "position_id": position,
+            }
+        else:
+            # Generations 3-4 keep only the card; the chara is derived.
+            sparks[i - NAMED_SLOT_COUNT] = {"card_id": card_id}
+
+    put(target, veteran["card_id"], veteran["chara_id"], "roster", None)
+    left, right = 2 * target + 1, 2 * target + 2
+    positions = (
+        (left, 10), (right, 20),
+        (2 * left + 1, 11), (2 * left + 2, 12),
+        (2 * right + 1, 21), (2 * right + 2, 22),
+    )
+    for index, position in positions:
+        if index >= NAMED_SLOT_COUNT + SPARK_SLOT_COUNT:
+            continue
+        member = next(m for m in veteran["lineage"] if m["position_id"] == position)
+        put(index, member["card_id"], member["chara_id"], "lineage", position)
+    return {"name": "pull check", "slots": {"named": named, "sparks": sparks}}
+
+
+@pytest.mark.parametrize("target", [1, 2, 3, 4, 5, 6])
+def test_every_pull_produces_a_document_the_server_accepts(target: int) -> None:
+    # The tree rules reach generations 3 and 4 now that those slots can name a
+    # character, so a pull writes up to seven identified nodes that all have to
+    # agree with each other. A fixture lineage that breaks one of them would
+    # make the e2e pull 422 and autosave-fail — visible only as a designer that
+    # says "Not saved", with nothing pointing at the fixture.
+    for veteran in PARSED:
+        BlueprintIn.model_validate(_pulled_document(veteran, target))
 
 
 def test_the_cast_is_varied_enough_to_pick_from() -> None:

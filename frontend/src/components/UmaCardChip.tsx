@@ -5,7 +5,6 @@ export function UmaCardChip({
   outfit,
   icon,
   active,
-  note,
   disabledReason,
   onToggle,
 }: {
@@ -13,17 +12,11 @@ export function UmaCardChip({
   outfit?: string;
   icon: string | undefined;
   active: boolean;
-  // Distinguishes chips that would otherwise read identically — two
-  // veterans trained from the same card are one chip each, and the pink
-  // they carry is the thing you're choosing between.
-  note?: string;
   // Set ⇒ the chip is unpickable and the reason joins its tooltip.
   disabledReason?: string;
   onToggle: () => void;
 }) {
-  const identity =
-    `${name}${outfit && outfit !== "Original" ? ` (${outfit})` : ""}` +
-    (note ? ` · ${note}` : "");
+  const identity = `${name}${outfit && outfit !== "Original" ? ` (${outfit})` : ""}`;
   // aria-disabled + no-op, not the disabled attribute: Chromium/WebKit
   // don't dispatch pointer events to natively disabled controls, so the
   // `title` explaining WHY a pick is illegal would never show. The reason

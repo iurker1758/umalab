@@ -149,22 +149,24 @@ const RV2 = candidates.find(
     v.chara_id !== RV1.chara_id &&
     memberAt(v, 10).chara_id !== memberAt(RV1, 10).chara_id
 );
-// A catalog card to hand-place where a later pull would land, so the confirm
-// has something hand-authored to warn about. It goes into Grandparent 1-1,
-// under a Parent 1 holding RV1, so it may repeat neither RV1's chara (its
-// parent) nor either of RV1's own parents (one is its sibling grandparent,
-// the other is the node it replaces).
+// A catalog card to hand-place where a later pull will land, so the confirm
+// has something hand-authored to warn about. It sits at Grandparent 2-2 and
+// is then swallowed by a pull into Parent 2, so it must clash with neither
+// veteran: not their charas, and not the succession parents either of them
+// writes into the surrounding nodes.
 const GX =
-  RV1 === undefined
+  RV1 === undefined || RV2 === undefined
     ? undefined
     : (() => {
+        const taken = new Set(
+          [RV1, RV2].flatMap((v) => [
+            v.chara_id,
+            memberAt(v, 10).chara_id,
+            memberAt(v, 20).chara_id,
+          ])
+        );
         const entry = catalog.find(
-          (e) =>
-            !used.has(e.chara_id) &&
-            e.cards[0].aptitudes !== null &&
-            e.chara_id !== RV1.chara_id &&
-            e.chara_id !== memberAt(RV1, 10).chara_id &&
-            e.chara_id !== memberAt(RV1, 20).chara_id
+          (e) => !used.has(e.chara_id) && e.cards[0].aptitudes !== null && !taken.has(e.chara_id)
         );
         if (entry === undefined) return undefined;
         used.add(entry.chara_id);
@@ -304,9 +306,11 @@ const pullInto = async (v, action = "accept") =>
     const open = page.locator(".focus-pick, .focus-actions button", { hasText: /Choose|Replace/ });
     await open.first().click();
     await page.waitForSelector(".designer-picker");
-    await page.locator(".picker-source .seg", { hasText: "My roster" }).click();
-    await page.locator(".uma-search").fill(v.name);
-    await page.locator(`.designer-picker .card-chip[aria-label="${vetChipLabel(v)}"]`).click();
+    await page.locator(".picker-source .seg", { hasText: "My Roster" }).click();
+    // No name search on this tab — the roster is sorted and filtered instead,
+    // and veterans render as the roster page's own cards (.card), not the
+    // catalog's bare chips.
+    await page.locator(`.designer-picker .card[aria-label="${vetChipLabel(v)}"]`).click();
     await page.waitForSelector(".designer-picker", { state: "detached" });
     // The dialog is raised synchronously inside the click handler, so by the
     // time the picker has closed it has already been answered.
@@ -437,10 +441,9 @@ try {
   // This picker is the TRAINEE's, which never offers the roster: the trainee
   // is the horse you're about to train, so it isn't in your roster — and a
   // pull there would be the one click that empties all 31 nodes.
-  check("the trainee's picker offers no roster tab",
-    (await page.locator(".designer-picker .picker-source").count()) === 0);
-  check("and says why, when there is a roster it's declining to offer",
-    (await page.locator(".designer-picker .picker-note").count()) === (rosterReady ? 1 : 0));
+  check("the trainee's picker offers no roster tab, and no note about it",
+    (await page.locator(".designer-picker .picker-source").count()) === 0 &&
+    (await page.locator(".designer-picker .picker-note").count()) === 0);
   await page.locator(".uma-search").fill(T.entry.name);
   await page.locator(`.designer-picker .card-chip[aria-label="${chipLabel(T)}"]`).click();
   await page.waitForSelector(".designer-picker", { state: "detached" });
@@ -563,14 +566,21 @@ try {
     !(await rowFrom("Mile")).includes("over 10") &&
     (await page.locator(".apt-over, .node-warn:not(.red)").count()) === 0);
 
-  // ---------- past-cap excess: soft info ----------
+  // ---------- past the A cap: counted, never annotated ----------
+  // Stars beyond what the ceiling can absorb are neither warned about nor
+  // called out: overstacking is usually deliberate, since every matching
+  // spark is an independent inspiration ticket toward S. The row reports
+  // what the window holds and leaves the verdict alone.
   await selectNode("Sparks 3-4");
   await setSpark("Sparks 3-4", aptA, 3);
   await selectNode("Parent 1");
   check(`p1 ${aptA} stays A`, (await rowLetter(LABEL[aptA])) === "A");
-  check("past-cap note still shown",
-    (await rowFrom(LABEL[aptA])).includes("past A") &&
-    (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 1);
+  check("the row still reports the stars behind it",
+    (await rowFrom(LABEL[aptA])).startsWith("3★ → +1"),
+    await rowFrom(LABEL[aptA]));
+  check("and says nothing about the excess",
+    !(await rowFrom(LABEL[aptA])).includes("past A") &&
+    (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 0);
 
   // ---------- G11's own window: gen-3/4 sparks only ----------
   await selectNode("Sparks 4-1");
@@ -888,7 +898,7 @@ try {
     check("a parent's picker offers both sources",
       JSON.stringify(
         await page.locator(".designer-picker .picker-source .seg").allTextContents()
-      ) === JSON.stringify(["Catalog", "My roster"]));
+      ) === JSON.stringify(["Catalog", "My Roster"]));
     check("with catalog the default",
       JSON.stringify(
         await page.locator(".designer-picker .picker-source .seg.active").allTextContents()
@@ -935,14 +945,6 @@ try {
       (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
         "Grandparent 2-1 — empty");
 
-    // Where a node came from is visible, because it decides what a later
-    // pull may replace without asking.
-    await selectNode("Parent 1");
-    check("the panel says the node came from your roster",
-      (await page.locator(".focus-role").textContent()).includes("from your roster"));
-    await selectNode("Grandparent 1-1");
-    check("and that the grandparents were auto-filled",
-      (await page.locator(".focus-role").textContent()).includes("auto-filled from a roster pull"));
     // Generation 3 has no room on the map for a name, so the identity the
     // pull carried is shown here or nowhere.
     await selectNode("Sparks 3-1");
@@ -986,88 +988,29 @@ try {
       (await mapChip("Sparks 3-3").getAttribute("aria-label")) ===
         `Sparks 3-3 — ${sparkLabel(memberAt(RV1, 21))}`);
 
-    // ---------- replacing a populated branch ----------
-    // Author two things by hand inside Parent 1's branch: a catalog pick
-    // over one auto-filled grandparent, and a spark at generation 4 — which
-    // no pull can ever fill, and so is the node that proves a pull CLEARS
-    // rather than merely overwrites what it has data for.
+    // ---------- a pulled branch is read-only ----------
+    // Everything under a real veteran is her recorded pedigree, so it can't
+    // be edited — the controls are gone, not merely ignored.
     await selectNode("Grandparent 1-1");
-    await pickInto(GX);
-    check("a catalog pick over an auto-filled node takes",
-      (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
-        `Grandparent 1-1 — ${GX.entry.name}`);
-    await selectNode("Sparks 4-1");
-    await setSpark("Sparks 4-1", "long", 2);
-    // On the far side of the tree, outside every branch this run pulls into
-    // (it hangs off Grandparent 2-2, which nothing below touches).
-    await selectNode("Sparks 4-13");
-    await setSpark("Sparks 4-13", "end", 3);
-    await settled();
-
-    // Pulling a different veteran over it must ask — once, naming what it
-    // would take, and only the hand-authored nodes. The already-pulled ones
-    // were never authored by hand, so warning about them would be the noise
-    // that makes people dismiss blind.
+    check("a pulled branch offers no Replace or Clear",
+      (await page.locator(".focus-actions button").count()) === 0 &&
+      (await page.locator(".focus-pick").count()) === 0);
+    check("and no spark editor — that pink is the horse's own",
+      (await page.locator('select[aria-label="Grandparent 1-1 pink spark"]').count()) === 0 &&
+      (await page.locator(".spark-static").count()) === 1);
+    check("the panel says whose pedigree it is",
+      (await page.locator(".focus-note").textContent()).includes("Parent 1"));
     await selectNode("Parent 1");
-    const asked = await pullInto(RV2, "dismiss");
-    check("a pull over hand-authored nodes asks first", asked !== null, String(asked));
-    check("the prompt names every hand-authored node in the branch",
-      (asked ?? "").includes("Grandparent 1-1") && (asked ?? "").includes("Sparks 4-1"),
-      String(asked));
-    check("the prompt does NOT name the auto-filled ones",
-      !(asked ?? "").includes("Grandparent 1-2") && !(asked ?? "").includes("Sparks 3-"),
-      String(asked));
+    check("the veteran herself keeps Replace and Clear",
+      (await page.locator(".focus-actions button").count()) === 2);
+    check("but not her spark editor",
+      (await page.locator('select[aria-label="Parent 1 pink spark"]').count()) === 0);
 
-    // Declining has to mean declining. Nothing about this is verified by the
-    // accept path — a confirm nobody tests dismissing is a confirm that has
-    // silently become an overwrite.
-    check("declining leaves the hand-authored node alone",
-      (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
-        `Grandparent 1-1 — ${GX.entry.name}`);
-    check("declining leaves the node you picked into alone",
-      (await mapChip("Parent 1").getAttribute("aria-label")) === `Parent 1 — ${RV1.name}`);
-    check("declining leaves the auto-filled nodes alone",
-      (await mapChip("Grandparent 1-2").getAttribute("aria-label")) ===
-        `Grandparent 1-2 — ${P20.name}`);
-    check("declining leaves the deep branch alone",
-      (await mapChip("Sparks 4-1").getAttribute("aria-label")) === "Sparks 4-1 — 2★ Long");
-    // And it must not have been written either: a dismissed dialog that
-    // still autosaved would lose the work one reload later.
-    await settled();
-    const afterDismiss = (await rows()).find((b) => b.name === `${bpName} roster`);
-    check("declining writes nothing to the server",
-      afterDismiss?.slots?.named?.[3]?.chara_id === GX.entry.chara_id,
-      JSON.stringify(afterDismiss?.slots?.named?.[3]));
-
-    // Accepting replaces the whole branch: what the veteran knows is filled
-    // in, and everything else under the node is emptied. Leaving generation
-    // 4 behind would feed the NEW grandparents' brackets from the pedigree
-    // that was just replaced — a wrong number, not a stale one.
-    const accepted = await pullInto(RV2);
-    check("accepting the same prompt goes through", accepted !== null, String(accepted));
-    check("accepting replaces the picked node",
-      (await mapChip("Parent 1").getAttribute("aria-label")) === `Parent 1 — ${RV2.name}`);
-    check("accepting replaces the hand-authored node it warned about",
-      (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
-        `Grandparent 1-1 — ${memberAt(RV2, 10).name}`);
-    check("accepting re-fills the deep slots from the new veteran",
-      (await mapChip("Sparks 3-1").getAttribute("aria-label")) ===
-        `Sparks 3-1 — ${sparkLabel(memberAt(RV2, 11))}`);
-    check("a pull CLEARS the rest of the branch it can't fill",
-      (await mapChip("Sparks 4-1").getAttribute("aria-label")) === "Sparks 4-1 — empty");
-    check("and clears nothing outside that branch",
-      (await mapChip("Sparks 4-13").getAttribute("aria-label")) === "Sparks 4-13 — 3★ End");
-    await settled();
-    const afterPull = (await rows()).find((b) => b.name === `${bpName} roster`);
-    check("the cleared branch is cleared on the server too",
-      afterPull?.slots?.sparks?.[8] === null,
-      JSON.stringify(afterPull?.slots?.sparks));
-
-    // ---------- pulling into a grandparent: identity stops at generation 3 ----------
-    // A grandparent-level pull reaches generation 4, and knows who those
-    // members are. It stores the SPARK (it feeds this grandparent's own
-    // letters) but not the name: nothing that deep reaches the trainee, so
-    // the identity would be trivia carried forever.
+    // ---------- pulling into a grandparent reaches generation 4 ----------
+    // On the OTHER parent's side, which nothing has pulled into yet. Deep
+    // slots have no room for a name, so the pulled card id is what puts a
+    // portrait on them — the only thing that makes one recognisable at a
+    // glance. It rides along at every depth the dump reaches.
     await selectNode("Grandparent 2-1");
     const pulledGp = await pullInto(RV1);
     check("a grandparent takes a pull too", pulledGp === null, String(pulledGp));
@@ -1081,47 +1024,119 @@ try {
     check("generation 3 says who it is",
       (await page.locator(".focus-role").count()) === 1);
     await selectNode("Sparks 4-9");
-    check("generation 4 does not",
-      (await page.locator(".focus-role").count()) === 0);
+    check("generation 4 does too",
+      (await page.locator(".focus-role").count()) === 1);
+    // The portrait is the point of storing the id — a deep slot has no room
+    // for a name, so without art it's an anonymous star count again.
+    check("both depths carry the character's portrait on the map",
+      (await mapChip("Sparks 3-5").locator("img.sp-ico").count()) === 1 &&
+      (await mapChip("Sparks 4-9").locator("img.sp-ico").count()) === 1);
+    check("and the label stays the spark, so the art is decorative",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
+        `Sparks 4-9 — ${sparkLabel(memberAt(RV1, 11))}`);
     await settled();
     const gpPull = (await rows()).find((b) => b.name === `${bpName} roster`);
-    check("the stored document keeps identity at generation 3 only",
+    check("the stored document keeps identity at both depths",
       gpPull?.slots?.sparks?.[4]?.card_id === memberAt(RV1, 10).card_id &&
-      (gpPull?.slots?.sparks?.[16]?.card_id ?? null) === null,
+      gpPull?.slots?.sparks?.[16]?.card_id === memberAt(RV1, 11).card_id,
       JSON.stringify([gpPull?.slots?.sparks?.[4], gpPull?.slots?.sparks?.[16]]));
 
-    // ---------- a real pink beats a planned one ----------
-    // Manual entry is never taken away: you can still type the pink you're
-    // hunting into an empty node and have the brackets above count it.
-    const rv2Pink = pinkOf(RV2.factors);
-    const decoy = rv2Pink.aptitude === "dirt" ? "turf" : "dirt";
+    // ---------- replacing a populated branch ----------
+    // Hand-author inside Parent 2's branch but OUTSIDE the sub-branch just
+    // pulled: a catalog pick at the other grandparent, and a spark at
+    // generation 4 under it — which no pull can reach from here, and so is
+    // the node that proves a pull CLEARS rather than merely overwriting what
+    // it has data for. Manual entry is never taken away.
     await selectNode("Grandparent 2-2");
-    await setSpark("Grandparent 2-2", decoy, 2);
+    await pickInto(GX);
     check("manual entry still works alongside the roster",
       (await mapChip("Grandparent 2-2").getAttribute("aria-label")) ===
-        `Grandparent 2-2 — 2★ ${LABEL[decoy]}`);
+        `Grandparent 2-2 — ${GX.entry.name}`);
+    await selectNode("Sparks 4-13");
+    await setSpark("Sparks 4-13", "end", 3);
     await settled();
 
-    // But pulling a real veteran into that node replaces it. V1's "a re-pick
-    // keeps the typed spark" was a ruling about CATALOG picks, which carry
-    // no spark at all; a roster pick carries the horse's actual pink, and a
-    // node standing for a specific horse in your barn must not advertise a
-    // pink she doesn't have — every bracket above it would then describe a
-    // plan you can't execute. Nothing is lost silently: the typed spark is
-    // hand-authored, so it is named in the prompt first.
-    const warned = await pullInto(RV2, "dismiss");
-    check("a typed pink is warned about before a pull takes it",
-      (warned ?? "").includes("Grandparent 2-2"), String(warned));
-    check("and declining keeps it",
+    // Pulling over all of it must ask — once, naming what it would take, and
+    // only what a human authored. The nodes the earlier grandparent pull
+    // produced were never authored by hand, so warning about them would be
+    // the noise that makes people dismiss blind.
+    await selectNode("Parent 2");
+    const asked = await pullInto(RV2, "dismiss");
+    check("a pull over hand-authored nodes asks first", asked !== null, String(asked));
+    check("the prompt names every hand-authored node in the branch",
+      (asked ?? "").includes("Grandparent 2-2") && (asked ?? "").includes("Sparks 4-13"),
+      String(asked));
+    check("the prompt does NOT name what an earlier pull auto-filled",
+      !(asked ?? "").includes("Sparks 3-5") && !(asked ?? "").includes("Sparks 4-9"),
+      String(asked));
+
+    // Declining has to mean declining. Nothing about this is verified by the
+    // accept path — a confirm nobody tests dismissing is a confirm that has
+    // silently become an overwrite.
+    check("declining leaves the hand-authored node alone",
       (await mapChip("Grandparent 2-2").getAttribute("aria-label")) ===
-        `Grandparent 2-2 — 2★ ${LABEL[decoy]}`);
-    await pullInto(RV2);
-    check("accepting replaces the planned pink with the veteran's real one",
-      (await mapChip("Grandparent 2-2").getAttribute("aria-label")) ===
-        `Grandparent 2-2 — ${RV2.name}` &&
-      (await mapChip("Grandparent 2-2").locator(".spark-row").textContent())
-        .includes(LABEL[rv2Pink.aptitude]),
-      await mapChip("Grandparent 2-2").locator(".spark-row").textContent());
+        `Grandparent 2-2 — ${GX.entry.name}`);
+    check("declining leaves the deep branch alone",
+      (await mapChip("Sparks 4-13").getAttribute("aria-label")) === "Sparks 4-13 — 3★ End");
+    check("declining leaves the earlier pull alone",
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        `Grandparent 2-1 — ${RV1.name}`);
+    // And it must not have been written either: a dismissed dialog that
+    // still autosaved would lose the work one reload later.
+    await settled();
+    const afterDismiss = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("declining writes nothing to the server",
+      afterDismiss?.slots?.named?.[6]?.chara_id === GX.entry.chara_id,
+      JSON.stringify(afterDismiss?.slots?.named?.[6]));
+
+    // Accepting replaces the whole branch: what the veteran knows is filled
+    // in, and everything else under the node is emptied. Leaving generation
+    // 4 behind would feed the NEW grandparents' brackets from the pedigree
+    // that was just replaced — a wrong number, not a stale one.
+    const accepted = await pullInto(RV2);
+    check("accepting the same prompt goes through", accepted !== null, String(accepted));
+    check("accepting replaces the picked node",
+      (await mapChip("Parent 2").getAttribute("aria-label")) === `Parent 2 — ${RV2.name}`);
+    check("accepting replaces the hand-authored node it warned about",
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        `Grandparent 2-1 — ${memberAt(RV2, 10).name}`);
+    check("accepting re-fills the deep slots from the new veteran",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${sparkLabel(memberAt(RV2, 11))}`);
+    check("a pull CLEARS the rest of the branch it can't fill",
+      (await mapChip("Sparks 4-13").getAttribute("aria-label")) === "Sparks 4-13 — empty");
+    check("and clears nothing outside that branch",
+      (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
+        `Grandparent 1-1 — ${P10.name}`);
+    await settled();
+    const afterPull = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("the cleared branch is cleared on the server too",
+      afterPull?.slots?.sparks?.[20] === null,
+      JSON.stringify(afterPull?.slots?.sparks));
+
+    // Re-pulling the same node asks nothing: its branch is now entirely the
+    // previous pull's work, and the node itself is what you asked to
+    // replace. A dialog here would say only "the thing you're replacing will
+    // be replaced" — the noise that teaches people to dismiss blind.
+    const again = await pullInto(RV2);
+    check("re-pulling a pulled node asks nothing", again === null, String(again));
+
+    // Clearing the veteran takes her pedigree with it, rather than leaving it
+    // hanging under nobody — and unlocked, since she was the lock.
+    await selectNode("Parent 2");
+    await page.locator('button[aria-label="Clear Parent 2"]').click();
+    check("clearing a pulled veteran empties her whole branch",
+      (await mapChip("Parent 2").getAttribute("aria-label")) === "Parent 2 — empty" &&
+      (await mapChip("Grandparent 2-1").getAttribute("aria-label")) ===
+        "Grandparent 2-1 — empty" &&
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) === "Sparks 3-5 — empty");
+    check("and leaves the other parent's branch alone",
+      (await mapChip("Parent 1").getAttribute("aria-label")) === `Parent 1 — ${RV1.name}`);
+    check("the freed nodes are editable again",
+      await until(async () => {
+        await selectNode("Grandparent 2-1");
+        return (await page.locator(".focus-pick").count()) === 1;
+      }));
     await settled();
   }
 

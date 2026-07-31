@@ -36,21 +36,28 @@ export function AptitudeTable({ rows }: { rows: AptitudeRow[] }) {
                     )}
                   </td>
                   <td className="apt-from">
-                    {r.stars > 0 && (
-                      <>
-                        {/* Without a base the bump has nothing to land on —
-                            show the raw ★ total only. */}
-                        {r.base === null ? `${r.stars}★` : `${r.stars}★ → +${r.bump}`}
-                        {r.capExcess > 0 && (
-                          <span
-                            className="apt-cap"
-                            title="Bump past the A cap is lost at career start — but each matching spark is still an independent inspiration chance toward S"
-                          >
-                            {" "}
-                            · +{r.capExcess} past A
-                          </span>
-                        )}
-                      </>
+                    {/* Only a projection has a cause to explain. The other
+                        two modes say where the letter came from instead. */}
+                    {r.mode === "trained" && (
+                      <span
+                        className="apt-cap"
+                        title="Read from this veteran's own roster record — what she finished her career with, not a career-start projection"
+                      >
+                        as trained
+                      </span>
+                    )}
+                    {r.mode === "base" && (
+                      <span
+                        className="apt-cap"
+                        title="This card's starting letters. A veteran pulled from a lineage records who she is but not what she trained to, and her own window is missing two thirds of its slots — the game stores two generations per veteran — so there is nothing here to project from."
+                      >
+                        card base
+                      </span>
+                    )}
+                    {r.mode === "project" && r.stars > 0 && (
+                      // Without a base the bump has nothing to land on —
+                      // show the raw ★ total only.
+                      <>{r.base === null ? `${r.stars}★` : `${r.stars}★ → +${r.bump}`}</>
                     )}
                   </td>
                 </tr>

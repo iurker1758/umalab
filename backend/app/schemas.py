@@ -134,8 +134,8 @@ class BulkTagIn(BaseModel):
 class CatalogCardOut(BaseModel):
     """One outfit of a catalog character. Aptitudes ride along because base
     letters are per-CARD (DECISIONS.md #23 — Haru Urara's New Year outfit
-    runs Mile A against her base B); None for the two NPC/tutorial cards
-    that have no card_rarity_data rows ("letters unknown" in the UI)."""
+    runs Mile A against her base B); None when a card is missing from
+    aptitudes.json (a regen gap — "letters unknown" in the UI)."""
 
     card_id: int
     outfit: str
@@ -164,8 +164,8 @@ class AffinitySlotIn(BaseModel):
 
 
 class AffinityIn(BaseModel):
-    # Optional to mirror BlueprintIn: a saved trainee-less draft must be
-    # scorable when reopened. Trainee links score 0 until one is chosen.
+    # Optional: a saved trainee-less draft must be scorable when reopened.
+    # Trainee links score 0 until one is chosen.
     trainee_chara_id: int | None = None
     p1: AffinitySlotIn | None = None
     p2: AffinitySlotIn | None = None

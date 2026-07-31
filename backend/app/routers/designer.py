@@ -33,6 +33,11 @@ RELATION_TABLE = affinity.build_relation_table(
 def _build_catalog() -> list[CatalogEntryOut]:
     cards_by_chara: dict[int, list[int]] = {}
     for card_id, card in reference.CARDS.items():
+        # 7-digit ids are the NPC/tutorial copies of real cards — same chara,
+        # same outfit label, no aptitude rows. Serving them would put an
+        # indistinguishable letter-less duplicate next to every real pick.
+        if card_id > 999_999:
+            continue
         cards_by_chara.setdefault(card["chara_id"], []).append(card_id)
     entries = [
         CatalogEntryOut(
@@ -42,8 +47,8 @@ def _build_catalog() -> list[CatalogEntryOut]:
                 CatalogCardOut(
                     card_id=card_id,
                     outfit=reference.CARDS[card_id]["outfit"],
-                    # .get(): the two NPC/tutorial cards legitimately have no
-                    # card_rarity_data rows (DECISIONS.md #23).
+                    # .get(): every playable card has letters today, but a
+                    # cards.json regen can run ahead of aptitudes.json.
                     aptitudes=reference.APTITUDES.get(card_id),
                 )
                 for card_id in card_ids

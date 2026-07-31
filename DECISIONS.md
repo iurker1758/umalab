@@ -723,9 +723,14 @@ Keep adding entries as the build evolves. This file is the interview.
   dropped; a trainee spark is rejected (nothing is bred from it). Array
   lengths are exact-or-422 — the document is positional, and a short
   array would silently shift every slot below the gap. The old 6-slot
-  blueprints are **wiped** by the migration. The catalog serves
-  `cards` (`{card_id, outfit, aptitudes}`) instead of bare card ids,
-  aptitudes null for the two NPC/tutorial 91xxxxx copies.
+  blueprints are **wiped** by the migration (v1 rows only — the DELETE
+  keys on the missing `named` field, so v2 documents written against a
+  not-yet-migrated database survive it, and downgrade keeps them too).
+  The catalog serves `cards` (`{card_id, outfit, aptitudes}`) instead
+  of bare card ids, and drops the two 7-digit NPC/tutorial copies —
+  they duplicate a real card's chara and outfit label with no aptitude
+  rows, an indistinguishable letter-less pick (review-driven; aptitudes
+  stay nullable against a cards.json regen outrunning aptitudes.json).
 - **Rejected:** migrating 6-slot docs into the new shape — they carry
   no typed sparks, so the copies would be empty shells in a calculator
   whose whole point is spark math, saving a handful of one user's

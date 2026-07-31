@@ -8,17 +8,18 @@ Tree indexing (DECISIONS.md #25): 31 nodes breadth-first, node i's kids at
 """
 import datetime as dt
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
 
 from app.ingest import derive_chara_id
-from app.reference import APTITUDES
+from app.reference import CardAptitudes
 from app.routers.designer import CATALOG
 from app.schemas import (
     NAMED_SLOT_COUNT,
     SPARK_SLOT_COUNT,
+    AptitudeKey,
     BlueprintIn,
     BlueprintOut,
     PinkSparkIn,
@@ -168,6 +169,13 @@ def test_unknown_aptitude_key_rejected() -> None:
         BlueprintIn.model_validate(doc(sparks={7: pink("speed")}))
 
 
+def test_aptitude_key_matches_reference_card_aptitudes() -> None:
+    # AptitudeKey (the API contract) and reference.CardAptitudes (the data
+    # shape) are declared separately; a regen that renames a key must fail
+    # here, not as save-time 422s. Order matters — it's the display order.
+    assert list(get_args(AptitudeKey)) == list(CardAptitudes.__annotations__)
+
+
 @pytest.mark.parametrize("stars", [0, 4])
 def test_star_range_enforced(stars: int) -> None:
     with pytest.raises(ValidationError):
@@ -239,7 +247,6 @@ def test_catalog_cards_are_sorted_with_base_first() -> None:
     for entry in CATALOG:
         card_ids = [card.card_id for card in entry.cards]
         assert card_ids == sorted(card_ids)
-        # 7-digit NPC copies (9100101) fold into their real chara's entry.
         assert all(derive_chara_id(card_id) == entry.chara_id for card_id in card_ids)
     # The base outfit (lowest card id) is the icon source — Special Week's
     # entry must lead with her base card.
@@ -247,16 +254,14 @@ def test_catalog_cards_are_sorted_with_base_first() -> None:
     assert special_week.cards[0].card_id == 100101
 
 
-def test_catalog_aptitudes_null_only_for_npc_cards() -> None:
-    # The two uma.moe NPC/tutorial cards (91xxxxx) have no card_rarity_data
-    # rows — they surface as "letters unknown", everything else is lettered.
+def test_catalog_serves_only_playable_lettered_cards() -> None:
+    # The 7-digit NPC/tutorial copies (9100101/9101101) are filtered out —
+    # they duplicate a real card's chara and outfit label with no aptitude
+    # rows — so every served card is a distinct playable pick with letters.
     for entry in CATALOG:
         for card in entry.cards:
-            if card.card_id in APTITUDES:
-                assert card.aptitudes is not None
-            else:
-                assert card.card_id // 1_00000 == 91
-                assert card.aptitudes is None
+            assert card.card_id <= 999_999
+            assert card.aptitudes is not None
 
 
 def test_catalog_shows_per_card_aptitude_difference() -> None:

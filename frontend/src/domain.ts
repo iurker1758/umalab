@@ -93,6 +93,17 @@ export const gradeClass = (letter: string): string =>
     ? `ltr-${letter[0].toLowerCase()}`
     : "";
 
+// Affinity band symbol → color class, from the game's rank table
+// (relations.json): △ ≤50, ○ 51–150, ◎ ≥151. Here rather than in either
+// component because the map chip and the focus panel must colour the same
+// symbol the same way.
+const AFFINITY_CLASS: Record<string, string> = {
+  "△": "aff-low",
+  "○": "aff-good",
+  "◎": "aff-best",
+};
+export const affinityClass = (symbol: string): string => AFFINITY_CLASS[symbol] ?? "";
+
 export type SortKey = "rank_score" | "blue_spark" | "register_time" | "name";
 
 export const SORTS: [label: string, key: SortKey][] = [

@@ -62,6 +62,24 @@ const getJson = async (path) => {
   return res.json();
 };
 
+// The affinity checks compare the panel against the endpoint rather than
+// against a reimplementation: the formula has its own unit tests (backend
+// tests/test_affinity.py, in-game anchored), so what's worth checking here
+// is that the page builds the right REQUEST and renders the answer — which
+// a second copy of the math in this file wouldn't test at all.
+const postJson = async (path, body) => {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    console.log(`POST ${BASE}${path} returned ${res.status} ${res.statusText} — cannot run`);
+    process.exit(1);
+  }
+  return res.json();
+};
+
 const catalog = await getJson("/api/catalog");
 const baselineIds = new Set((await getJson("/api/blueprints")).map((b) => b.id));
 // Optional: the roster is the pull's source, and an empty one is a legitimate
@@ -478,8 +496,19 @@ try {
   check("trainee mile = card base", (await rowLetter("Mile")) === T.apt.mile);
   check("trainee has no spark editor",
     (await page.locator('select[aria-label="Trainee pink spark"]').count()) === 0);
-  check("trainee v2 note shown",
-    (await page.locator(".focus-note", { hasText: "Run affinity" }).count()) === 1);
+  check("inspiration estimates still flagged as to come",
+    (await page.locator(".focus-note", { hasText: "Inspiration proc" }).count()) === 1);
+  // A trainee alone is not a pairing: the panel says what's missing rather
+  // than scoring an empty tree as a confident zero.
+  check("affinity waits for a parent",
+    (await page.locator(".focus", { hasText: "Run affinity" }).count()) === 1 &&
+    (await page.locator(".focus .aff-total").count()) === 0 &&
+    (await page.locator(".focus-note", { hasText: "at least one parent" }).count()) === 1);
+  // The tile keeps its footprint before there's a number, the way empty
+  // cards keep their letter cells — the map must not reflow when a score
+  // lands.
+  check("the trainee's chip holds the affinity tile's space meanwhile",
+    (await mapChip("Trainee").locator(".aff-chip b.blank").count()) === 1);
 
   // ---------- parents + GPs ----------
   await selectNode("Parent 1");
@@ -517,6 +546,117 @@ try {
   check("trainee mile From = 6★ → +2", (await rowFrom("Mile")).startsWith("6★ → +2"));
   check("boosted letter highlighted",
     (await aptRow("Mile").locator(".apt-final.boosted").count()) === 1);
+
+  // ---------- run affinity, on the trainee's panel only ----------
+  // The request the page should be sending: the four filled slots, each a
+  // catalog pick and so carrying no won saddles, and no key at all for the
+  // two empty grandparents — an empty slot is nobody, not a slot worth zero.
+  const expectedAff = await postJson("/api/affinity", {
+    trainee_chara_id: T.entry.chara_id,
+    p1: { chara_id: P1.entry.chara_id, win_saddle_ids: [] },
+    p2: { chara_id: P2.entry.chara_id, win_saddle_ids: [] },
+    g11: { chara_id: G11.entry.chara_id, win_saddle_ids: [] },
+    g12: { chara_id: G12.entry.chara_id, win_saddle_ids: [] },
+  });
+  const affTotal = page.locator(".focus .aff-number");
+  // Polled, not read once: scoring is debounced, and an earlier score from
+  // when only P1 was filled would otherwise be read as this one's answer.
+  check(`affinity scores ${expectedAff.total} ${expectedAff.symbol}`,
+    await until(async () =>
+      (await affTotal.count()) === 1 &&
+      (await affTotal.textContent()) === String(expectedAff.total)));
+  check("band symbol matches the total",
+    (await page.locator(".aff-symbol").textContent()) === expectedAff.symbol);
+  check("one row per scored link, under labelled columns",
+    (await page.locator(".aff-links tbody tr").count()) === 7 &&
+    (await page.locator(".aff-links thead th").allTextContents()).join(",") ===
+      "Link,Rel.,Wins,Total");
+  // Per-link, not per-ancestor: the response carries a `*_affinity` share for
+  // each of the six, but the panel deliberately doesn't show them — a
+  // parent's share is only its own rows added up. They exist for the
+  // inspiration-proc model (7c), which rolls per ancestor.
+  check("no per-ancestor breakdown in the panel",
+    (await page.locator(".aff-shares").count()) === 0);
+  check("the link rows sum to the total",
+    (await page.locator(".aff-link-sum").allTextContents())
+      .slice(1)  // drop the column header
+      .reduce((n, t) => n + Number(t), 0) === expectedAff.total);
+  // The same number on the trainee's map chip, so judging a pairing doesn't
+  // cost a click. With the band symbol here — this one IS a whole pairing.
+  check("the trainee's map chip carries the total",
+    (await mapChip("Trainee").locator(".aff-chip .aff-chip-sym").textContent()) ===
+      expectedAff.symbol &&
+    (await mapChip("Trainee").locator(".aff-chip b").textContent()) ===
+      String(expectedAff.total));
+  check("the chip's label says it too, appended so prefixes still match",
+    (await mapChip("Trainee").getAttribute("aria-label"))
+      ?.endsWith(` · affinity ${expectedAff.symbol} ${expectedAff.total}`));
+  // Not a row of its own: it sits in the head grid, right of the portrait
+  // (which spans the left two columns) and above the track pair, two columns
+  // wide. Measured rather than read off the DOM order — the claim is about
+  // where it lands, and grid placement makes those two independent.
+  check("the affinity tile is in the head, right of the portrait, above the track pair",
+    await mapChip("Trainee").evaluate((el) => {
+      const box = (sel) => el.querySelector(sel)?.getBoundingClientRect() ?? null;
+      const aff = box(".head .aff-chip");
+      const icon = box(".head img, .head .lineage-icon-fallback");
+      const turf = box('.head .apt-cell[title^="Turf"]');
+      if (aff === null || icon === null || turf === null) return false;
+      return (
+        aff.left >= icon.right - 1 &&
+        aff.bottom <= turf.top + 1 &&
+        aff.width > turf.width  // two columns to the letters' one
+      );
+    }));
+  // Every ancestor shows the link it OWNS — signed, and bandless: the △/○/◎
+  // table grades whole pairings, so a symbol on a part would read as a
+  // compatibility rating.
+  const chipAff = (node) => mapChip(node).locator(".aff-chip b").textContent();
+  const linkPts = (id) => {
+    const l = expectedAff.links.find((x) => x.link === id);
+    return l.relation_points + l.win_points;
+  };
+  check("each ancestor carries the link it owns",
+    (await chipAff("Parent 1")) === `+${linkPts("t-p1")}` &&
+    (await chipAff("Parent 2")) === `+${linkPts("t-p2")}` &&
+    (await chipAff("Grandparent 1-1")) === `+${linkPts("t-p1-g11")}` &&
+    (await chipAff("Grandparent 1-2")) === `+${linkPts("t-p1-g12")}`);
+  check("only the trainee's tile carries a band symbol",
+    (await page.locator(".vped .aff-chip-sym").count()) === 1);
+  // The property that makes the map's decomposition honest: every term lands
+  // on exactly one tile, except the parent-pair link, which belongs to
+  // neither parent alone (DECISIONS.md #15) and is the gap between the tiles
+  // and the trainee's total. Empty slots show "-" and score 0, so they drop
+  // out of both sides.
+  const tileSum = (await page.locator(".vped .aff-chip b").allTextContents())
+    .filter((t) => t.startsWith("+"))
+    .reduce((n, t) => n + Number(t.slice(1)), 0);
+  check("the tiles plus the parent-pair link equal the trainee's total",
+    tileSum + linkPts("p1-p2") === expectedAff.total, `tiles ${tileSum}`);
+  // Meanwhile the API keeps the OTHER decomposition — individual affinity,
+  // every link an ancestor appears in, which is what an inspiration proc off
+  // her is rolled against (7c). A parent's includes the parent-pair link, so
+  // it lands in BOTH parents and the six deliberately do not partition the
+  // total. This is the number the map isn't showing, and the two must not be
+  // conflated (DECISIONS.md #15/#29).
+  check("the API carries each parent's individual affinity, pair link included",
+    expectedAff.p1_affinity ===
+      linkPts("t-p1") + linkPts("t-p1-g11") + linkPts("t-p1-g12") + linkPts("p1-p2") &&
+    expectedAff.p2_affinity ===
+      linkPts("t-p2") + linkPts("t-p2-g21") + linkPts("t-p2-g22") + linkPts("p1-p2"));
+  check("a grandparent's is its own triple alone",
+    expectedAff.g11_affinity === linkPts("t-p1-g11") &&
+    expectedAff.g12_affinity === linkPts("t-p1-g12"));
+  check("an empty ancestor shows no number",
+    (await mapChip("Grandparent 2-1").locator(".aff-chip b.blank").count()) === 1);
+  // The tile stops at the grandparents: below them the game scores no
+  // affinity at all, and those chips are anonymous spark slots.
+  check("the seven named nodes carry a tile, and nothing deeper does",
+    (await page.locator(".vped .aff-chip").count()) === 7);
+  await selectNode("Parent 1");
+  check("no affinity on a parent's panel",
+    (await page.locator(".focus .aff-total").count()) === 0);
+  await selectNode("Trainee");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');
   check("map chip shows all ten labeled letters",
     (await mapChip("Trainee").locator(".apt-cell").count()) === 10 &&

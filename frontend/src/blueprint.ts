@@ -1,5 +1,8 @@
 import {
+  AFFINITY_SLOTS,
   APTITUDE_KEYS,
+  type AffinityRequest,
+  type AffinitySlotId,
   type AptitudeKey,
   type AptitudeLetters,
   type Blueprint,
@@ -55,6 +58,41 @@ export const NAMED_LABELS: readonly string[] = [
   "Grandparent 2-1",
   "Grandparent 2-2",
 ];
+
+// ---------- run affinity ----------
+// The named array is [trainee, p1, p2, g11, g12, g21, g22] — AFFINITY_SLOTS
+// shifted by one for the trainee, which is a participant in every link and a
+// slot in none. Anything below the grandparents is out of scope: the game
+// scores affinity over three generations, whatever the tree holds.
+export const affinitySlotOf = (i: number): AffinitySlotId | null =>
+  i >= 1 && i <= AFFINITY_SLOTS.length ? AFFINITY_SLOTS[i - 1] : null;
+
+// The link each node OWNS, for the map's decomposition: every term belongs to
+// its deepest participant, so the six tiles plus the parent-pair link add up
+// to the total exactly. `p1-p2` is owned by neither parent alone and appears
+// on no tile — it is the gap between them (DECISIONS.md #15/#29).
+//
+// Not the same quantity as the API's `*_affinity`, which gives a parent her
+// whole side (both triples included) because that is what an inspiration proc
+// off her is rolled against. The two agree on grandparents and differ on
+// parents; uma.moe carries both for the same reason.
+export const NODE_LINK: readonly (string | null)[] = [
+  null, "t-p1", "t-p2", "t-p1-g11", "t-p1-g12", "t-p2-g21", "t-p2-g22",
+];
+export const nodeOfAffinitySlot = (id: AffinitySlotId): number =>
+  AFFINITY_SLOTS.indexOf(id) + 1;
+
+// The trainee is in every link, so it reads as implicit and the labels name
+// the other side(s) — "Parent 1 · GP 1-1" is the T·P1·G11 triple.
+export const LINK_LABELS: Record<string, string> = {
+  "t-p1": "Trainee · Parent 1",
+  "t-p2": "Trainee · Parent 2",
+  "p1-p2": "Parent 1 · Parent 2",
+  "t-p1-g11": "Parent 1 · GP 1-1",
+  "t-p1-g12": "Parent 1 · GP 1-2",
+  "t-p2-g21": "Parent 2 · GP 2-1",
+  "t-p2-g22": "Parent 2 · GP 2-2",
+};
 
 // Spark slots are labeled by generation and position within it: "Sparks 3-1"
 // is tree index 7, "Sparks 4-16" is 30.
@@ -622,6 +660,21 @@ const slotToApi = (s: SlotValue | null): BlueprintSlot | null =>
         spark: s.spark,
         aptitudes: s.aptitudes,
       };
+
+// The scoring request: the trainee's chara plus every filled ancestor in the
+// top three generations, each with the won saddles snapshotted into the slot
+// (never re-read from the roster — a veteran that leaves it keeps her win
+// bonus). A node with a planned spark but no character yet is nobody, so it
+// is omitted rather than sent as a slot the server would score as empty.
+export function toAffinityRequest(design: Design): AffinityRequest {
+  const req: AffinityRequest = { trainee_chara_id: design.named[0]?.chara_id ?? null };
+  for (const id of AFFINITY_SLOTS) {
+    const slot = design.named[nodeOfAffinitySlot(id)];
+    if (slot?.chara_id == null) continue;
+    req[id] = { chara_id: slot.chara_id, win_saddle_ids: slot.win_saddle_ids };
+  }
+  return req;
+}
 
 export const toApi = (design: Design): BlueprintIn => ({
   name: design.name,

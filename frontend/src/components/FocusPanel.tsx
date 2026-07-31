@@ -1,4 +1,4 @@
-import type { AptitudeLetters, PinkSpark } from "../api";
+import type { AffinityResult, AptitudeLetters, PinkSpark } from "../api";
 import { APTITUDE_LABELS, aptitudeRows, letterModeOf, undroppableSpark } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -10,6 +10,7 @@ import {
   sparkLocked,
   type Design,
 } from "../blueprint";
+import { AffinityPanel } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
 
@@ -48,6 +49,8 @@ export function FocusPanel({
   charaName,
   outfitFor,
   aptitudesFor,
+  affinity,
+  affinityFailed,
   onOpenPicker,
   onClear,
   onSetSpark,
@@ -58,6 +61,10 @@ export function FocusPanel({
   charaName: (charaId: number) => string | null;
   outfitFor: (cardId: number) => string | null;
   aptitudesFor: (cardId: number) => AptitudeLetters | null;
+  // The trainee's run affinity, scored server-side. Null below the scoring
+  // threshold (no trainee, or no parent) as well as before the first result.
+  affinity: AffinityResult | null;
+  affinityFailed: boolean;
   onOpenPicker: (i: number) => void;
   onClear: (i: number) => void;
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
@@ -172,7 +179,7 @@ export function FocusPanel({
             </button>
           </div>
         )}
-        {index > 0 && (
+        {index > 0 ? (
           <>
             <h4>Pink spark</h4>
             <PinkSparkEditor
@@ -181,6 +188,11 @@ export function FocusPanel({
               onChange={(s) => onSetSpark(index, s)}
             />
           </>
+        ) : (
+          // The trainee with nobody cast yet: the section is what says the
+          // score is waiting on a pick, rather than the panel simply not
+          // mentioning affinity until you happen to fill two nodes.
+          <AffinityPanel affinity={affinity} failed={affinityFailed} traineeSet={false} />
         )}
       </div>
     );
@@ -234,7 +246,10 @@ export function FocusPanel({
       )}
       <AptitudeTable rows={rows} />
       {index === 0 ? (
-        <p className="focus-note">Run affinity and inspiration estimates are still to come.</p>
+        <>
+          <AffinityPanel affinity={affinity} failed={affinityFailed} traineeSet />
+          <p className="focus-note">Inspiration proc estimates are still to come.</p>
+        </>
       ) : (
         <>
           <h4>Pink spark</h4>

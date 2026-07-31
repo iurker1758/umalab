@@ -187,8 +187,17 @@ class AffinityOut(BaseModel):
     relation_total: int
     win_total: int
     links: list[AffinityLinkOut]
+    # Per-slot individual affinity — every link that ancestor appears in (see
+    # affinity.node_affinity). None while that slot is unset. The
+    # inspiration-proc model rolls per ancestor, so it reads these rather than
+    # the total. They do NOT sum to it: the p1-p2 link lands in both parents,
+    # and a grandparent's triple is also inside its parent's number.
     p1_affinity: int | None
     p2_affinity: int | None
+    g11_affinity: int | None
+    g12_affinity: int | None
+    g21_affinity: int | None
+    g22_affinity: int | None
 
 
 # The ten aptitude keys in the game's display order (track, distance,

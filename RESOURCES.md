@@ -11,6 +11,16 @@ resource informs a feature, so future work can find it again.
   name/type table, skills); their open-source stack documented the factor-id
   encoding `app/ingest.py` decodes. Needs `UMA_MOE_API_KEY` for
   `scripts/build_reference_data.py`.
+  - Also a **code** reference, not just a data one:
+    `umamoe-frontend/src/app/services/affinity.service.ts` decomposes affinity
+    exactly as `app/affinity.py` does, and is the only implementation we know
+    of the **spark proc model** — `sparkProcChance = min(base × (1 +
+    affinity/100), 100)`, `sparkRunChance = 1 − (1 − p)²`, and a
+    `SPARK_BASE_CHANCES` table matching Crazyfellow's row for row. Its planner
+    feeds a parent her **whole side** and a grandparent its own triple, which
+    is what settled that question for us (DECISIONS #29). It carries both
+    decompositions as named functions — `getTreeNodeDirectBaseAffinity` for
+    tree-node display, `getTreeSideTotalAffinity` for the proc table.
 - [xancia/UmaExtractor](https://github.com/xancia/UmaExtractor) (fork of
   [rockisch/umadump](https://github.com/rockisch/umadump)) — the veteran-dump
   tool whose `data.json` format we import. Watch it for dump-format changes

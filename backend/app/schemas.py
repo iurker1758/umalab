@@ -210,10 +210,19 @@ SPARK_SLOT_COUNT = 24
 class PinkSparkIn(BaseModel):
     """One pink (aptitude) spark. Single, not a list: every lineage member
     carries exactly one pink — verified against a real 159-veteran dump
-    (all 954 lineage members included)."""
+    (all 954 lineage members included).
+
+    `card_id` is optional identity for the generation-3 slots, which a roster
+    pull fills from the picked veteran's own grandparents (position_id
+    11/12/21/22). Anonymous everywhere else, and anonymous forever at
+    generation 4 — the game stores only two generations per veteran, so no
+    real data exists below that. Purely decorative: the bracket math reads
+    aptitude/stars only. `slots` is a JSONB column, so rows written before
+    this field simply lack it and parse unchanged (no migration)."""
 
     aptitude: AptitudeKey
     stars: int = Field(ge=1, le=3)
+    card_id: int | None = None
 
 
 class BlueprintSlotIn(BaseModel):

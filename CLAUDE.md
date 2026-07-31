@@ -13,9 +13,10 @@ work starts.
 
 Current milestone: deep-tree designer V2. V1 shipped — `/designer` is a
 persisted four-generation aptitude calculator over the 31-node blueprint
-document v2 (DECISIONS.md #25/#26); V2 restores roster pulls (additive to
-manual entry, never replacing it), run affinity on the trainee, and
-inspiration proc estimates. Still planned: hunted-skill spark scoring
+document v2 (DECISIONS.md #25/#26). V2 restores roster pulls (additive to
+manual entry, never replacing it — shipped, DECISIONS.md #28), then run
+affinity on the trainee, then inspiration proc estimates.
+Still planned: hunted-skill spark scoring
 (port of the pure `expected_sparks` before/after-reroll math from the
 predecessor local tool). Leave room for it; don't build it early.
 
@@ -56,7 +57,13 @@ Frontend (from `frontend/`):
   never "everything new", so a blueprint you save from another tab mid-run is
   reported and left alone rather than deleted. Set
   `E2E_ARTIFACT_DIR` to capture screenshots at the moment of failure plus an
-  `e2e-results.json` summary; CI does this and uploads them (DECISIONS.md #27)
+  `e2e-results.json` summary; CI does this and uploads them (DECISIONS.md #27).
+  The roster-pull section derives its cast from `/api/veterans` and skips
+  itself when there's nothing usable there — the suite never imports, because
+  imports are full-replace and would wipe your roster. CI seeds
+  `backend/tests/fixtures/roster.json` first and sets `E2E_REQUIRE_ROSTER=1`
+  so the skip becomes a failure there (DECISIONS.md #28). To cover it
+  locally, import that fixture yourself into a throwaway database
 
 Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
 `.markdownlint.jsonc`; CI runs it as the `docs` job).

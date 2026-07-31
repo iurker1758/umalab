@@ -1,8 +1,23 @@
 import type { AptitudeLetters, PinkSpark } from "../api";
 import { APTITUDE_LABELS, aptitudeRows, undroppableSpark } from "../aptitude";
-import { NAMED_COUNT, nodeLabel, sparkAt, type Design } from "../blueprint";
+import {
+  NAMED_COUNT,
+  deriveCharaId,
+  nodeLabel,
+  sparkAt,
+  type Design,
+  type SlotSource,
+} from "../blueprint";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
+
+// Where a node came from, said plainly — it's what decides whether a later
+// roster pull replaces this node in silence or stops to ask.
+const SOURCE_NOTE: Record<SlotSource, string | null> = {
+  catalog: null, // the default path; saying so would be noise on most nodes
+  roster: "from your roster",
+  lineage: "auto-filled from a roster pull",
+};
 
 // The docked focus panel (Option C): everything about the selected node —
 // read and edit — lives here, so the map never needs popovers.
@@ -31,13 +46,27 @@ export function FocusPanel({
   // place you navigate from, so a second, worse copy of it in the panel was
   // pure duplication.
 
-  // ---------- anonymous spark slot ----------
+  // ---------- deep spark slot ----------
+  // Anonymous unless a roster pull filled it: the map has no room for a name
+  // down here, so the identity that arrived with the pull is shown in the
+  // panel and nowhere else. It is decoration — the bracket math above reads
+  // aptitude and stars only.
   if (index >= NAMED_COUNT) {
     const spark = sparkAt(design, index);
+    const pulled = spark?.card_id ?? null;
+    const pulledOutfit = pulled === null ? null : outfitFor(pulled);
+    const pulledName =
+      pulled === null
+        ? null
+        : (charaName(deriveCharaId(pulled)) ?? `Card ${pulled}`) +
+          (pulledOutfit !== null && pulledOutfit !== "Original" ? ` · ${pulledOutfit}` : "");
     return (
       <div className="focus">
         <div className="focus-who">
           <div className="focus-name">{nodeLabel(index)}</div>
+          {pulledName !== null && (
+            <div className="focus-role">{pulledName} · auto-filled from a roster pull</div>
+          )}
         </div>
         {spark !== null && (
           <div className="focus-actions">
@@ -74,7 +103,7 @@ export function FocusPanel({
           <div className="focus-name">{nodeLabel(index)}</div>
         </div>
         <button className="focus-pick" onClick={() => onOpenPicker(index)}>
-          Choose from catalog…
+          Choose character…
         </button>
         {/* A planned spark is state worth undoing, so Clear appears for it
             too — not only once a character is cast. */}
@@ -123,6 +152,7 @@ export function FocusPanel({
           <div className="focus-role">
             {nodeLabel(index)}
             {outfit !== null && outfit !== "Original" ? ` · ${outfit}` : ""}
+            {SOURCE_NOTE[slot.source] !== null ? ` · ${SOURCE_NOTE[slot.source]}` : ""}
           </div>
         </div>
       </div>
@@ -140,9 +170,7 @@ export function FocusPanel({
       </div>
       <AptitudeTable rows={rows} />
       {index === 0 ? (
-        <p className="focus-note">
-          Run affinity and inspiration estimates return with the roster update.
-        </p>
+        <p className="focus-note">Run affinity and inspiration estimates are still to come.</p>
       ) : (
         <>
           <h4>Pink spark</h4>

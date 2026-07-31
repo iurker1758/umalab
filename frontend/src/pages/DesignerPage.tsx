@@ -16,6 +16,7 @@ import {
   type CatalogCard,
   type CatalogEntry,
   type PinkSpark,
+  type Veteran,
 } from "../api";
 import { FocusPanel } from "../components/FocusPanel";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
@@ -23,12 +24,16 @@ import { TreeMap } from "../components/TreeMap";
 import {
   NAMED_COUNT,
   UNTITLED,
+  applyPull,
+  canPullInto,
+  catalogSlot,
   copyName,
   emptyDesign,
   fromApi,
   halfOf,
   nextUntitledName,
   nodeLabel,
+  planPull,
   readOpenId,
   slotConflicts,
   toApi,
@@ -123,6 +128,10 @@ export function DesignerPage({
 }) {
   const [saved, setSaved] = useState<Blueprint[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  // Optional throughout: an empty roster (or a roster fetch that failed)
+  // costs you the shortcut, never the designer. The picker hides its roster
+  // tab and manual entry carries on exactly as before.
+  const [veterans, setVeterans] = useState<Veteran[]>([]);
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
@@ -344,6 +353,18 @@ export function DesignerPage({
     // Both fetches are page-scoped (catalog is static reference data, the
     // saved list is small) — refetching per visit keeps the shell out of it.
     let cancelled = false;
+    // On its own, deliberately: the roster is a whole dump and the largest
+    // response the app fetches, and nothing here waits on it. Joining it to
+    // the pair below would put the bootstrap — which decides whether a
+    // blueprint even exists to edit — behind it. Its failure raises no toast
+    // either: the roster is the optional source, and a designer that works
+    // fine shouldn't announce itself as broken because you never imported.
+    void api.veterans().then(
+      (v) => {
+        if (!cancelled) setVeterans(v);
+      },
+      () => {}
+    );
     void (async () => {
       const [cat, bps] = await Promise.allSettled([api.catalog(), api.blueprints()]);
       if (cancelled) return;
@@ -423,23 +444,48 @@ export function DesignerPage({
     const target = pickerFor;
     setPickerFor(null);
     if (target === null) return;
-    // A re-pick keeps the slot's typed spark: the pink is a plan input for
-    // the bracket math, not part of the card's identity, and re-typing it
-    // after every swap would be pure friction.
-    setDesign((d) =>
-      withNamed(d, target, {
-        chara_id: pick.chara_id,
-        card_id: pick.card_id,
-        spark: d.named[target]?.spark ?? null,
-      })
-    );
+    if (pick.kind === "catalog") {
+      // A re-pick keeps the slot's typed spark: the pink is a plan input for
+      // the bracket math, not part of the card's identity, and re-typing it
+      // after every swap would be pure friction.
+      setDesign((d) =>
+        withNamed(d, target, catalogSlot(pick.chara_id, pick.card_id, d.named[target]?.spark ?? null))
+      );
+      select(target);
+      return;
+    }
+    // A roster pull replaces the node's whole branch, so unlike a catalog
+    // pick it can destroy work you didn't click on. Ask once, listing
+    // everything hand-authored that would go — never once per node, which
+    // would be a dialog per generation for one pick and teach people to
+    // dismiss blind. Empty and already-pulled nodes go in silence: neither
+    // was ever authored by hand, so there is nothing to lose.
+    //
+    // Planned against the design as it stands on screen rather than inside
+    // the setDesign updater: window.confirm blocks, and blocking inside a
+    // state updater (which React may run twice) would prompt twice.
+    const plan = planPull(design, target, pick.veteran);
+    if (plan.clobbers.length > 0) {
+      const what = plan.clobbers.map(nodeLabel).join(", ");
+      // "Your own picks", not "what you entered by hand": the list covers
+      // catalog picks, earlier roster picks and typed sparks alike, and the
+      // last two aren't typed at all.
+      const ok = window.confirm(
+        `Pulling ${pick.veteran.name} replaces ${nodeLabel(target)} and everything ` +
+          `below it with its own pedigree.\n\nYour own picks at ${what} will be lost.` +
+          `\n\nContinue?`
+      );
+      if (!ok) return;
+    }
+    setDesign((d) => applyPull(d, plan));
     select(target);
   };
 
-  // Clears only the node itself — character and planned spark together: in a
-  // catalog-only designer every pick is independent, nothing below "belongs"
-  // to the cleared member (unlike the old roster auto-fill), and the game
-  // rules apply between filled slots.
+  // Clears only the node itself — character and planned spark together —
+  // even for a node a roster pull filled. A pull is a bulk edit, not an
+  // ownership claim: once its lineage nodes are on the tree they're plan
+  // inputs like any other, and cascading a clear down two generations would
+  // be a second, invisible way to lose work. Re-pull to replace them.
   const clearSlot = (target: number) => {
     setDesign((d) =>
       target < NAMED_COUNT ? withNamed(d, target, null) : withSpark(d, target, null)
@@ -787,6 +833,12 @@ export function DesignerPage({
         <SlotPicker
           title={`Choose ${nodeLabel(pickerFor)}`}
           catalog={catalog}
+          veterans={veterans}
+          rosterBlocked={
+            canPullInto(pickerFor)
+              ? null
+              : "The trainee is the horse you're about to train, so it isn't in your roster yet."
+          }
           iconIndex={iconIndex}
           conflict={(charaId) => slotConflicts(design, pickerFor, charaId)}
           onPick={applyPick}

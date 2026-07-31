@@ -906,8 +906,12 @@ Keep adding entries as the build evolves. This file is the interview.
   design") read state the earlier ones built. Splitting it into
   isolated `test()` blocks means inventing fixtures that reconstruct
   mid-narrative state, and the final "no JS errors or failed requests"
-  check filters deliberate late-run noise by `i >= noiseFrom` — an
-  index into one continuous run, which has no meaning once split.
+  check has to distinguish the run's two deliberate network breaks
+  from real ones — a distinction that only exists inside one
+  continuous run. (That filter was originally an `i >= noiseFrom`
+  index into the error array, which classified every later HTTP
+  failure as expected noise; #28 replaced it with explicitly flagged
+  windows.)
   **Served by `npm run dev`, not `build` + `preview`.** The production
   bundle is already covered by the `frontend` job's `npm run build`,
   and serving it here would register the PWA service worker
@@ -963,3 +967,155 @@ Keep adding entries as the build evolves. This file is the interview.
   service worker becoming something worth exercising end-to-end,
   which would mean a separate preview-served job rather than
   switching this one.
+
+## 28. Roster pulls are additive, and overwrite only after asking
+
+- **Requirements:** designer v2 brings back pulling real veterans out
+  of your roster, which fills seven tree nodes from one pick — the
+  node itself, its two grandparents and four generation-3 sparks. It
+  must not take away manual entry, which stays the primary path and
+  the only one that works before you have imported anything; it must
+  not silently destroy work a pull lands on top of; and the roster
+  path has to be covered in CI from the moment it exists, which the
+  suite could not do while the database it runs against was empty.
+- **Choice:** four rulings, all in one PR because they only make
+  sense together.
+
+  **The picker gains a source, it does not change one.** Catalog is
+  the default whether or not a roster exists, and the tab strip only
+  appears when there is something to pull. A plan that starts from the
+  pinks you are hunting has to work against an empty roster, so the
+  pull is the shortcut and never the entry point. The roster fetch is
+  deliberately outside the "couldn't load designer data" toast: an
+  empty or failed roster costs you the shortcut, never the designer.
+
+  **A pull replaces a branch; it does not patch one.** Pulling a
+  veteran into a node empties that node's entire subtree and then
+  populates as much of it as the dump carries. A veteran's dump has
+  six succession members: positions 10/20 are its parents, 11/12 and
+  21/22 theirs — so a pull reaches two generations, filling the node's
+  two kids (from 10/20) and four grandkids (from 11/12/21/22).
+  Everything below that is emptied. **Filling only the six slots it
+  has data for would be a correctness bug, not just untidiness:** what
+  sits under a node IS that node's ancestry, so leaving the previous
+  plan's generation-4 sparks in place would feed the *new*
+  grandparents' career-start brackets from a pedigree that no longer
+  exists — a wrong number rather than a stale one. Same reasoning for
+  a dump short of a member: that node is emptied, because the veteran
+  genuinely has nobody there and showing the old pick would be a false
+  answer rather than a partial one.
+
+  A blueprint grandparent is the parent veteran's *parent*, never its
+  grandparent — the classic off-by-one-generation error, and the thing
+  `pullTargets` exists to state once.
+
+  **The trainee can't be pulled into.** It is the horse you are about
+  to train: it is not in your roster, that being the point of it, and
+  nothing is bred from it. A pull there would also be the single click
+  that empties all 31 nodes. The picker offers catalog only at node 0
+  and says why, rather than dropping a control on one node in
+  thirty-one with no explanation.
+
+  **Identity stops at generation 3.** Those slots keep the member's
+  `card_id` — the identity arrives in the same fetch, so discarding it
+  would mean loading real data to throw it away, and `slots` is JSONB
+  so it costs a Pydantic widening and **no migration**. Generation 4
+  does not, even though a grandparent-level pull knows those names
+  too: nothing that deep reaches the trainee (a node's brackets read
+  only its own two generations), so the name would be trivia carried
+  in every saved document forever. Their **sparks** still land — those
+  feed the grandparent's own letters, which is how you tell whether
+  the pink you want could drop there. The cost is that a pulled
+  generation-4 spark reads as hand-authored, so re-pulling the same
+  grandparent asks about it needlessly; that errs toward asking, which
+  is the safe direction.
+
+  **The overwrite confirm is conditional, and native.** Because a pull
+  clears a whole branch, the prompt covers that branch and not merely
+  the seven nodes it writes. Empty nodes go silently; nodes an earlier
+  pull filled go silently (they were never hand-authored, so there is
+  nothing to lose); only hand-authored ones prompt, in **one** dialog
+  per pull naming all of them. "Your own picks", not "what you typed":
+  the list covers catalog picks, earlier roster picks and typed sparks
+  alike.
+
+  **A real pink beats a planned one.** V1 ruled that a re-pick keeps
+  the node's typed spark, but that was a ruling about *catalog* picks,
+  which carry no spark at all — keeping yours was the only available
+  answer, and re-typing after every outfit swap is friction for
+  nothing. A roster pick is the first thing that arrives *with* a real
+  pink, so the question is genuinely new: a node standing for one
+  specific horse in your barn must not advertise a pink she does not
+  carry, or every bracket above it describes a plan you cannot
+  execute. The typed spark is hand-authored, so it is named in the
+  prompt before it goes — nothing is lost silently. Planning a
+  *better* version of a mare you own is what a catalog pick is for. Six sequential dialogs for one pick would be worse than no
+  protection — people learn to dismiss blind, and then the guard is
+  decoration. `window.confirm`, matching the designer's existing
+  delete and discard prompts rather than inventing a modal. What
+  makes a deep spark hand-authored is the *absence* of a `card_id`:
+  only a pull sets one, and the spark editor writes a fresh
+  `{aptitude, stars}` — so editing a pulled spark's stars makes it
+  yours, and the next pull will ask before taking it.
+
+  **Clear still clears only the node it names.** The cascade belongs
+  to the pull, which is replacing an ancestry with another one;
+  `Clear` is a single-node edit and stays one, or the button would
+  mean two different things depending on where the node came from.
+
+  **e2e phase 2 ships here, seeded in CI only.** A committed synthetic
+  dump (`backend/tests/fixtures/roster.json`, eight veterans with full
+  pinked six-slot lineages) is imported by a CI step before the suite.
+  **The suite never imports it itself** — an import is a full-replace
+  snapshot (#3), so seeding from the suite would destroy a real local
+  roster, and "safe against your own database" is the property that
+  makes `npm run e2e` worth running locally at all. The suite instead
+  derives its roster cast from `/api/veterans` by predicate, exactly
+  as it already derives its catalog cast, and skips the roster section
+  when nothing usable is there. `E2E_REQUIRE_ROSTER=1` in CI turns
+  that skip into a hard failure, so a broken seeding step cannot read
+  as a green run. The fixture is data, so `tests/test_fixtures.py` is
+  what defends its shape — a reference regen dropping one of its cards
+  fails the backend job loudly instead of the e2e job hours later with
+  an opaque selector timeout.
+
+  Two review follow-ups from #19 ride along, both in code this PR
+  already opened: the deliberate-network-break windows are now flagged
+  explicitly instead of by an index into the error array (the old form
+  classified a genuine 500 during the persistence section as expected
+  noise — a false-*green* risk in the highest-value checks), and the
+  three top-level fetches check `res.ok` and report status + URL
+  instead of crashing with `SyntaxError: Unexpected token '<'`.
+- **Rejected:** filling only the nodes the dump reaches and leaving
+  the rest of the branch as it was — the first cut did this, and it
+  leaves the new grandparents' brackets fed by the pedigree they
+  replaced; replacing the catalog picker with a roster one, or
+  defaulting to roster when a roster exists — manual entry is the
+  primary path and a mode that changes under you is worse than a tab;
+  prompting per node, or prompting on every pull — the first trains
+  people to dismiss, the second makes the guard meaningless; an in-app
+  modal — more code and a second confirm idiom in a page that already
+  has one; deferring generation-3 identity to a later PR — it arrives
+  in this fetch, so deferring means discarding it; giving deep sparks
+  an explicit `source` field — `card_id`'s presence already carries
+  exactly that information and needs no migration; seeding the fixture
+  from inside the suite so local runs cover the roster too — it would
+  wipe a real roster, and no coverage is worth that; committing a real
+  dump as the fixture (#24 keeps game data out, and it is personal
+  data besides); storing generation-4 identity because a
+  grandparent-level pull happens to carry it — having the data is not
+  a reason to keep it when nothing reads it.
+  Also rejected: holding V1's "a re-pick keeps the typed spark"
+  literally for roster pulls, so you would `Clear` a planned pink to
+  adopt the real one — it makes a node claim a pink its horse doesn't
+  have, which is the one thing a roster pick exists to get right.
+- **Would change my mind:** the one-dialog-per-pull summary proving
+  unreadable once pulls routinely hit five or six hand-authored nodes
+  (then an in-app modal listing them with their contents earns its
+  keep); a lineage member legitimately carrying more than one pink,
+  which would make `pinkOf`'s "strongest wins" a real ruling rather
+  than a defensive tiebreak; the fixture's eight veterans proving too
+  thin for the three roster suites still to be ported (extend it
+  rather than importing a real dump); wanting the roster section
+  covered on local runs too, which needs a second disposable database
+  rather than a seeding step.

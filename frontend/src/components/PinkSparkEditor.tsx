@@ -38,7 +38,12 @@ export function PinkSparkEditor({
               key={n}
               className={spark.stars === n ? "seg active" : "seg"}
               aria-pressed={spark.stars === n}
-              onClick={() => onChange({ ...spark, stars: n })}
+              // A fresh spark rather than {...spark}: a pulled slot carries
+              // the veteran's card_id, and touching the stars makes this
+              // yours. Keeping the identity would leave it looking
+              // auto-filled, and the next roster pull would then replace
+              // your edit without asking.
+              onClick={() => onChange({ aptitude: spark.aptitude, stars: n })}
             >
               {n}★
             </button>

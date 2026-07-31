@@ -264,8 +264,93 @@ def test_roster_slot_needs_trained_chara_id() -> None:
     )
 
 
+def test_lineage_slot_needs_a_position_id() -> None:
+    _rejects(
+        doc(named={3: slot(1004, source="lineage", trained_chara_id=5)}),
+        "needs a position_id",
+    )
+
+
 def test_blank_name_rejected() -> None:
     _rejects(doc(name="   "), "name must not be blank")
+
+
+# ---------- roster pulls (designer V2) ----------
+
+
+def test_a_pulled_triangle_is_legal() -> None:
+    # What the designer writes when a roster veteran is pulled into Parent 1:
+    # the veteran itself at node 1, its two succession parents (position
+    # 10/20) at nodes 3 and 4. A blueprint grandparent is the parent
+    # veteran's PARENT — never its grandparent, which is the classic error.
+    body = BlueprintIn.model_validate(
+        doc(
+            named={
+                0: slot(1001),
+                1: slot(1002, source="roster", trained_chara_id=900001, spark=pink(),
+                        win_saddle_ids=[10, 63]),
+                3: slot(1004, source="lineage", trained_chara_id=900001, position_id=10,
+                        spark=pink("long", 2), win_saddle_ids=[63]),
+                4: slot(1005, source="lineage", trained_chara_id=900001, position_id=20,
+                        spark=pink("turf", 1), win_saddle_ids=[]),
+            }
+        )
+    )
+    parent1 = body.slots.named[1]
+    grandparent = body.slots.named[3]
+    assert parent1 is not None
+    assert grandparent is not None
+    # The wins ride in the snapshot: a veteran that later leaves the roster
+    # must keep its win bonus when the blueprint is re-scored.
+    assert parent1.win_saddle_ids == [10, 63]
+    assert grandparent.position_id == 10
+    assert grandparent.trained_chara_id == 900001
+
+
+def test_gen3_spark_carries_optional_card_identity() -> None:
+    # A roster pull knows who the generation-3 slots are (the picked
+    # veteran's own grandparents, positions 11/12/21/22), so it stores the
+    # card id rather than discarding it. JSONB column ⇒ no migration.
+    body = BlueprintIn.model_validate(doc(sparks={7: {**pink(), "card_id": 100401}}))
+    assert body.slots.sparks[0] == PinkSparkIn(aptitude="mile", stars=3, card_id=100401)
+
+
+def test_spark_without_identity_still_parses() -> None:
+    # Every hand-typed spark, and every row written before the pull existed.
+    body = BlueprintIn.model_validate(doc(sparks={7: pink()}))
+    assert body.slots.sparks[0] is not None
+    assert body.slots.sparks[0].card_id is None
+
+
+def test_pulled_document_round_trips_through_blueprint_out() -> None:
+    # The identity must survive JSONB and re-validation, or a reload would
+    # silently anonymize every pulled generation-3 slot.
+    body = BlueprintIn.model_validate(
+        doc(
+            named={
+                1: slot(1002, source="roster", trained_chara_id=900001, spark=pink(),
+                        win_saddle_ids=[10]),
+                3: slot(1004, source="lineage", trained_chara_id=900001, position_id=10),
+            },
+            sparks={7: {**pink("dirt", 2), "card_id": 100601}},
+        )
+    )
+    now = dt.datetime(2026, 7, 31, 12, 0, 0, tzinfo=dt.UTC)
+    out = BlueprintOut.model_validate(
+        {
+            "id": 1,
+            "name": body.name,
+            "slots": body.slots.model_dump(),
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    assert out.slots == body.slots
+    assert out.slots.sparks[0] == PinkSparkIn(aptitude="dirt", stars=2, card_id=100601)
+    named3 = out.slots.named[3]
+    assert named3 is not None
+    assert named3.source == "lineage"
+    assert named3.position_id == 10
 
 
 # ---------- round-trip through the persisted document ----------

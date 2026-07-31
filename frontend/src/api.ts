@@ -95,9 +95,14 @@ export type AptitudeLetters = Record<AptitudeKey, string>;
 
 // One pink (aptitude) spark. Single, not a list — every lineage member
 // carries exactly one pink (verified against a real full dump). stars 1–3.
+// card_id is optional identity for the generation-3 slots, filled by a
+// roster pull from the picked veteran's own grandparents. Decorative only:
+// the bracket math reads aptitude/stars. Generation 4 stays anonymous —
+// the game stores two generations per veteran, so no real data exists.
 export interface PinkSpark {
   aptitude: AptitudeKey;
   stars: number;
+  card_id?: number | null;
 }
 
 export interface CatalogCard {
@@ -211,8 +216,8 @@ export const api = {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     }),
   catalog: () => fetch("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
-  // /api/affinity exists but v1 of the deep-tree designer doesn't call it —
-  // run affinity returns with the roster features (DECISIONS.md #26).
+  // /api/affinity exists but the designer doesn't call it yet — run affinity
+  // needs per-grandparent attribution, which lands in the next PR.
   blueprints: () => fetch("/api/blueprints").then((r) => json<Blueprint[]>(r)),
   createBlueprint: (body: BlueprintIn) =>
     fetch("/api/blueprints", {

@@ -514,10 +514,19 @@ try {
   await page.locator(".designer").waitFor({ state: "detached" });
   await page.locator(".nav a", { hasText: "Designer" }).click();
   await page.waitForSelector(".designer");
+  // `.designer` mounts before its blueprint has been fetched, so reading the
+  // chip straight away races the hydration — it passed only because waiting
+  // on roster content used to spend that time on the way out. Poll instead of
+  // sampling once; `until` returns a boolean, so a genuine loss still fails
+  // this check by name rather than throwing.
   check("design survives route round-trip",
-    (await mapChip("Parent 1").getAttribute("aria-label")).includes(P1.entry.name));
+    await until(async () =>
+      ((await mapChip("Parent 1").getAttribute("aria-label")) ?? "").includes(P1.entry.name)
+    ),
+    await mapChip("Parent 1").getAttribute("aria-label"));
   check("name survives route round-trip",
-    (await pickerLabel()) === bpName);
+    await until(async () => (await pickerLabel()) === bpName),
+    await pickerLabel());
 
   // ---------- clear drops only the node itself ----------
   await selectNode("Grandparent 1-2");

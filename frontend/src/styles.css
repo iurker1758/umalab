@@ -299,8 +299,14 @@ button.bp-row:hover { background: #1e2937; }
 .tree-map-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
 
 /* 16-column pedigree grid: generation g's nodes span 16/2^g columns each,
-   so every node sits over its children. */
-.vped { --gap: 1.8rem; --wire: #33414f; display: grid; grid-template-columns: repeat(16, minmax(30px, 1fr)); row-gap: var(--gap); column-gap: 2px; width: max-content; min-width: 100%; }
+   so every node sits over its children.
+   Fills its column rather than sizing to max-content: the map is an
+   overview, so between the phone breakpoint and ~1150px it is better to
+   compress the tracks — where the text that gives way is the empty slot's
+   "Aptitude" placeholder, which carries no information — than to push a
+   whole grandparent off the edge behind a scrollbar. The 30px column floor
+   still can't be squeezed, which is what .tree-map-wrap's overflow is for. */
+.vped { --gap: 1.8rem; --wire: #33414f; display: grid; grid-template-columns: repeat(16, minmax(30px, 1fr)); row-gap: var(--gap); column-gap: 2px; width: 100%; }
 /* Narrow screens show one parent's half over 8 columns (see TreeMap). */
 .vped.half { grid-template-columns: repeat(8, minmax(30px, 1fr)); }
 .cell { display: flex; justify-content: center; position: relative; min-width: 0; }

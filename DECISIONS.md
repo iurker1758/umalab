@@ -764,7 +764,20 @@ Keep adding entries as the build evolves. This file is the interview.
   ten-letter grid, gens 3–4 the single spark) beside a docked
   focus panel that reads and edits the selected node; ≤860px the map
   collapses to a horizontal strip above the panel (the run-navigator
-  degradation). All bracket math is frontend-pure (`aptitude.ts`) —
+  degradation). The map **fills its column** rather than sizing to its
+  content: between the phone breakpoint and ~1150px its intrinsic width
+  (735px, set by the sixteen gen-4 tracks) exceeds the column
+  (544–688px), and compressing the tracks beats pushing a whole
+  grandparent off the edge behind a scrollbar — on an overview surface,
+  structure is the payload. The compression lands almost entirely on
+  the empty slot's "Aptitude" placeholder, which carries no
+  information; real spark labels ("Mile", "Medium") still fit at the
+  41px columns a 1024px window gives. Abbreviating the gen-4 labels
+  instead — what an earlier laptop-width pass did — is not a fix:
+  measured per-generation intrinsics are gen-2 57px/column, gen-4 44,
+  gen-3 39, so removing gen-4 from the running only moves the map to
+  713px before the gen-2 letter grids take over. All bracket math is
+  frontend-pure (`aptitude.ts`) —
   deterministic integer arithmetic over data the client already holds
   (catalog per-card letters + the design), so no endpoint and no
   debounce; the backend's job stays document validity and reference
@@ -866,16 +879,8 @@ Keep adding entries as the build evolves. This file is the interview.
 - **Would change my mind:** v2's roster fill lands (roster/lineage
   slot parsing and the affinity panel return); letter math turning
   out to vary by card in ways aptitudes.json doesn't capture (would
-  force a backend authority); the map outgrowing its column in the
-  860–1150px band, where it is 735px against a 544–688px column and
-  `.tree-map-wrap` scrolls horizontally (measured; ≥1152px it fits
-  exactly, 783 in 783). The sixteen gen-4 chips set that floor at
-  44px/column — but abbreviating their labels only moves the map to
-  713px, because the four gen-2 letter grids take over as the binding
-  constraint right behind them (measured per-generation intrinsics:
-  gen-2 wants 57px/column, gen-3 39, gen-4 44). So the band is
-  structural — a ten-letter grid on gens 0–2 and sixteen labelled
-  tracks on gen 4 in one row — and gen-4 abbreviation, which is what
-  the earlier laptop-width pass did, is not a fix for it. The real
-  levers are shrinking the named chips' letter grid or collapsing to
-  the half-tree above 860px.
+  force a backend authority); the compressed tracks between 860 and
+  ~1150px proving unreadable in use rather than merely tight — the
+  next lever is the named chips' letter grid, which is the constraint
+  behind the gen-4 tracks, and after that raising the half-tree
+  breakpoint so the full tree never renders in that band.

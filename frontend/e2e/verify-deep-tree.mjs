@@ -14,6 +14,7 @@ const ART = process.env.E2E_ARTIFACT_DIR || "";
 if (ART) mkdirSync(ART, { recursive: true });
 
 let pass = 0, fail = 0;
+let thrown = null;
 const failures = [];
 // Assigned once `page` exists; check() runs long before that in file order,
 // so it goes through this hook rather than closing over a TDZ binding.
@@ -493,7 +494,12 @@ try {
 
   // ---------- route round-trip keeps the working design ----------
   await page.locator(".nav a", { hasText: "Roster" }).click();
-  await page.waitForSelector(".pill-dock");
+  // Wait on having *left* the designer, not on any roster content: the
+  // roster's docks are gated on `veterans.length > 0`, so keying off one
+  // (`.pill-dock`) only worked against an already-imported roster and hung
+  // on an empty database — which is exactly what CI has.
+  await page.waitForURL((u) => new URL(u).pathname === "/");
+  await page.locator(".designer").waitFor({ state: "detached" });
   await page.locator(".nav a", { hasText: "Designer" }).click();
   await page.waitForSelector(".designer");
   check("design survives route round-trip",
@@ -750,13 +756,26 @@ try {
       !(i >= noiseFrom && /^HTTP \d+ |net::ERR_FAILED/.test(e))
   );
   check("no JS errors or failed requests", realErrors.length === 0, realErrors.join(" | "));
+} catch (e) {
+  // A throw (a timed-out locator, say) isn't a failed check(), so nothing
+  // above captured it — and a bare stack trace is the least actionable way
+  // to learn that a selector never appeared. Record it like a failure, then
+  // rethrow so the exit code and the console output are unchanged.
+  thrown = String(e && e.stack ? e.stack : e);
+  failures.push({ name: "UNCAUGHT", extra: thrown });
+  if (onFail) onFail("uncaught");
+  throw e;
 } finally {
   // Pending screenshots need the browser, so drain them before closing it.
   await shots.catch(() => {});
   if (ART) {
     writeFileSync(
       `${ART}/e2e-results.json`,
-      JSON.stringify({ suite: "deep-tree", base: BASE, pass, fail, failures, errors }, null, 2)
+      JSON.stringify(
+        { suite: "deep-tree", base: BASE, pass, fail, thrown, failures, errors },
+        null,
+        2
+      )
     );
   }
   await browser.close();

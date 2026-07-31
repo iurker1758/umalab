@@ -11,7 +11,7 @@ import {
   type PinkSpark,
   type Veteran,
 } from "./api";
-import { apt } from "./domain";
+import { apt, isLetter } from "./domain";
 
 // ---------- the designed lineage ----------
 // Pure designer domain (the analog of filters.ts): the 31-node tree shape,
@@ -219,7 +219,19 @@ export function withDeepCard(design: Design, i: number, cardId: number | null): 
 // surfaces in the toast); this only spares obviously dead clicks.
 // Deliberately absent: a grandparent repeating the TRAINEE's chara — the
 // game allows it.
-export function slotConflicts(design: Design, target: number, charaId: number): string | null {
+//
+// `replacesBranch` is set for a roster pull, which overwrites the target's
+// whole subtree rather than just the node. The descendant rule below is the
+// one that differs: a horse sitting under the target stops being a conflict
+// when the same action is about to overwrite her with the pull's own
+// pedigree. Greying that out blocks a pull the server would accept, and says
+// something false about why.
+export function slotConflicts(
+  design: Design,
+  target: number,
+  charaId: number,
+  replacesBranch = false
+): string | null {
   const at = (i: number) => charaAt(design, i);
   if (target > 0) {
     if (at(parentOf(target)) === charaId) {
@@ -239,7 +251,7 @@ export function slotConflicts(design: Design, target: number, charaId: number): 
     }
   }
   const [a, b] = kidsOf(target);
-  if (a < NODE_COUNT && (at(a) === charaId || at(b) === charaId)) {
+  if (!replacesBranch && a < NODE_COUNT && (at(a) === charaId || at(b) === charaId)) {
     return target === 0
       ? "Already a parent — the trainee must differ from both parents"
       : `Already one of ${nodeLabel(target)}'s own parents below — a horse can't be its own parent`;
@@ -471,9 +483,20 @@ const APTITUDE_FIELDS: Record<AptitudeKey, keyof Veteran> = {
 // A trained veteran's actual letters, off her own dump record. These are
 // what she finished her career with — inheritance, inspirations and any
 // aptitude gained in training, all already in the number.
-export function veteranAptitudes(v: Veteran): AptitudeLetters {
+//
+// Null when any field is off the 1..8 scale (`apt` degrades those to "-" or
+// "?"). All ten letters or none: the server accepts only the real grades, so
+// storing a placeholder would 422 the autosave for the whole design. Dropping
+// them instead costs the slot its "as trained" mode and nothing else — it
+// falls back to the card's base letters, which is what the same slot showed
+// before this snapshot existed.
+export function veteranAptitudes(v: Veteran): AptitudeLetters | null {
   const out = {} as AptitudeLetters;
-  for (const key of APTITUDE_KEYS) out[key] = apt(v[APTITUDE_FIELDS[key]] as number);
+  for (const key of APTITUDE_KEYS) {
+    const letter = apt(v[APTITUDE_FIELDS[key]] as number);
+    if (!isLetter(letter)) return null;
+    out[key] = letter;
+  }
   return out;
 }
 
@@ -717,7 +740,10 @@ function lettersFromApi(
   const out = {} as AptitudeLetters;
   for (const key of APTITUDE_KEYS) {
     const letter = raw[key];
-    if (typeof letter !== "string" || letter === "") throw new Error("malformed aptitudes");
+    // The same ten-keys-of-eight-grades rule the server enforces on write —
+    // these two must agree exactly, or a document it accepts is one this
+    // client can never open again.
+    if (!isLetter(letter)) throw new Error("malformed aptitudes");
     out[key] = letter;
   }
   return out;

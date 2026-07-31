@@ -111,27 +111,53 @@ def test_every_lineage_is_a_legal_blueprint_triangle() -> None:
         assert all(derive_chara_id(m["card_id"]) == m["chara_id"] for m in veteran["lineage"])
 
 
+def _pink(record: dict[str, Any]) -> dict[str, Any] | None:
+    """The one pink a dump record carries, as the designer decodes it."""
+    pinks = [f for f in record["factors"] if f["kind"] == "pink"]
+    if not pinks:
+        return None
+    best = max(pinks, key=lambda f: f["star"])
+    return {"aptitude": PINK_KEYS[best["key"]], "stars": best["star"]}
+
+
 def _pulled_document(veteran: dict[str, Any], target: int) -> dict[str, Any]:
     """The document the designer writes when `veteran` is pulled into `target`:
     the veteran itself, its succession parents (10/20) at that node's kids, and
-    their parents (11/12/21/22) at its grandkids."""
+    their parents (11/12/21/22) at its grandkids.
+
+    Mirrors `planPull` in the frontend's blueprint.ts field for field, including
+    the parts only the pull path produces — `source` and a pink on a deep slot,
+    won saddles and trained letters on a named one. Emitting the bare card_id
+    instead would leave every rule those fields are subject to untested, and the
+    lock mechanism reads `source` for everything it does.
+    """
     named: list[dict[str, Any] | None] = [None] * NAMED_SLOT_COUNT
     sparks: list[dict[str, Any] | None] = [None] * SPARK_SLOT_COUNT
 
-    def put(i: int, card_id: int, chara_id: int, source: str, position: int | None) -> None:
+    def put(i: int, record: dict[str, Any], source: str, position: int | None) -> None:
+        pink = _pink(record)
         if i < NAMED_SLOT_COUNT:
             named[i] = {
                 "source": source,
-                "chara_id": chara_id,
-                "card_id": card_id,
+                "chara_id": record["chara_id"],
+                "card_id": record["card_id"],
+                "win_saddle_ids": record["win_saddles"],
                 "trained_chara_id": veteran["trained_chara_id"],
                 "position_id": position,
+                "spark": pink,
             }
+            if source == "roster":
+                # Her own letters, as trained — all ten or none.
+                named[i]["aptitudes"] = dict.fromkeys(get_args(AptitudeKey), "A")  # type: ignore[index]
         else:
-            # Generations 3-4 keep only the card; the chara is derived.
-            sparks[i - NAMED_SLOT_COUNT] = {"card_id": card_id}
+            # Generations 3-4 keep the card and the pink; the chara is derived.
+            sparks[i - NAMED_SLOT_COUNT] = {
+                "card_id": record["card_id"],
+                "source": source,
+                **(pink or {}),
+            }
 
-    put(target, veteran["card_id"], veteran["chara_id"], "roster", None)
+    put(target, veteran, "roster", None)
     left, right = 2 * target + 1, 2 * target + 2
     positions = (
         (left, 10), (right, 20),
@@ -142,11 +168,11 @@ def _pulled_document(veteran: dict[str, Any], target: int) -> dict[str, Any]:
         if index >= NAMED_SLOT_COUNT + SPARK_SLOT_COUNT:
             continue
         member = next(m for m in veteran["lineage"] if m["position_id"] == position)
-        put(index, member["card_id"], member["chara_id"], "lineage", position)
+        put(index, member, "lineage", position)
     return {"name": "pull check", "slots": {"named": named, "sparks": sparks}}
 
 
-@pytest.mark.parametrize("target", [1, 2, 3, 4, 5, 6])
+@pytest.mark.parametrize("target", range(1, NAMED_SLOT_COUNT + SPARK_SLOT_COUNT))
 def test_every_pull_produces_a_document_the_server_accepts(target: int) -> None:
     # The tree rules reach generations 3 and 4 now that those slots can name a
     # character, so a pull writes up to seven identified nodes that all have to

@@ -2,8 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { CatalogEntry, Veteran } from "../api";
 import { APTITUDE_LABELS } from "../aptitude";
 import { pinkOf } from "../blueprint";
-import { DEFAULT_ASC, SORTS, blueSparkRank, type SortKey, type SortPref } from "../domain";
-import { countFilters, defaultFilters, isCommonKind, matchesFilters, type Filters } from "../filters";
+import {
+  DEFAULT_ASC,
+  SORTS,
+  commonSparkNamesOf,
+  rosterCardsOf,
+  sortVeterans,
+  type SortKey,
+  type SortPref,
+} from "../domain";
+import { countFilters, defaultFilters, matchesFilters, type Filters } from "../filters";
 import { FilterPanel } from "./FilterPanel";
 import { UmaCardChip } from "./UmaCardChip";
 import { VeteranCard } from "./VeteranCard";
@@ -46,7 +54,10 @@ export function SlotPicker({
   // node nobody expects to find in a list of horses they've trained.
   rosterBlocked?: boolean;
   iconIndex: Record<string, string>;
-  conflict: (charaId: number) => string | null;
+  // Asked per tab, because the two picks aren't the same action: a catalog
+  // pick fills one node, a roster pull replaces the target's whole subtree,
+  // and the tree rules that bite differ accordingly.
+  conflict: (charaId: number, kind: Source) => string | null;
   onPick: (pick: SlotPick) => void;
   onClose: () => void;
 }) {
@@ -89,25 +100,11 @@ export function SlotPicker({
   const hasRoster = veterans.length > 0 && !rosterBlocked;
   const showing: Source = hasRoster ? source : "catalog";
 
-  // Same two lists the roster page feeds its panel: one entry per distinct
-  // card for the Umas section, every common-spark name for the search.
-  const rosterCards = useMemo(() => {
-    const seen = new Map<number, Veteran>();
-    for (const v of veterans) if (!seen.has(v.card_id)) seen.set(v.card_id, v);
-    return [...seen.values()].sort(
-      (a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id
-    );
-  }, [veterans]);
-  const commonSparkNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const v of veterans) {
-      for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
-      for (const m of v.lineage) {
-        for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
-      }
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [veterans]);
+  // The same two lists the roster page feeds its panel, from the same
+  // helpers: one entry per distinct card for the Umas section, every
+  // common-spark name for the search.
+  const rosterCards = useMemo(() => rosterCardsOf(veterans), [veterans]);
+  const commonSparkNames = useMemo(() => commonSparkNamesOf(veterans), [veterans]);
 
   // Filtered first, then name-searched: the count the panel reports is about
   // ITS filters, so the search box narrowing further mustn't change it.
@@ -118,21 +115,7 @@ export function SlotPicker({
   // Not name-searched: that box is the catalog's. A stale query left behind
   // by the other tab must not silently narrow this list from a control that
   // isn't on screen.
-  const shownVets = useMemo(() => {
-    const list = [...filteredVets];
-    const val = (v: Veteran) => (sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key]);
-    list.sort((a, b) => {
-      const av = val(a);
-      const bv = val(b);
-      // register_time is ISO, so string compare doubles as date order.
-      const cmp =
-        typeof av === "string" && typeof bv === "string"
-          ? av.localeCompare(bv)
-          : Number(av) - Number(bv);
-      return sort.asc ? cmp : -cmp;
-    });
-    return list;
-  }, [filteredVets, sort]);
+  const shownVets = useMemo(() => sortVeterans(filteredVets, sort), [filteredVets, sort]);
 
   const empty = showing === "catalog" ? queriedCards.length === 0 : shownVets.length === 0;
 
@@ -191,7 +174,7 @@ export function SlotPicker({
                   outfit={card.outfit}
                   icon={iconIndex[String(card.card_id)]}
                   active={false}
-                  disabledReason={conflict(entry.chara_id) ?? undefined}
+                  disabledReason={conflict(entry.chara_id, "catalog") ?? undefined}
                   onToggle={() =>
                     onPick({ kind: "catalog", chara_id: entry.chara_id, card_id: card.card_id })
                   }
@@ -211,7 +194,7 @@ export function SlotPicker({
                   // by Sparks and the sparks are what you want to read.
                   showSparks={sort.key === "blue_spark"}
                   note={vetNote(v)}
-                  disabledReason={conflict(v.chara_id) ?? undefined}
+                  disabledReason={conflict(v.chara_id, "roster") ?? undefined}
                   onOpen={() => onPick({ kind: "roster", veteran: v })}
                 />
               ))}

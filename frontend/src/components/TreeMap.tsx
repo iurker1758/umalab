@@ -17,7 +17,7 @@ import {
   sparkAt,
   type Design,
 } from "../blueprint";
-import { gradeClass } from "../domain";
+import { gradeClass, isCharaPlaceholder } from "../domain";
 
 // The 31-node vertical pedigree map (Option C, mockup rev 2): a 16-column
 // grid where a node spans its children's columns, generations as rows.
@@ -61,6 +61,16 @@ export function TreeMap({
   // character's initial when a pull named the slot but the art isn't on disk
   // (it's gitignored — DECISIONS.md #10), and "+" on a slot nothing has
   // filled yet.
+  // The letter to stand in for a missing portrait, given who the slot holds.
+  // "+" only when nobody is in it — a slot with a character is never drawn as
+  // an empty one. Blank while the catalog is still in flight, so the space
+  // stays reserved and no letter flashes before the real one. "?" for a chara
+  // the catalog doesn't know: an initial off "Chara 1006" would render an
+  // identical "C" for every one of them, the opposite of the recognition the
+  // stored id exists to provide.
+  const initial = (card: number | null, name: string | null): string =>
+    card === null ? "+" : name === null ? "" : isCharaPlaceholder(name) ? "?" : name.charAt(0);
+
   const deepIcon = (card: number | null) => {
     const icon = card === null ? undefined : iconIndex[String(card)];
     if (icon !== undefined) {
@@ -69,7 +79,7 @@ export function TreeMap({
     const name = card === null ? null : charaName(deriveCharaId(card));
     return (
       <span className="lineage-icon-fallback sp-ico" aria-hidden="true">
-        {name?.charAt(0) ?? "+"}
+        {initial(card, name)}
       </span>
     );
   };
@@ -164,7 +174,7 @@ export function TreeMap({
             {icon ? (
               <img src={`/icons/chara/${icon}`} alt="" loading="lazy" />
             ) : (
-              <span className="lineage-icon-fallback">{name?.charAt(0) ?? "+"}</span>
+              <span className="lineage-icon-fallback">{initial(chara === null ? null : card, name)}</span>
             )}
             {trackKeys.map(cell)}
           </span>
@@ -223,26 +233,36 @@ export function TreeMap({
           onClick={() => onSelect(i)}
         >
           {deepIcon(card)}
+          {/* `ph` de-emphasises the placeholder wording. On an empty slot
+              .vnode.pick already does that; a slot with a face in it isn't
+              empty and mustn't take pick's dashed border, so it carries the
+              de-emphasis here instead — otherwise "Aptitude ☆☆☆" renders in
+              the filled-pink weight and reads as a spark by that name. */}
           {gen === 4 ? (
             <>
               {starTrio(0)}
-              <span className="sp-name">Aptitude</span>
+              <span className="sp-name ph">Aptitude</span>
             </>
           ) : (
-            <span className="sp">Aptitude {starTrio(0)}</span>
+            <span className="sp ph">Aptitude {starTrio(0)}</span>
           )}
         </button>
       );
     }
     const label = APTITUDE_LABELS[spark.aptitude];
+    const who = card === null ? null : charaName(deriveCharaId(card));
     // Deep slots are anonymous by name — there's no room for one down here —
-    // but the portrait is what makes them recognisable at a glance.
-    // Decorative: the aria-label still reads "Sparks 3-1 — 3★ Mile", so
-    // nothing depends on the art being on disk.
+    // but the portrait is what makes them recognisable at a glance. The art
+    // itself stays decorative: whoever the slot holds is named in the label
+    // instead, so nothing depends on the icons being on disk. The empty-pink
+    // branch above names the character too — a node mustn't change what it
+    // announces just because a spark happens to be present.
     return (
       <button
         className={`vnode anon${sel ? " sel" : ""}`}
-        aria-label={`${nodeLabel(i)} — ${spark.stars}★ ${label}`}
+        aria-label={`${nodeLabel(i)} — ${spark.stars}★ ${label}${
+          card === null ? "" : ` · ${who ?? "…"}`
+        }`}
         aria-pressed={sel}
         onClick={() => onSelect(i)}
       >

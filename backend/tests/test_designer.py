@@ -495,3 +495,86 @@ def test_catalog_shows_per_card_aptitude_difference() -> None:
     assert alt is not None
     assert base["mile"] == "B"
     assert alt["mile"] == "A"
+
+
+# ---------- what a slot may carry (the client mirrors these) ----------
+
+
+def letters(**overrides: str) -> dict[str, str]:
+    """A full ten-key aptitude map, the shape a roster pull snapshots."""
+    return {**dict.fromkeys(get_args(AptitudeKey), "A"), **overrides}
+
+
+def roster_slot(**overrides: Any) -> dict[str, Any]:
+    return slot(1002, source="roster", trained_chara_id=900001, **overrides)
+
+
+def test_roster_slot_takes_a_full_aptitude_map() -> None:
+    body = BlueprintIn.model_validate(doc(named={1: roster_slot(aptitudes=letters(long="S"))}))
+    got = body.slots.named[1]
+    assert got is not None
+    assert got.aptitudes is not None
+    assert got.aptitudes["long"] == "S"
+    assert len(got.aptitudes) == len(get_args(AptitudeKey))
+
+
+def test_partial_aptitude_map_is_rejected() -> None:
+    # The client reads the map as a whole and throws on a missing key, which
+    # makes the blueprint unopenable — and unrepairable, since the designer is
+    # the only way to edit one. The server has to be at least as strict as the
+    # client that has to render what it stored.
+    partial = letters()
+    del partial["long"]
+    with pytest.raises(ValidationError, match="all ten keys"):
+        BlueprintIn.model_validate(doc(named={1: roster_slot(aptitudes=partial)}))
+
+
+@pytest.mark.parametrize("bad", ["", "Z", "a", "A+"])
+def test_non_grade_aptitude_letters_are_rejected(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        BlueprintIn.model_validate(doc(named={1: roster_slot(aptitudes=letters(long=bad))}))
+
+
+def test_only_a_roster_slot_carries_its_own_aptitudes() -> None:
+    # A catalog pick is a card, not a horse, and the dump gives a lineage
+    # member no aptitudes at all — so letters there would be invented.
+    with pytest.raises(ValidationError, match="only a roster slot"):
+        BlueprintIn.model_validate(doc(named={1: slot(1002, aptitudes=letters())}))
+
+
+def test_a_named_slots_spark_carries_no_identity() -> None:
+    # PinkSparkIn doubles as the generation-3/4 slot model, so it accepts a
+    # card_id and a source. On a named slot those are meaningless — identity
+    # lives in the slot's own fields — and the client drops them on read, so
+    # accepting them would make the round-trip silently lossy.
+    for extra in ({"card_id": 100201}, {"card_id": 100201, "source": "roster"}):
+        with pytest.raises(ValidationError, match="no identity of its own"):
+            BlueprintIn.model_validate(doc(named={1: slot(1002, spark={**pink(), **extra})}))
+
+
+def test_a_deep_slot_keeps_its_source_through_the_round_trip() -> None:
+    # `source` is what marks a branch as recorded history: every read-only
+    # lock in the designer derives from it, so it has to survive JSONB and
+    # come back out of BlueprintOut intact.
+    body = BlueprintIn.model_validate(
+        doc(sparks={7: {"card_id": 100201, "source": "lineage", **pink("long", 2)}})
+    )
+    out = BlueprintOut.model_validate(
+        {
+            "id": 1,
+            "name": body.name,
+            "slots": body.slots.model_dump(),
+            "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+            "updated_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        }
+    )
+    got = out.slots.sparks[0]
+    assert got is not None
+    assert got.source == "lineage"
+    assert got.card_id == 100201
+    assert got.stars == 2
+
+
+def test_a_deep_slot_source_still_needs_a_character() -> None:
+    with pytest.raises(ValidationError, match="a pulled slot needs a character"):
+        BlueprintIn.model_validate(doc(sparks={7: {"source": "roster", **pink()}}))

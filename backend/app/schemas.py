@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -199,6 +199,12 @@ AptitudeKey = Literal[
     "front", "pace", "late", "end",
 ]
 
+# Aptitude grades, worst to best. Spelled out rather than left as `str`
+# because the client parses a slot's stored letters strictly — anything it
+# can't read makes that blueprint unopenable, and the server is the authority
+# on what may be stored.
+AptitudeLetter = Literal["G", "F", "E", "D", "C", "B", "A", "S"]
+
 # Blueprint tree shape (DECISIONS.md #25): 31 nodes breadth-first (node i's
 # kids are 2i+1 / 2i+2). Indices 0-6 — trainee, parents, grandparents —
 # carry identity; 7-30 (generations 3-4) are anonymous pink-spark slots
@@ -283,8 +289,10 @@ class BlueprintSlotIn(BaseModel):
     # same reason as win_saddle_ids: a veteran that leaves the roster must
     # keep the numbers she was scored on. Only roster slots carry these —
     # a catalog pick is a card, not a horse, and the dump gives a lineage
-    # member no aptitudes at all.
-    aptitudes: dict[AptitudeKey, str] | None = None
+    # member no aptitudes at all. All ten keys or none: the client reads the
+    # map as a whole and refuses a partial one, and a slot that renders nine
+    # letters and a blank is worse than one that renders the card's base.
+    aptitudes: dict[AptitudeKey, AptitudeLetter] | None = None
 
     @model_validator(mode="after")
     def _check_slot(self) -> BlueprintSlotIn:
@@ -301,13 +309,26 @@ class BlueprintSlotIn(BaseModel):
             )
         if self.source != "catalog" and self.trained_chara_id is None:
             raise ValueError(f"a {self.source} slot needs a trained_chara_id")
-        if self.aptitudes is not None and self.source != "roster":
-            raise ValueError("only a roster slot carries its own aptitudes")
+        if self.aptitudes is not None:
+            if self.source != "roster":
+                raise ValueError("only a roster slot carries its own aptitudes")
+            missing = set(get_args(AptitudeKey)) - self.aptitudes.keys()
+            if missing:
+                raise ValueError(
+                    f"aptitudes must cover all ten keys, missing {sorted(missing)}"
+                )
         # PinkSparkIn doubles as the generation-3/4 slot model, where a bare
         # character with no pink is legal. Here it is only ever a spark: a
         # named node keeps its identity in its own fields.
-        if self.spark is not None and self.spark.aptitude is None:
-            raise ValueError("a named slot's spark needs an aptitude")
+        if self.spark is not None:
+            if self.spark.aptitude is None:
+                raise ValueError("a named slot's spark needs an aptitude")
+            # ...and nothing else: PinkSparkIn's identity half belongs to the
+            # deep slots it doubles as. A named node keeps its own, so a spark
+            # carrying a second one here would assert a character the client
+            # drops on read — a silently lossy round-trip.
+            if self.spark.card_id is not None or self.spark.source is not None:
+                raise ValueError("a named slot's spark carries no identity of its own")
         if self.source == "lineage" and self.position_id is None:
             raise ValueError("a lineage slot needs a position_id")
         return self

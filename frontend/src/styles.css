@@ -385,6 +385,9 @@ button.bp-row:hover { background: #1e2937; }
 .sp-name { max-width: 100%; font-size: 0.58rem; color: #ff7fb8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Empty spark slots wear the placeholder in the dashed-dim style. */
 .vnode.pick .sp, .vnode.pick .sp-name { color: inherit; font-weight: 400; }
+/* Same de-emphasis for a deep slot that has a face but no pink yet: it isn't
+   empty (no dashed border), but its spark row is still placeholder text. */
+.vnode .sp.ph, .vnode .sp-name.ph { color: #6b7280; font-weight: 400; }
 /* On-chip aptitude cells (u-ma.org-style labeled letters): label + letter
    boxes grouped into the roster's three rows, boosted highlighted — the
    graph reads without clicking into the panel. */

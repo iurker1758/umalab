@@ -39,14 +39,17 @@ import {
   planPull,
   readOpenId,
   slotConflicts,
+  sourceAt,
   sparkLocked,
   toApi,
+  withDeep,
   withDeepCard,
   withNamed,
   withSpark,
   writeOpenId,
   type Design,
 } from "../blueprint";
+import { charaPlaceholder } from "../domain";
 
 // Matches the styles.css breakpoint where the map drops below the panel.
 const HALF_TREE_QUERY = "(max-width: 860px)";
@@ -113,6 +116,7 @@ const TrashIcon = () => (
 );
 
 export function DesignerPage({
+  veterans,
   iconIndex,
   design,
   setDesign,
@@ -120,6 +124,14 @@ export function DesignerPage({
   setSavedJson,
   onError,
 }: {
+  // The shell's roster, not a copy: it already fetches this list for the
+  // roster page and replaces it after every import, and the import button
+  // sits in the header on this route too. Fetching our own would both
+  // duplicate the largest response the app makes and freeze it at mount, so
+  // a pull after an import would snapshot a veteran the full-replace just
+  // deleted. Optional throughout — an empty roster (or a failed fetch) costs
+  // you the shortcut, never the designer.
+  veterans: Veteran[];
   iconIndex: Record<string, string>;
   // design + savedJson live in the App shell so a route change can't
   // discard an unsaved design (see App.tsx). savedJson is the toApi()
@@ -137,10 +149,6 @@ export function DesignerPage({
   // it returned anything: a failed fetch leaves the list empty forever, and
   // names have to degrade to ids then rather than staying blank.
   const [catalogLoaded, setCatalogLoaded] = useState(false);
-  // Optional throughout: an empty roster (or a roster fetch that failed)
-  // costs you the shortcut, never the designer. The picker hides its roster
-  // tab and manual entry carries on exactly as before.
-  const [veterans, setVeterans] = useState<Veteran[]>([]);
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
@@ -362,18 +370,6 @@ export function DesignerPage({
     // Both fetches are page-scoped (catalog is static reference data, the
     // saved list is small) — refetching per visit keeps the shell out of it.
     let cancelled = false;
-    // On its own, deliberately: the roster is a whole dump and the largest
-    // response the app fetches, and nothing here waits on it. Joining it to
-    // the pair below would put the bootstrap — which decides whether a
-    // blueprint even exists to edit — behind it. Its failure raises no toast
-    // either: the roster is the optional source, and a designer that works
-    // fine shouldn't announce itself as broken because you never imported.
-    void api.veterans().then(
-      (v) => {
-        if (!cancelled) setVeterans(v);
-      },
-      () => {}
-    );
     void (async () => {
       const [cat, bps] = await Promise.allSettled([api.catalog(), api.blueprints()]);
       if (cancelled) return;
@@ -443,7 +439,7 @@ export function DesignerPage({
   // show yet"; consumers hold the space instead of inventing one.
   const charaName = useCallback(
     (charaId: number): string | null =>
-      charaById.get(charaId)?.name ?? (catalogLoaded ? `Chara ${charaId}` : null),
+      charaById.get(charaId)?.name ?? (catalogLoaded ? charaPlaceholder(charaId) : null),
     [charaById, catalogLoaded]
   );
   const aptitudesFor = useCallback(
@@ -457,24 +453,43 @@ export function DesignerPage({
 
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
-    setPickerFor(null);
-    if (target === null || lockedBy(design, target) !== null) return;
+    // NOT closed yet: the roster branch below may still ask for confirmation,
+    // and cancelling that has to leave the picker exactly as it was — closing
+    // first would throw away the search and filters on the way to a dialog
+    // the user then declined.
+    if (target === null || lockedBy(design, target) !== null) {
+      setPickerFor(null);
+      return;
+    }
     // A deep slot holds a bare spark, so a pick there is a face on the pink
     // that's already in it — the character it came from, annotated by hand
-    // instead of by a pull. Nothing else about the node changes.
+    // instead of by a pull. Nothing else about the node changes...
     if (pick.kind === "catalog" && target >= NAMED_COUNT) {
-      setDesign((d) => withDeepCard(d, target, pick.card_id));
+      setPickerFor(null);
+      setDesign((d) => {
+        // ...unless the node was itself pulled, in which case this is the
+        // same replace the named path does below and it takes the same
+        // cleanup: her gen-4 parents and her own pink go with her. Leaving
+        // them would hang her real ancestry under a hand-picked character
+        // who doesn't have it, unlocked because `lockedBy` no longer finds a
+        // roster node above it.
+        if (sourceAt(d, target) !== "roster") return withDeepCard(d, target, pick.card_id);
+        return withDeep(clearNodes(d, ownedBranch(d, target)), target, {
+          card_id: pick.card_id,
+        });
+      });
       select(target);
       return;
     }
     if (pick.kind === "catalog") {
+      setPickerFor(null);
       setDesign((d) => {
         // Replacing a roster pick drops its branch, exactly as clearing it
         // would — otherwise that veteran's ancestry would hang under a
         // hand-picked character who doesn't have it, unlocked and unowned.
         // Her pink goes with it: it was hers, not a plan for this slot.
         const owned = ownedBranch(d, target);
-        const spark = owned.length > 0 ? null : (d.named[target]?.spark ?? null);
+        const spark = sourceAt(d, target) === "roster" ? null : (d.named[target]?.spark ?? null);
         // A re-pick otherwise keeps the slot's typed spark: the pink is a
         // plan input for the bracket math, not part of the card's identity,
         // and re-typing it after every swap would be pure friction.
@@ -508,8 +523,11 @@ export function DesignerPage({
           `below it with its own pedigree.\n\nYour own picks at ${what} will be lost.` +
           `\n\nContinue?`
       );
+      // Cancel leaves the picker open on the list you were already looking
+      // at, so declining costs nothing but the click.
       if (!ok) return;
     }
+    setPickerFor(null);
     setDesign((d) => applyPull(d, plan));
     select(target);
   };
@@ -874,7 +892,9 @@ export function DesignerPage({
           veterans={veterans}
           rosterBlocked={!canPullInto(pickerFor)}
           iconIndex={iconIndex}
-          conflict={(charaId) => slotConflicts(design, pickerFor, charaId)}
+          conflict={(charaId, kind) =>
+            slotConflicts(design, pickerFor, charaId, kind === "roster")
+          }
           onPick={applyPick}
           onClose={() => setPickerFor(null)}
         />

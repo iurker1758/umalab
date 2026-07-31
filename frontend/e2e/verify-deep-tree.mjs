@@ -311,6 +311,15 @@ const pullInto = async (v, action = "accept") =>
     // and veterans render as the roster page's own cards (.card), not the
     // catalog's bare chips.
     await page.locator(`.designer-picker .card[aria-label="${vetChipLabel(v)}"]`).click();
+    if (action === "dismiss") {
+      // Declining an overwrite has to leave the picker exactly as it was:
+      // the confirm is raised on the way to a pick, so closing first would
+      // throw away the filters and sort on the way to a dialog the user then
+      // declined, and make "Cancel" cost a search.
+      check("declining an overwrite leaves the picker open",
+        (await page.locator(".designer-picker").count()) === 1);
+      await page.keyboard.press("Escape");
+    }
     await page.waitForSelector(".designer-picker", { state: "detached" });
     // The dialog is raised synchronously inside the click handler, so by the
     // time the picker has closed it has already been answered.
@@ -320,6 +329,23 @@ const sparkLabel = (member) => {
   const pink = pinkOf(member.factors);
   return `${pink.stars}★ ${LABEL[pink.aptitude]}`;
 };
+// A deep chip that holds a character names her after the spark: the portrait
+// is decorative, so the label is the only place her identity is reachable.
+// The cast guarantees every pulled member's chara is in the catalog, so this
+// never has to cope with the "…" not-loaded form.
+const charaNameOf = (charaId) => catalog.find((e) => e.chara_id === charaId)?.name;
+// Whether a deep chip shows somebody. Deliberately NOT "renders an <img>":
+// character art is gitignored (DECISIONS.md #10) and CI never fetches it, so
+// requiring the portrait would fail there for a reason unrelated to the code.
+// The slot falls back to her initial, and the thing worth asserting is that
+// it knows who it is at all — never the "+" an empty slot shows.
+const hasFace = async (node) => {
+  const ico = mapChip(node).locator(".sp-ico");
+  if ((await ico.count()) !== 1) return false;
+  if ((await mapChip(node).locator("img.sp-ico").count()) === 1) return true;
+  return ((await ico.textContent()) ?? "").trim() !== "+";
+};
+const deepLabel = (member) => `${sparkLabel(member)} · ${charaNameOf(member.chara_id)}`;
 const setSpark = async (node, aptitude, stars) => {
   await page.locator(`select[aria-label="${node} pink spark"]`).selectOption(aptitude);
   await page.locator(`[aria-label="${node} stars"] .seg`, { hasText: `${stars}★` }).click();
@@ -441,9 +467,8 @@ try {
   // This picker is the TRAINEE's, which never offers the roster: the trainee
   // is the horse you're about to train, so it isn't in your roster — and a
   // pull there would be the one click that empties all 31 nodes.
-  check("the trainee's picker offers no roster tab, and no note about it",
-    (await page.locator(".designer-picker .picker-source").count()) === 0 &&
-    (await page.locator(".designer-picker .picker-note").count()) === 0);
+  check("the trainee's picker offers no roster tab",
+    (await page.locator(".designer-picker .picker-source").count()) === 0);
   await page.locator(".uma-search").fill(T.entry.name);
   await page.locator(`.designer-picker .card-chip[aria-label="${chipLabel(T)}"]`).click();
   await page.waitForSelector(".designer-picker", { state: "detached" });
@@ -933,7 +958,7 @@ try {
     for (const [node, position] of deep) {
       check(`position ${position} becomes ${node}`,
         (await mapChip(node).getAttribute("aria-label")) ===
-          `${node} — ${sparkLabel(memberAt(RV1, position))}`,
+          `${node} — ${deepLabel(memberAt(RV1, position))}`,
         await mapChip(node).getAttribute("aria-label"));
     }
     // Nothing is invented below what the dump carries: a veteran stores two
@@ -986,7 +1011,7 @@ try {
       await mapChip("Grandparent 1-1").getAttribute("aria-label"));
     check("and the deep slots come back with it",
       (await mapChip("Sparks 3-3").getAttribute("aria-label")) ===
-        `Sparks 3-3 — ${sparkLabel(memberAt(RV1, 21))}`);
+        `Sparks 3-3 — ${deepLabel(memberAt(RV1, 21))}`);
 
     // ---------- a pulled branch is read-only ----------
     // Everything under a real veteran is her recorded pedigree, so it can't
@@ -1016,10 +1041,10 @@ try {
     check("a grandparent takes a pull too", pulledGp === null, String(pulledGp));
     check("its generation-3 slots take the veteran's parents",
       (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
-        `Sparks 3-5 — ${sparkLabel(memberAt(RV1, 10))}`);
+        `Sparks 3-5 — ${deepLabel(memberAt(RV1, 10))}`);
     check("and its generation-4 slots take their parents' sparks",
       (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
-        `Sparks 4-9 — ${sparkLabel(memberAt(RV1, 11))}`);
+        `Sparks 4-9 — ${deepLabel(memberAt(RV1, 11))}`);
     await selectNode("Sparks 3-5");
     check("generation 3 says who it is",
       (await page.locator(".focus-role").count()) === 1);
@@ -1028,12 +1053,11 @@ try {
       (await page.locator(".focus-role").count()) === 1);
     // The portrait is the point of storing the id — a deep slot has no room
     // for a name, so without art it's an anonymous star count again.
-    check("both depths carry the character's portrait on the map",
-      (await mapChip("Sparks 3-5").locator("img.sp-ico").count()) === 1 &&
-      (await mapChip("Sparks 4-9").locator("img.sp-ico").count()) === 1);
-    check("and the label stays the spark, so the art is decorative",
+    check("both depths show a face on the map",
+      (await hasFace("Sparks 3-5")) && (await hasFace("Sparks 4-9")));
+    check("and the label names her, so the art itself is decorative",
       (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
-        `Sparks 4-9 — ${sparkLabel(memberAt(RV1, 11))}`);
+        `Sparks 4-9 — ${deepLabel(memberAt(RV1, 11))}`);
     await settled();
     const gpPull = (await rows()).find((b) => b.name === `${bpName} roster`);
     check("the stored document keeps identity at both depths",
@@ -1102,7 +1126,7 @@ try {
         `Grandparent 2-1 — ${memberAt(RV2, 10).name}`);
     check("accepting re-fills the deep slots from the new veteran",
       (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
-        `Sparks 3-5 — ${sparkLabel(memberAt(RV2, 11))}`);
+        `Sparks 3-5 — ${deepLabel(memberAt(RV2, 11))}`);
     check("a pull CLEARS the rest of the branch it can't fill",
       (await mapChip("Sparks 4-13").getAttribute("aria-label")) === "Sparks 4-13 — empty");
     check("and clears nothing outside that branch",
@@ -1137,7 +1161,39 @@ try {
         await selectNode("Grandparent 2-1");
         return (await page.locator(".focus-pick").count()) === 1;
       }));
+
+    // ---------- replacing a pulled node at depth ----------
+    // Generations 3 and 4 name characters now, so a deep node can be pulled
+    // into directly — and with the branch above it empty, nothing locks it.
+    // Replacing that node by hand is the same act as replacing a pulled
+    // parent and takes the same cleanup: hers is the pedigree below, and hers
+    // is the pink. A face swapped in over the top of them would assert a
+    // lineage belonging to nobody, and quietly unlock it too.
+    await selectNode("Sparks 3-5");
+    await pullInto(RV1);
+    check("a generation-3 node can be pulled into directly",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${deepLabel(RV1)}`,
+      await mapChip("Sparks 3-5").getAttribute("aria-label"));
+    check("and it brings its own generation 4 with it",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) ===
+        `Sparks 4-9 — ${deepLabel(memberAt(RV1, 10))}`);
+    await pickInto(GX);
+    check("replacing a pulled deep node drops her pink with her",
+      (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
+        `Sparks 3-5 — ${GX.entry.name}`,
+      await mapChip("Sparks 3-5").getAttribute("aria-label"));
+    check("and clears the generation 4 she brought",
+      (await mapChip("Sparks 4-9").getAttribute("aria-label")) === "Sparks 4-9 — empty");
     await settled();
+    const deepSwap = (await rows()).find((b) => b.name === `${bpName} roster`);
+    check("the replaced deep node keeps no trace of the pull on the server",
+      // `== null` deliberately: the field is absent on the way up and comes
+      // back as an explicit null from BlueprintOut.
+      deepSwap?.slots?.sparks?.[4]?.source == null &&
+      deepSwap?.slots?.sparks?.[4]?.aptitude == null &&
+      deepSwap?.slots?.sparks?.[16] === null,
+      JSON.stringify([deepSwap?.slots?.sparks?.[4], deepSwap?.slots?.sparks?.[16]]));
   }
 
   // ---------- persistence: what the autosave guarantees ----------

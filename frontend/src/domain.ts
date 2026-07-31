@@ -1,8 +1,25 @@
 import type { Veteran } from "./api";
+import { isCommonKind } from "./filters";
 
 // Aptitude ints 1..8 map to letters G..S (verified: pink sparks gate on >= 7 = A).
 const APT = "-GFEDCBAS";
 export const apt = (n: number) => APT[n] ?? "?";
+
+// The grades themselves, worst to best — the same eight, minus the "-" that
+// only stands for "no value". Lives here rather than in aptitude.ts because
+// blueprint.ts validates against it too, and aptitude.ts already imports
+// blueprint.ts.
+export const LETTER_ORDER: readonly string[] = [...APT.slice(1)];
+
+// What a chara is called when the committed reference data has no entry for
+// her — a card newer than the last regen. Built here rather than inline so
+// the tree map can recognise it: an initial taken off this string is "C" for
+// every unknown character, which is worse than no initial at all.
+export const charaPlaceholder = (charaId: number) => `Chara ${charaId}`;
+export const isCharaPlaceholder = (name: string | null): boolean =>
+  name !== null && /^Chara \d+$/.test(name);
+export const isLetter = (s: unknown): s is string =>
+  typeof s === "string" && (LETTER_ORDER as readonly string[]).includes(s);
 
 // Aptitudes grouped the way the game's detail screen shows them.
 export const APT_GROUPS: [group: string, apts: [label: string, key: keyof Veteran][]][] = [
@@ -160,6 +177,44 @@ export const SPARK_ABBR: Record<string, string> = {
 };
 export const sparkAbbr = (name: string) =>
   SPARK_ABBR[name] ?? name.slice(0, 5).toUpperCase();
+
+// The three roster derivations the roster page and the designer's picker
+// both need. Shared so the picker can't silently order or group veterans
+// differently from the page it's meant to mirror.
+
+// One entry per distinct card, for the Umas filter section.
+export const rosterCardsOf = (veterans: Veteran[]): Veteran[] => {
+  const seen = new Map<number, Veteran>();
+  for (const v of veterans) if (!seen.has(v.card_id)) seen.set(v.card_id, v);
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id);
+};
+
+// Every common-spark (white skill / race / scenario) name anywhere in the
+// roster, own + lineage — the searchable vocabulary for the filter.
+export const commonSparkNamesOf = (veterans: Veteran[]): string[] => {
+  const names = new Set<string>();
+  for (const v of veterans) {
+    for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
+    for (const m of v.lineage)
+      for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+};
+
+// Sorted copy, never in place.
+export const sortVeterans = (veterans: Veteran[], sort: SortPref): Veteran[] => {
+  const val = (v: Veteran) => (sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key]);
+  return [...veterans].sort((a, b) => {
+    const av = val(a);
+    const bv = val(b);
+    // register_time is ISO, so string compare doubles as date order.
+    const cmp =
+      typeof av === "string" && typeof bv === "string"
+        ? av.localeCompare(bv)
+        : Number(av) - Number(bv);
+    return sort.asc ? cmp : -cmp;
+  });
+};
 
 export type SortPref = { key: SortKey; asc: boolean };
 export const SORT_STORE = "umalab.sort";

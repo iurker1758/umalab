@@ -1,4 +1,5 @@
 import { APTITUDE_KEYS, type AptitudeKey, type AptitudeLetters } from "./api";
+import { LETTER_ORDER } from "./domain";
 import {
   NAMED_COUNT,
   sparkAt,
@@ -36,7 +37,6 @@ export const APTITUDE_GROUPS: [group: string, keys: AptitudeKey[]][] = [
 
 // Career-start ladder. S exists in the data scale but is unreachable at
 // career start — inheritance caps at A.
-export const LETTER_ORDER = ["G", "F", "E", "D", "C", "B", "A", "S"] as const;
 const CAP = LETTER_ORDER.indexOf("A");
 
 // Verified thresholds (triangulated vs GameWith/Kamigame): total matching ★
@@ -82,10 +82,15 @@ export interface AptitudeRow {
 }
 
 // Which mode a node's letters are in, from the slot itself.
+// Keyed off `source`, not off whether the letters happen to be there: a
+// pulled node describes a horse who already ran, so projecting inheritance
+// onto her would double-count what her career consumed and cap at A a mare
+// who finished at S. If her letters are missing (any pull older than them, or
+// a dump field off the 1..8 scale) the honest fallback is her card's base,
+// never the forecast.
 export function letterModeOf(slot: SlotValue | null): LetterMode {
-  if (slot === null) return "project";
-  if (slot.aptitudes !== null) return "trained";
-  return slot.source === "lineage" ? "base" : "project";
+  if (slot === null || slot.source === "catalog") return "project";
+  return slot.aptitudes !== null ? "trained" : "base";
 }
 
 // The ten display rows for a named node.
@@ -109,10 +114,13 @@ export function aptitudeRows(
       // what she trained to is real, and worth highlighting as a boost.
       base: letters?.[key] ?? null,
       final: trained[key],
+      // An unrecognised base (stale reference data) indexes as -1, which
+      // would read as a boost on every row. Same guard the project branch
+      // applies below: if we can't place the base, we can't claim a gain.
       boosted:
         letters?.[key] !== undefined &&
-        (LETTER_ORDER as readonly string[]).indexOf(trained[key]) >
-          (LETTER_ORDER as readonly string[]).indexOf(letters[key]),
+        LETTER_ORDER.indexOf(letters[key]) !== -1 &&
+        LETTER_ORDER.indexOf(trained[key]) > LETTER_ORDER.indexOf(letters[key]),
       stars: 0,
       bump: 0,
       mode: "trained" as const,
@@ -138,7 +146,7 @@ export function aptitudeRows(
     let final: string | null = null;
     let boosted = false;
     if (base !== null) {
-      const baseIdx = (LETTER_ORDER as readonly string[]).indexOf(base);
+      const baseIdx = LETTER_ORDER.indexOf(base);
       if (baseIdx === -1) {
         final = base; // unknown letter (stale reference) — pass through
       } else {
@@ -180,6 +188,6 @@ export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number)
   const row = rows.find((r) => r.key === spark.aptitude);
   const final = row?.final ?? null;
   if (final === null) return false;
-  const idx = (LETTER_ORDER as readonly string[]).indexOf(final);
+  const idx = LETTER_ORDER.indexOf(final);
   return idx !== -1 && idx < CAP;
 }

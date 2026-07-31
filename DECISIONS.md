@@ -989,12 +989,15 @@ Keep adding entries as the build evolves. This file is the interview.
   the default whether or not a roster exists, and the tab strip only
   appears when there is something to pull. A plan that starts from the
   pinks you are hunting has to work against an empty roster, so the
-  pull is the shortcut and never the entry point. The roster fetch is
-  deliberately outside the "couldn't load designer data" toast, and
-  issued on its own rather than joined to the catalog/blueprint pair:
-  it is the largest response the app fetches and nothing waits on it,
-  so joining it put the bootstrap — which decides whether a blueprint
-  exists to edit at all — behind a whole dump.
+  pull is the shortcut and never the entry point.
+
+  The designer does **not** fetch the roster; it takes the shell's,
+  the same list the roster page renders. Fetching its own cost the
+  largest response in the app twice and — because the import button is
+  in the header on every route — froze it at mount, so a pull after an
+  import would snapshot a veteran the full-replace had just deleted.
+  The shell already refetches after every import, which is the only
+  place that invalidation can correctly live.
 
   The roster tab is the roster page, not a second implementation of
   it: the same `VeteranCard` (rank badge, favourite mark, rating or
@@ -1092,6 +1095,12 @@ Keep adding entries as the build evolves. This file is the interview.
   matching the designer's existing delete and discard prompts rather
   than inventing a modal.
 
+  Declining leaves the picker **open**, on the list you were already
+  looking at. The confirm is raised on the way to a pick, so closing
+  first would make Cancel cost the search and filters that found the
+  veteran — a decline is a change of mind about one candidate, not
+  about picking at all.
+
   The node you aimed at is excluded when it already holds a roster
   pick: swapping one veteran for another is the action you just took,
   and since the lock guarantees the rest of that branch is the
@@ -1122,6 +1131,16 @@ Keep adding entries as the build evolves. This file is the interview.
   inheritance twice — and capped at A a mare who finished at S. Her
   letters are snapshotted onto the slot like her won saddles, so a
   veteran who leaves the roster keeps the numbers she was scored on.
+
+  The mode follows the slot's `source`, never "are the letters
+  present" — a roster slot whose snapshot is missing (a pull older
+  than the field, or a dump value off the 1..8 scale) falls back to
+  `card base`, which understates her, rather than to the projection,
+  which is the double-count above wearing a forecast's clothes. The
+  snapshot is all ten letters or none, enforced on both sides: the
+  client refuses to read a partial map, so a server that accepted one
+  would store a blueprint the designer could never open again — and
+  the designer is the only way to edit one.
 
   Lineage members get no projection because there is nothing honest to
   project from: the dump gives them no aptitudes, and their own

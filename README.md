@@ -23,14 +23,20 @@ parent/grandparent lineage, decoded to human-readable names.
 
 There's also an inheritance-blueprint designer (in the spirit of
 design.u-ma.org): a four-generation aptitude calculator over a 31-node
-pedigree map with a docked detail panel — pick the named lineage from the
-character catalog, type in the deeper generations' pink sparks, and read
-each member's computed career-start letters, flagging any planned pink the
-game couldn't actually drop. Every design is a saved blueprint that
-autosaves as you edit it. Roster-driven fills, run affinity, and inspiration
-estimates return in the designer's v2. Planned next: hunted-skill spark
-scoring (expected sparks before/after reroll, ported from the predecessor
-tkinter app).
+pedigree map with a docked detail panel — pick the lineage from the character
+catalog, type in the pink sparks you're hunting, and read each member's
+computed career-start letters, flagging any planned pink the game couldn't
+actually drop. Every design is a saved blueprint that autosaves as you edit
+it.
+
+Any node can also be filled from your own roster, which pulls that veteran's
+real pedigree in with her — her succession parents and grandparents, their
+sparks, and her own trained aptitudes. That branch then reads as history
+rather than plan: it's shown but not editable, since it describes a horse you
+actually own. Manual entry stays the primary path and works with no roster at
+all. Run affinity and inspiration estimates are still to come, then
+hunted-skill spark scoring (expected sparks before/after reroll, ported from
+the predecessor tkinter app).
 
 ## Stack
 

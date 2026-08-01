@@ -88,7 +88,7 @@ export function SparkEditor({
         className="spark-search"
         type="search"
         aria-label={`${label} spark search`}
-        placeholder="Add a spark…"
+        placeholder="Add a Spark…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />

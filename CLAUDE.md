@@ -102,5 +102,11 @@ Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
   types `feat|fix|docs|test|refactor|chore|ci` and optional scope `backend|frontend`.
   Squash-merge only — the PR title becomes the commit on `main`. See CONTRIBUTING.md.
 - Branches: `<type>/<short-slug>`, e.g. `feat/roster-import`.
+- UI **labels** are Title Case — buttons, headings, tab names, column headers,
+  placeholders that name a thing ("Show All 34", "Run Affinity", "Est. Per
+  Run", "Add a Spark…"). **Sentences stay sentence case**: empty states,
+  warnings, hints, tooltips. Don't write prose explaining a number — the
+  header, tag or ordering should carry it, and the reasoning belongs in
+  `DECISIONS.md`.
 - Every non-obvious tech/design choice gets a `DECISIONS.md` entry:
   Requirements → Choice → Alternatives rejected → What would change my mind.

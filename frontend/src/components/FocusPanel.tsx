@@ -134,7 +134,7 @@ export function FocusPanel({
         {locked === null && (
           <div className="focus-actions">
             <button className="designer-secondary" onClick={() => onOpenPicker(index)}>
-              {pulled === null ? "Choose character…" : "Replace…"}
+              {pulled === null ? "Choose Character…" : "Replace…"}
             </button>
             {/* Nothing in the slot, nothing to undo — same rule as above. */}
             {(spark !== null || pulled !== null) && (
@@ -148,7 +148,7 @@ export function FocusPanel({
             )}
           </div>
         )}
-        <h4>Pink spark</h4>
+        <h4>Pink Spark</h4>
         {/* Fixed on a roster pick here for the same reason as on a parent:
             that pink is the horse's own. Its identity stays replaceable. */}
         {pinkFixed ? <SparkReadout spark={spark} /> : (
@@ -189,7 +189,7 @@ export function FocusPanel({
           <div className="focus-name">{nodeLabel(index)}</div>
         </div>
         <button className="focus-pick" onClick={() => onOpenPicker(index)}>
-          Choose character…
+          Choose Character…
         </button>
         {/* A planned spark is state worth undoing, so Clear appears for it
             too — not only once a character is cast. */}
@@ -206,7 +206,7 @@ export function FocusPanel({
         )}
         {index > 0 ? (
           <>
-            <h4>Pink spark</h4>
+            <h4>Pink Spark</h4>
             <PinkSparkEditor
               label={nodeLabel(index)}
               spark={slot?.spark ?? null}
@@ -334,7 +334,7 @@ export function FocusPanel({
                   a proc off them rolls against. Above the spark editor: it is
                   what decides whether the pink below it ever lands. */}
               <NodeAffinity affinity={affinity} index={index} />
-              <h4>Pink spark</h4>
+              <h4>Pink Spark</h4>
               {pinkFixed ? (
                 <SparkReadout spark={slot.spark} />
               ) : (

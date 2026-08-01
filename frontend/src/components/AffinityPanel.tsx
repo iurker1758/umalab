@@ -34,7 +34,7 @@ export function AffinityPanel({
 }) {
   return (
     <>
-      <h4>Run affinity</h4>
+      <h4>Run Affinity</h4>
       {failed ? (
         <p className="focus-note aff-error">
           Couldn&apos;t score this design — is the backend running? It retries on the next

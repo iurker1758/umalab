@@ -63,7 +63,7 @@ const ChanceHeader = () => (
     className="proc-chance"
     title="Estimated, not datamined — chance over the run's two inheritance events"
   >
-    Est. per run
+    Est. Per Run
   </th>
 );
 
@@ -219,7 +219,7 @@ export function TraineeProcs({
           below the fold, which a bare "Show more" wouldn't. */}
       {outlooks.length > TRAINEE_ROWS && (
         <button className="proc-more" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "Show fewer" : `Show all ${outlooks.length}`}
+          {expanded ? "Show Fewer" : `Show All ${outlooks.length}`}
         </button>
       )}
     </>

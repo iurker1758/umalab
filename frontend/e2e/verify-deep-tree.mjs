@@ -504,7 +504,7 @@ try {
   // A trainee alone is not a pairing: the panel says what's missing rather
   // than scoring an empty tree as a confident zero.
   check("affinity waits for a parent",
-    (await page.locator(".focus", { hasText: "Run affinity" }).count()) === 1 &&
+    (await page.locator(".focus", { hasText: "Run Affinity" }).count()) === 1 &&
     (await page.locator(".focus .aff-total").count()) === 0 &&
     (await page.locator(".focus-note", { hasText: "at least one parent" }).count()) === 1);
   // The tile keeps its footprint before there's a number, the way empty
@@ -827,7 +827,7 @@ try {
   // of nearly two on every row.
   check("the trainee's table labels the numbers estimates, per run, exactly once",
     (await page.locator(".focus .proc-table thead th").allTextContents()).join(",") ===
-      "Spark,Est. per run");
+      "Spark,Est. Per Run");
   // The number rides on a bar filled in the spark's own colour, and the bar
   // is the chance: 0–100 absolutely, so an unlikely spark reads as a sliver
   // rather than filling because nothing beat it.
@@ -891,7 +891,7 @@ try {
   check(`${allRows} sparks show as 12, with the rest behind a button`,
     await until(async () =>
       (await page.locator(".focus .proc-table tbody tr").count()) === 12 &&
-      (await page.locator(".focus .proc-more").textContent()) === `Show all ${allRows}`));
+      (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}`));
   // What's hidden is always the least likely — the cap is only honest because
   // the table is ranked, so the twelve shown must be the twelve best.
   check("the rows kept are the twelve highest chances",
@@ -904,7 +904,7 @@ try {
   await page.locator(".focus .proc-more").click();
   check("and the button reveals every one of them",
     (await page.locator(".focus .proc-table tbody tr").count()) === allRows &&
-    (await page.locator(".focus .proc-more").textContent()) === "Show fewer");
+    (await page.locator(".focus .proc-more").textContent()) === "Show Fewer");
   await page.locator(".focus .proc-more").click();
   check("and folds them away again",
     (await page.locator(".focus .proc-table tbody tr").count()) === 12);

@@ -18,6 +18,7 @@ import {
   type Design,
 } from "../blueprint";
 import { sparkId } from "../procs";
+import { ReplaceIcon, TrashIcon } from "./icons";
 import { AffinityPanel, NodeAffinity } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
@@ -49,67 +50,53 @@ const LockNote = ({ owner }: { owner: number }) => (
   <p className="focus-note">{nodeLabel(owner)}&apos;s real pedigree.</p>
 );
 
-// Icon buttons for the node's two actions, sat at the right of its name row.
-// Inline SVG on the blueprint bar's pattern (16px box, `currentColor`, 14px
-// rendered) rather than a glyph or a dependency: the app already draws its
-// duplicate and delete icons this way.
-const ReplaceIcon = () => (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-    <path
-      fill="currentColor"
-      d="M2 5.25h9.5V3l3.2 3-3.2 3V6.75H2V5.25ZM14 9.25H4.5V7L1.3 10l3.2 3v-2.25H14V9.25Z"
-    />
-  </svg>
-);
-
-const ClearIcon = () => (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-    <path
-      fill="currentColor"
-      d="M3.4 4.5 4.5 3.4 8 6.9l3.5-3.5 1.1 1.1L9.1 8l3.5 3.5-1.1 1.1L8 9.1l-3.5 3.5-1.1-1.1L6.9 8 3.4 4.5Z"
-    />
-  </svg>
-);
-
-// Both are icon-only, so the label lives in `aria-label` AND `title` — the
-// first for screen readers, the second because an icon nobody recognises is
-// only discoverable on hover. Each names its node: "Clear" alone would be
-// ambiguous on a panel you reached by clicking one of 31 tiles.
+// Icon buttons for the node's two actions, sat at the right of its name row,
+// on the same `.bar-icon` styles the blueprint bar's own icon buttons use.
+//
+// Labelling follows that bar too: `aria-label` names the TARGET ("Clear
+// Grandparent 1-2"), because "Clear" alone is ambiguous on a panel you
+// reached by clicking one of 31 tiles; `title` is the short generic tooltip,
+// because an unfamiliar icon has to be discoverable on hover. They must not
+// be the same string — a `title` matching the accessible name becomes the
+// accessible DESCRIPTION, and screen readers then read the node twice.
 const NodeActions = ({
-  label,
+  index,
   onReplace,
   onClear,
 }: {
-  label: string;
+  // The node itself, not its label: every caller would otherwise pass
+  // `nodeLabel(index)` beside handlers already closed over that index, and a
+  // mismatch between the two would mislabel a destructive button silently.
+  index: number;
   // Null where the action doesn't apply — nobody cast to replace, or nothing
   // in the node to clear.
   onReplace: (() => void) | null;
   onClear: (() => void) | null;
 }) =>
   onReplace === null && onClear === null ? null : (
-  <div className="focus-actions">
-    {onReplace !== null && (
-      <button
-        className="focus-act"
-        title={`Replace ${label}`}
-        aria-label={`Replace ${label}`}
-        onClick={onReplace}
-      >
-        <ReplaceIcon />
-      </button>
-    )}
-    {onClear !== null && (
-      <button
-        className="focus-act focus-act-clear"
-        title={`Clear ${label}`}
-        aria-label={`Clear ${label}`}
-        onClick={onClear}
-      >
-        <ClearIcon />
-      </button>
-    )}
-  </div>
-);
+    <div className="focus-actions">
+      {onReplace !== null && (
+        <button
+          className="bar-icon"
+          title="Replace this character"
+          aria-label={`Replace ${nodeLabel(index)}`}
+          onClick={onReplace}
+        >
+          <ReplaceIcon />
+        </button>
+      )}
+      {onClear !== null && (
+        <button
+          className="bar-icon bar-icon-danger"
+          title="Clear this node"
+          aria-label={`Clear ${nodeLabel(index)}`}
+          onClick={onClear}
+        >
+          <TrashIcon />
+        </button>
+      )}
+    </div>
+  );
 
 type Tab = "details" | "procs";
 
@@ -122,15 +109,16 @@ type Tab = "details" | "procs";
 // contract we don't keep is worse than announcing none. `.focus-tab` rides
 // along as the hook that identifies them.
 const FocusTabs = ({
-  label,
+  index,
   tab,
   onPick,
 }: {
-  label: string;
+  // The node, not its label — same reason as NodeActions.
+  index: number;
   tab: Tab;
   onPick: (t: Tab) => void;
 }) => (
-  <div className="focus-tabs seg-group" role="group" aria-label={`${label} sections`}>
+  <div className="focus-tabs seg-group" role="group" aria-label={`${nodeLabel(index)} sections`}>
     {(["details", "procs"] as const).map((t) => (
       <button
         key={t}
@@ -230,7 +218,7 @@ export function FocusPanel({
           {pulledName !== null && <div className="focus-role">{pulledName}</div>}
           {locked === null && (
             <NodeActions
-              label={nodeLabel(index)}
+              index={index}
               // Nobody cast yet ⇒ nothing to replace; the dashed button below
               // is the cast action. Nothing in the slot ⇒ nothing to undo.
               onReplace={pulled === null ? null : () => onOpenPicker(index)}
@@ -292,7 +280,7 @@ export function FocusPanel({
               No Replace: there is nobody in the node to replace. */}
           {slot !== null && (
             <NodeActions
-              label={nodeLabel(index)}
+              index={index}
               onReplace={null}
               onClear={() => onClear(index)}
             />
@@ -307,7 +295,7 @@ export function FocusPanel({
                 and a member planned by spark alone is the case that most
                 needs it — gating the tab on a cast (or on a score) would put
                 the only editor behind the thing you haven't decided yet. */}
-            <FocusTabs label={nodeLabel(index)} tab={tab} onPick={setTab} />
+            <FocusTabs index={index} tab={tab} onPick={setTab} />
             {tab === "procs" ? (
               <NodeProcs
                 design={design}
@@ -377,7 +365,7 @@ export function FocusPanel({
         </div>
         {locked === null && (
           <NodeActions
-            label={nodeLabel(index)}
+            index={index}
             onReplace={() => onOpenPicker(index)}
             onClear={() => onClear(index)}
           />
@@ -388,7 +376,7 @@ export function FocusPanel({
           "—" — but the tab is also where a member's sparks are TYPED, and
           hiding the only editor until the design happens to be scorable
           (or until the backend answers) made entered sparks vanish with it. */}
-      <FocusTabs label={nodeLabel(index)} tab={tab} onPick={setTab} />
+      <FocusTabs index={index} tab={tab} onPick={setTab} />
       {tab === "procs" ? (
         index === 0 ? (
           <TraineeProcs design={design} affinity={affinity} sparkNames={sparkNames} />

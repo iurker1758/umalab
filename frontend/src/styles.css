@@ -290,8 +290,6 @@ button.bp-row:hover { background: #1e2937; }
 .designer-autosave.failed { opacity: 1; color: #ff8f8f; }
 .bar-icon:disabled { opacity: 0.4; cursor: default; }
 .bar-icon:disabled:hover { border-color: #2a3340; background: none; color: inherit; }
-.designer-secondary { background: #1a2027; border: 1px solid #2a3340; }
-.designer-secondary:hover { border-color: #2a76c9; }
 
 /* Option C (DECISIONS.md #26): 31-node vertical map beside a docked focus
    panel. ≤860px the map collapses to a horizontal strip above the panel. */
@@ -459,13 +457,12 @@ button.bp-row:hover { background: #1e2937; }
 span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .focus-name { font-size: 1.05rem; font-weight: 600; }
 .focus-role { opacity: 0.6; font-size: 0.8rem; }
-/* The node's two actions, icon-only, pushed to the right of its name row. */
-.focus-actions { display: flex; gap: 0.25rem; margin-left: auto; align-self: start; }
-.focus-act { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; color: inherit; background: #1a2027; border: 1px solid #2a3340; border-radius: 6px; opacity: 0.6; cursor: pointer; }
-.focus-act:hover { opacity: 1; border-color: #2a76c9; }
-/* Clear empties the node — and a pulled veteran's whole branch with it — so
-   it reads as the destructive one on hover rather than only in its tooltip. */
-.focus-act-clear:hover { border-color: #7d3b34; color: #ff8a80; }
+/* The node's two actions, icon-only, pushed to the right of its name row.
+   They wear `.bar-icon`/`.bar-icon-danger` — the save bar's icon buttons —
+   rather than a private copy, so "this button destroys something" is one red
+   across the app instead of two. The gap is wider than the bar's because
+   Clear is destructive, unconfirmed and sits next to a benign control. */
+.focus-actions { display: flex; gap: 0.4rem; margin-left: auto; align-self: start; }
 .focus-pick { width: 100%; border: 1px dashed #3a4250; background: #1a2027; color: #9aa1ab; }
 .focus-pick:hover { border-color: #2a76c9; color: inherit; }
 .focus-note { margin: 0.5rem 0 0; opacity: 0.65; font-size: 0.85rem; }
@@ -500,7 +497,9 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    where they are read. The look comes from `.seg-group`/`.seg`, the app's
    standard segmented control; local rules only stretch it to the panel's
    full width — two halves, the way the tree-half switch splits its bar. */
-.focus-tabs { display: flex; width: 100%; margin: 0.7rem 0 0.5rem; }
+/* border-box because seg-group brings a 1px border and this stylesheet has no
+   global reset — without it the pill renders 2px past everything below it. */
+.focus-tabs { display: flex; width: 100%; box-sizing: border-box; margin: 0.7rem 0 0.5rem; }
 .focus-tab { flex: 1 1 0; padding: 0.4rem; cursor: pointer; }
 .focus-tab:hover { opacity: 1; }
 

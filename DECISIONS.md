@@ -1289,17 +1289,32 @@ Keep adding entries as the build evolves. This file is the interview.
 
   **Replace and Clear are icon buttons on the name row**, not text
   buttons on a row of their own — they cost a full row of a panel that
-  competes with the map for height. Inline SVG on the blueprint bar's
-  existing pattern (16px box, `currentColor`), not a glyph and not an
-  icon dependency: the app already draws its duplicate and delete icons
-  that way. Each carries **both** `aria-label` and `title`, and each
-  names its node ("Clear Grandparent 1-2"), because an icon nobody
-  recognises is only discoverable on hover and "Clear" alone is
-  ambiguous on a panel you reached by clicking one of 31 tiles. Neither
-  renders where it doesn't apply — no Replace on a node with nobody in
-  it. The known cost: Clear is destructive (on a pulled veteran it takes
-  her whole branch) and an icon states that less loudly than a word,
-  which is why it alone gets a red hover.
+  competes with the map for height. They reuse the save bar's own
+  `.bar-icon`/`.bar-icon-danger` styles and its inline-SVG icons rather
+  than a private copy: the first cut forked both, which left the app
+  showing two different reds for "this button destroys something"
+  (caught in review). `TrashIcon` is now shared between the two.
+
+  **Clear draws a trash can, not an ✕.** The ✕ is the app's close
+  mark — the modal, a spark chip — so putting it top-right of a panel
+  made an unconfirmed, un-undoable branch delete wear the shape and the
+  position of "dismiss this panel". The trash can is the app's existing
+  delete idiom, and moving to `.bar-icon`'s padding also took the target
+  from 28px to 32px, with a wider gap from Replace than the save bar
+  uses because Clear is the destructive one of an adjacent pair.
+
+  **`aria-label` names the node, `title` doesn't.** "Clear Grandparent
+  1-2" as the accessible name, because "Clear" alone is ambiguous on a
+  panel you reached by clicking one of 31 tiles; "Clear this node" as
+  the tooltip, because an unfamiliar icon is only discoverable on hover.
+  They must differ: a `title` matching the accessible name becomes the
+  accessible *description*, and screen readers then announce the node
+  twice. This is the blueprint bar's convention, arrived at there first.
+
+  Neither button renders where it doesn't apply — no Replace on a node
+  with nobody in it. The residual cost stands: Clear is destructive (on
+  a pulled veteran it takes her whole branch, autosaved) and an icon
+  states that less loudly than a word did.
 
   **Owned-link was built first, shipped on the map, and then withdrawn —
   it ranks the tree wrong.** `t-p1` and `t-p2` are the only two links in

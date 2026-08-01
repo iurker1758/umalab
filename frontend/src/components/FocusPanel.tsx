@@ -51,6 +51,7 @@ export function FocusPanel({
   aptitudesFor,
   affinity,
   affinityFailed,
+  affinityPending,
   onOpenPicker,
   onClear,
   onSetSpark,
@@ -65,6 +66,8 @@ export function FocusPanel({
   // threshold (no trainee, or no parent) as well as before the first result.
   affinity: AffinityResult | null;
   affinityFailed: boolean;
+  // A score is on the wire — see AffinityPanel's `pending`.
+  affinityPending: boolean;
   onOpenPicker: (i: number) => void;
   onClear: (i: number) => void;
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
@@ -192,7 +195,12 @@ export function FocusPanel({
           // The trainee with nobody cast yet: the section is what says the
           // score is waiting on a pick, rather than the panel simply not
           // mentioning affinity until you happen to fill two nodes.
-          <AffinityPanel affinity={affinity} failed={affinityFailed} traineeSet={false} />
+          <AffinityPanel
+            affinity={affinity}
+            failed={affinityFailed}
+            pending={affinityPending}
+            traineeSet={false}
+          />
         )}
       </div>
     );
@@ -247,7 +255,12 @@ export function FocusPanel({
       <AptitudeTable rows={rows} />
       {index === 0 ? (
         <>
-          <AffinityPanel affinity={affinity} failed={affinityFailed} traineeSet />
+          <AffinityPanel
+            affinity={affinity}
+            failed={affinityFailed}
+            pending={affinityPending}
+            traineeSet
+          />
           <p className="focus-note">Inspiration proc estimates are still to come.</p>
         </>
       ) : (

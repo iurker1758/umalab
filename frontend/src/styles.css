@@ -441,7 +441,7 @@ button.bp-row:hover { background: #1e2937; }
 .g2 .apt-cell-tag { font-size: 0.5rem; }
 .g2 .apt-cell b { font-size: 0.63rem; }
 /* The grandparents' tile shrinks with their letter cells — four chips to a
-   row down here, and "Affinity +16" has to clear ~90px. */
+   row down here, and "Affinity 16" has to clear ~90px. */
 .g2 .aff-chip { gap: 3px; padding: 0 3px; }
 .g2 .aff-chip-tag { font-size: 0.5rem; }
 .g2 .aff-chip-sym { font-size: 0.72rem; }

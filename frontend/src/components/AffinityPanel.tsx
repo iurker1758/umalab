@@ -1,4 +1,4 @@
-import type { AffinityResult } from "../api";
+import { AFFINITY_SLOTS, type AffinityResult, type AffinitySlotId } from "../api";
 import { LINK_LABELS, NODE_LINKS, affinitySlotOf } from "../blueprint";
 import { affinityClass } from "../domain";
 
@@ -16,9 +16,14 @@ import { affinityClass } from "../domain";
 export function AffinityPanel({
   affinity,
   traineeSet,
+  pending = false,
   failed = false,
 }: {
   affinity: AffinityResult | null;
+  // A request is out but hasn't landed. Without this the panel falls back to
+  // the below-threshold hint and asks for a parent that is visibly already in
+  // the tree — the debounce plus a round trip is long enough to read.
+  pending?: boolean;
   // Whether the trainee is cast, which is half of the scoring threshold —
   // so the hint below can name what's actually missing rather than asking
   // for a trainee that's already in the slot above it.
@@ -37,7 +42,9 @@ export function AffinityPanel({
         </p>
       ) : affinity === null ? (
         <p className="focus-note">
-          Pick {traineeSet ? "" : "a trainee and "}at least one parent to score the pairing.
+          {pending
+            ? "Scoring…"
+            : `Pick ${traineeSet ? "" : "a trainee and "}at least one parent to score the pairing.`}
         </p>
       ) : (
         <>
@@ -114,10 +121,20 @@ export function NodeAffinity({
   const share = affinity[`${id}_affinity`];
   if (share === null) return null;
   const byLink = new Map(affinity.links.map((l) => [l.link, l]));
-  const rows = (NODE_LINKS[index] ?? []).flatMap((link) => {
-    const entry = byLink.get(link);
-    return entry === undefined ? [] : [entry];
-  });
+  // `affinity.links` always carries all seven rows, zeroed for the ones whose
+  // members aren't cast yet. Listing those would print "Parent 1 · GP 1-1  0"
+  // for a grandparent nobody has — and "nobody there" versus "there and worth
+  // nothing" is the distinction this panel and the tiles both keep.
+  const occupied = (part: string): boolean =>
+    part === "t" ||
+    ((AFFINITY_SLOTS as readonly string[]).includes(part) &&
+      affinity[`${part as AffinitySlotId}_affinity`] !== null);
+  const rows = (NODE_LINKS[index] ?? [])
+    .filter((link) => link.split("-").every(occupied))
+    .flatMap((link) => {
+      const entry = byLink.get(link);
+      return entry === undefined ? [] : [entry];
+    });
   return (
     <>
       <h4>Affinity</h4>

@@ -67,15 +67,6 @@ export const NAMED_LABELS: readonly string[] = [
 export const affinitySlotOf = (i: number): AffinitySlotId | null =>
   i >= 1 && i <= AFFINITY_SLOTS.length ? AFFINITY_SLOTS[i - 1] : null;
 
-// The link each node OWNS, for the map's decomposition: every term belongs to
-// its deepest participant, so the six tiles plus the parent-pair link add up
-// to the total exactly. `p1-p2` is owned by neither parent alone and appears
-// on no tile — it is the gap between them (DECISIONS.md #15/#29).
-//
-// Not the same quantity as the API's `*_affinity`, which gives a parent her
-// whole side (both triples included) because that is what an inspiration proc
-// off her is rolled against. The two agree on grandparents and differ on
-// parents; uma.moe carries both for the same reason.
 // Every link a node APPEARS in — what its individual affinity sums (see
 // affinity.node_affinity) and what an inspiration proc off it rolls against.
 // A parent's four include the two below her and the parent pair, so a

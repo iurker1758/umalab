@@ -319,6 +319,14 @@ export function DesignerPage({
         setSavedJson(JSON.stringify(bodyOf(d)));
         writeOpenId(bp.id);
         setSelected(0);
+        // The score belongs to the blueprint you just left. Keyed on the
+        // request payload alone it would survive the switch — the new design
+        // is scorable too — and the incoming blueprint would wear the old
+        // one's total, band and six per-node numbers until the debounce and
+        // round trip finished. Cleared here rather than in the scoring
+        // effect: this is the one place a design's IDENTITY changes.
+        setAffinity(null);
+        setScoreFailed(false);
       } catch {
         // Left alone rather than opened half-parsed: editing it here would
         // overwrite whatever the row actually holds. The design on screen
@@ -508,6 +516,10 @@ export function DesignerPage({
   // longer being made.
   const shownAffinity = affinityKey === null ? null : affinity;
   const shownScoreFailed = affinityKey !== null && scoreFailed;
+  // Scorable, but no answer yet — the debounce, the request, or a blueprint
+  // switch that just cleared the previous one. Distinguishes "waiting" from
+  // "you haven't picked enough yet", which look identical from `affinity`.
+  const affinityPending = shownAffinity === null && !shownScoreFailed && affinityKey !== null;
 
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
@@ -939,6 +951,7 @@ export function DesignerPage({
             aptitudesFor={aptitudesFor}
             affinity={shownAffinity}
             affinityFailed={shownScoreFailed}
+            affinityPending={affinityPending}
             onOpenPicker={setPickerFor}
             onClear={clearSlot}
             onSetSpark={setSpark}

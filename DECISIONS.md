@@ -1249,9 +1249,10 @@ Keep adding entries as the build evolves. This file is the interview.
   nothing, a grandparent repeating the trainee keeps its wins and loses
   its triple, and a grandparent whose parent slot is empty attributes 0
   — while an *unfilled* slot stays `null`, because "nobody there" and
-  "there and worth nothing" are different rows in the panel. The p1–p2
-  win overlap stays out of both parents' shares, unchanged and still
-  pending in-game verification (#15).
+  "there and worth nothing" are different rows in the panel. **The p1–p2
+  link counts into BOTH parents' shares** — relation points and win
+  bonus alike, deliberately double-counted; #15 records the measurement
+  that settled it.
 
   **There are two decompositions, and each answers a different
   question. Both are needed; neither is a view of the other.**
@@ -1264,10 +1265,11 @@ Keep adding entries as the build evolves. This file is the interview.
     the total **plus** that link rather than to the total. This is the
     **proc-roll** quantity: an inspiration is rolled per ancestor, and
     the composition is measured, not chosen (#15).
-  - **Owned-link (the map tiles).** Every term belongs to its deepest
-    participant: a parent gets only her pair link with the trainee, a
-    grandparent its triple. Nothing is counted twice, and the six tiles
-    plus the `p1-p2` link equal the total exactly. This is the
+  - **Owned-link (built, then withdrawn — see below).** Every term
+    belongs to its deepest participant: a parent gets only her pair link
+    with the trainee, a grandparent its triple. Nothing is counted
+    twice, and the six values plus the `p1-p2` link equal the total
+    exactly. This is the
     **contribution** quantity — "what does this uma add?"
 
   **The map shows individual affinity on every named node**, with the
@@ -1306,10 +1308,10 @@ Keep adding entries as the build evolves. This file is the interview.
   p1-p2 relation points that #15's evidence includes.
 
   On the map the trainee's tile shows the run total with its band
-  symbol; the six ancestors are **signed (`+16`) and bandless**, because
-  a contribution is an addend and the △/○/◎ table grades whole pairings
-  — a symbol on a part would invite reading a grandparent's 16 as a
-  compatibility rating.
+  symbol; the six ancestors are **plain and bandless** — no `+`, because
+  the numbers nest and adding them up is exactly what the sign would
+  invite, and no symbol, because the △/○/◎ table grades whole pairings
+  and one on a single ancestor would read as a rating for her alone.
 
   It goes **inside the head row**, not on a row of its own: the head is
   a four-column grid whose left half is the portrait, so the affinity

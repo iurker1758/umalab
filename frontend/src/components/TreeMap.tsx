@@ -118,10 +118,12 @@ export function TreeMap({
     if (affinity === null) return null;
     if (i === 0) return { text: String(affinity.total), symbol: affinity.symbol };
     const id = affinitySlotOf(i);
-    // Null exactly when the design that was SCORED had nobody here, which
-    // keeps the tile in step with the numbers beside it rather than with a
-    // design the debounce hasn't caught up to.
-    const share = id === null ? null : affinity[`${id}_affinity`];
+    // Gated on the design as it stands NOW, not only on what the last score
+    // knew: clearing a node re-renders instantly while the re-score is a
+    // debounce away, and a slot nobody occupies must not keep showing the
+    // number its previous occupant earned — on the tile or in the label.
+    if (id === null || design.named[i]?.chara_id == null) return null;
+    const share = affinity[`${id}_affinity`];
     // Unsigned: "+175" invites adding the tiles up, which is the one thing
     // this quantity doesn't support.
     return share === null ? null : { text: String(share), symbol: null };

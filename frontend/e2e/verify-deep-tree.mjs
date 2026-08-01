@@ -571,12 +571,15 @@ try {
     (await page.locator(".aff-links tbody tr").count()) === 7 &&
     (await page.locator(".aff-links thead th").allTextContents()).join(",") ===
       "Link,Rel.,Wins,Total");
-  // Per-link, not per-ancestor: the response carries a `*_affinity` share for
-  // each of the six, but the panel deliberately doesn't show them — a
-  // parent's share is only its own rows added up. They exist for the
-  // inspiration-proc model (7c), which rolls per ancestor.
-  check("no per-ancestor breakdown in the panel",
-    (await page.locator(".aff-shares").count()) === 0);
+  // Per-link, not per-ancestor: the response carries a `*_affinity` for each
+  // of the six, but the TRAINEE's panel shows the run's link table, not a
+  // roll-up of the ancestors. Their individual numbers live on their own
+  // panels (`.aff-compose`), which is what this asserts is absent here —
+  // an earlier version of this check queried a class no component renders,
+  // so it passed no matter what the panel contained.
+  check("the trainee's panel breaks the run down by link, not by ancestor",
+    (await page.locator(".focus .aff-links").count()) === 1 &&
+    (await page.locator(".focus .aff-compose").count()) === 0);
   check("the link rows sum to the total",
     (await page.locator(".aff-link-sum").allTextContents())
       .slice(1)  // drop the column header
@@ -674,6 +677,13 @@ try {
       String(expectedAff.g11_affinity) &&
     (await page.locator(".focus .aff-compose").count()) === 0 &&
     (await page.locator(".focus .aff-caption").textContent()) === "Parent 1 · GP 1-1");
+  // G2-1 and G2-2 are unfilled in this cast, so P2's composition must list
+  // only the links whose other member exists — a zeroed row would claim a
+  // grandparent nobody has.
+  await selectNode("Parent 2");
+  check("a parent's composition skips links into empty slots",
+    (await page.locator(".focus .aff-compose .aff-link-name").allTextContents()).join(",") ===
+      "Trainee · Parent 2,Parent 1 · Parent 2");
   await selectNode("Trainee");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');
   check("map chip shows all ten labeled letters",
@@ -912,6 +922,14 @@ try {
   await page.locator('button[aria-label="Clear Grandparent 1-2"]').click();
   check("cleared g12",
     (await mapChip("Grandparent 1-2").getAttribute("aria-label")) === "Grandparent 1-2 — empty");
+  // Read in the same breath as the clear, before the debounced re-score can
+  // land: an emptied node must drop its affinity immediately rather than keep
+  // showing what its previous occupant earned. Gating the tile on the CURRENT
+  // design is what makes the assertion above safe too — otherwise the label
+  // carries a stale "· affinity N" suffix and that check flakes by machine
+  // speed.
+  check("and drops its affinity at once, without waiting for the re-score",
+    (await mapChip("Grandparent 1-2").locator(".aff-chip b.blank").count()) === 1);
   check("clearing g12 keeps the deep sparks",
     (await mapChip("Sparks 3-1").getAttribute("aria-label")) === "Sparks 3-1 — 3★ Mile");
   await selectNode("Parent 1");

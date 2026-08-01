@@ -351,10 +351,12 @@ button.bp-row:hover { background: #1e2937; }
    width and the columns line up down the card; the icon spans the two
    columns the track pair leaves free. */
 .vnode .head, .vnode .apt-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; align-items: center; }
-/* The head row is as tall as the portrait, so the track pair sits at its
-   bottom edge — flush with the distance row below it, not floating mid-air. */
-.vnode .head { align-items: end; }
-.vnode .head img, .vnode .head .lineage-icon-fallback { grid-column: span 2; justify-self: center; align-self: center; width: 52px; height: 52px; object-fit: contain; font-size: 1.3rem; }
+/* The head is two rows deep: the portrait spans both on the left, and the
+   right half carries the affinity tile over the track pair. The row was
+   always as tall as the portrait with the track letters floating at its
+   bottom edge — the tile fills that space rather than adding to it. */
+.vnode .head { align-items: end; grid-template-rows: repeat(2, 1fr); }
+.vnode .head img, .vnode .head .lineage-icon-fallback { grid-column: span 2; grid-row: span 2; justify-self: center; align-self: center; width: 52px; height: 52px; object-fit: contain; font-size: 1.3rem; }
 /* Row 5: the name foots the card as its own tinted band, full width, so
    it rarely truncates and reads apart from the letter grid. */
 .vnode .nname { align-self: stretch; text-align: center; background: #223247; color: #cfe0f5; border-radius: 5px; padding: 3px 4px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -408,6 +410,20 @@ button.bp-row:hover { background: #1e2937; }
 /* Empty slots (and letter-less cards) hold the space with a dash. */
 .apt-cell b.blank { opacity: 0.35; font-weight: 400; }
 /* Row 4: the member's typed pink — centered, name + out-of-3 stars. */
+/* The affinity tile: the run's total on the trainee, each ancestor's own
+   contribution on the six named nodes below it. Takes the two head columns
+   the portrait leaves, with the track pair tucked under it. Same band
+   treatment as an aptitude cell so it reads as part of the card, but centred
+   rather than label-left/value-right — two columns wide, that split leaves a
+   gap in the middle wide enough to read as two separate things. */
+.aff-chip { grid-column: 3 / span 2; grid-row: 1; align-self: stretch; display: flex; align-items: center; justify-content: center; gap: 5px; background: #1a2027; border-radius: 5px; padding: 0 5px; }
+.vnode.sel .aff-chip, .vnode:hover .aff-chip { background: #16202c; }
+.aff-chip-tag { font-size: 0.58rem; line-height: 1.2; opacity: 0.55; }
+.aff-chip-val { display: flex; align-items: center; gap: 4px; }
+.aff-chip-sym { font-size: 0.82rem; line-height: 1; }
+.aff-chip b { font-size: 0.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.aff-chip b.blank { opacity: 0.35; font-weight: 400; }
+
 .spark-row { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.68rem; font-weight: 700; color: #ff7fb8; }
 .spark-row.none { color: #6b7280; font-weight: 400; }
 /* The only tooltip on a chip, so it has to advertise itself: a red-tinted
@@ -424,6 +440,12 @@ button.bp-row:hover { background: #1e2937; }
 .g2 .apt-cell { gap: 2px; height: 1.35rem; padding: 0 0 0 2px; }
 .g2 .apt-cell-tag { font-size: 0.5rem; }
 .g2 .apt-cell b { font-size: 0.63rem; }
+/* The grandparents' tile shrinks with their letter cells — four chips to a
+   row down here, and "Affinity 16" has to clear ~90px. */
+.g2 .aff-chip { gap: 3px; padding: 0 3px; }
+.g2 .aff-chip-tag { font-size: 0.5rem; }
+.g2 .aff-chip-sym { font-size: 0.72rem; }
+.g2 .aff-chip b { font-size: 0.68rem; }
 .g2 .spark-row { font-size: 0.63rem; }
 .node-warns { position: absolute; top: -4px; right: -4px; display: flex; gap: 2px; }
 .node-warn { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #101418; }
@@ -442,6 +464,31 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .focus-pick { width: 100%; border: 1px dashed #3a4250; background: #1a2027; color: #9aa1ab; }
 .focus-pick:hover { border-color: #2a76c9; color: inherit; }
 .focus-note { margin: 0.5rem 0 0; opacity: 0.65; font-size: 0.85rem; }
+
+/* Run affinity, on the trainee's panel only. */
+.aff-error { color: #ff8a80; opacity: 1; }
+.aff-total { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.2rem; }
+.aff-symbol { font-size: 1.6rem; line-height: 1; }
+.aff-low { color: #9aa1ab; }
+.aff-good { color: #4da3ff; }
+.aff-best { color: #ffd257; }
+.aff-number { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.aff-links { width: 100%; margin-top: 0.6rem; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.aff-links td { padding: 0.22rem 0.3rem; font-size: 0.85rem; border-top: 1px solid #1f2833; }
+/* Column headers read as a caption for the numbers, not as a first row:
+   no rule above them, and quiet enough that the totals stay the figure. */
+.aff-links th { padding: 0 0.3rem 0.15rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.45; white-space: nowrap; }
+/* th centres by default; the numeric columns keep the right edge their
+   values already align to, and the link column its left one. */
+.aff-links th.aff-link-name { text-align: left; }
+.aff-link-name { opacity: 0.75; }
+.aff-link-pts { text-align: right; opacity: 0.65; }
+.aff-link-sum { text-align: right; font-weight: 600; }
+/* The composition table on an ancestor's panel: two columns, and it sits
+   under a number rather than over one, so no top rule on the first row. */
+.aff-compose tr:first-child td { border-top: 0; }
+/* A grandparent's single link, named rather than tabulated. */
+.aff-caption { opacity: 0.65; font-size: 0.82rem; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */

@@ -1,4 +1,4 @@
-import type { AptitudeKey, AptitudeLetters } from "../api";
+import type { AffinityResult, AptitudeKey, AptitudeLetters } from "../api";
 import {
   APTITUDE_GROUPS,
   APTITUDE_LABELS,
@@ -10,6 +10,7 @@ import {
 import {
   NAMED_COUNT,
   NODE_COUNT,
+  affinitySlotOf,
   deepCardAt,
   deriveCharaId,
   genOf,
@@ -17,7 +18,7 @@ import {
   sparkAt,
   type Design,
 } from "../blueprint";
-import { gradeClass, isCharaPlaceholder } from "../domain";
+import { affinityClass, gradeClass, isCharaPlaceholder } from "../domain";
 
 // The 31-node vertical pedigree map (Option C, mockup rev 2): a 16-column
 // grid where a node spans its children's columns, generations as rows.
@@ -31,6 +32,7 @@ export function TreeMap({
   charaName,
   aptitudesFor,
   iconIndex,
+  affinity,
   side = null,
 }: {
   design: Design;
@@ -40,6 +42,10 @@ export function TreeMap({
   charaName: (charaId: number) => string | null;
   aptitudesFor: (cardId: number) => AptitudeLetters | null;
   iconIndex: Record<string, string>;
+  // The run's affinity, shown on the trainee's chip. Null below the scoring
+  // threshold or while the first score is in flight — the row holds its space
+  // either way, so the map's geometry doesn't jump when the number lands.
+  affinity: AffinityResult | null;
   // Narrow screens view one parent's half at a time (node 1 or 2): sixteen
   // gen-4 columns can't be read on a phone. null ⇒ the whole tree.
   side?: number | null;
@@ -84,6 +90,45 @@ export function TreeMap({
     );
   };
 
+  // What a named node is worth in affinity. The trainee shows the RUN's total
+  // with its band symbol — the number the game puts on the parent-select
+  // screen. Every ancestor shows its INDIVIDUAL affinity: every link it
+  // appears in, which is what an inspiration proc off it rolls against.
+  // Bandless, because the △/○/◎ table grades whole pairings — a symbol on one
+  // ancestor would read as a compatibility rating for her alone.
+  //
+  // These deliberately do NOT sum to the trainee's total: a grandparent's
+  // number sits inside its parent's, and the p1-p2 link sits inside both
+  // parents'. The focus panel shows each node's composition, which is where
+  // that nesting is explained (DECISIONS.md #29).
+  //
+  // The rejected alternative was the owned-link decomposition — one link per
+  // node, six tiles summing to the total. It reads tidily and it RANKS THE
+  // TREE WRONG: `t-p1` and `t-p2` are the only links that can never carry a
+  // win bonus (the trainee hasn't raced), so every win point lands on a
+  // grandparent's tile and parents show as the weakest nodes on any lineage
+  // with real overlap. Measured on a real ◎ blueprint: parents +18/+24
+  // against grandparents +48/+50/+63/+70, where the individual numbers are
+  // 175/216 against 48/50/63/70. Correct ranking beats additive tidiness —
+  // nobody sums across generations, everybody compares slots.
+  //
+  // Null ⇒ nothing to show yet: no score, or a slot with nobody in it. Both
+  // render as the placeholder, so the tile holds its footprint either way.
+  const affinityOf = (i: number): { text: string; symbol: string | null } | null => {
+    if (affinity === null) return null;
+    if (i === 0) return { text: String(affinity.total), symbol: affinity.symbol };
+    const id = affinitySlotOf(i);
+    // Gated on the design as it stands NOW, not only on what the last score
+    // knew: clearing a node re-renders instantly while the re-score is a
+    // debounce away, and a slot nobody occupies must not keep showing the
+    // number its previous occupant earned — on the tile or in the label.
+    if (id === null || design.named[i]?.chara_id == null) return null;
+    const share = affinity[`${id}_affinity`];
+    // Unsigned: "+175" invites adding the tiles up, which is the one thing
+    // this quantity doesn't support.
+    return share === null ? null : { text: String(share), symbol: null };
+  };
+
   const chip = (i: number, gen: number) => {
     const sel = selected === i;
     if (i < NAMED_COUNT) {
@@ -121,6 +166,7 @@ export function TreeMap({
       // behind them are the expensive part, and this runs for every named
       // node on every render.
       const warn = empty ? false : undroppableSpark(rows, design, i);
+      const aff = affinityOf(i);
       const cell = (k: AptitudeKey) => {
         const r = byKey.get(k);
         // "-" also covers a filled card whose letters are unknown.
@@ -155,12 +201,19 @@ export function TreeMap({
           // Keyed off whether a character is CAST, not off whether its name
           // has arrived: a cast node whose catalog entry is still loading
           // must not read as an empty one.
+          // The affinity rides along on the label so the readout isn't a
+          // symbol-and-number tile only to a screen reader. Appended, never
+          // prefixed: "<node> — " is what everything else keys off.
           aria-label={`${nodeLabel(i)} — ${
             chara !== null
               ? (name ?? "…")
               : spark === null
                 ? "empty"
                 : `${spark.stars}★ ${APTITUDE_LABELS[spark.aptitude]}`
+          }${
+            aff === null
+              ? ""
+              : ` · affinity ${aff.symbol === null ? "" : `${aff.symbol} `}${aff.text}`
           }`}
           title={empty ? nodeLabel(i) : undefined}
           aria-pressed={sel}
@@ -176,6 +229,28 @@ export function TreeMap({
             ) : (
               <span className="lineage-icon-fallback">{initial(chara === null ? null : card, name)}</span>
             )}
+            {/* Affinity, on every node the game scores one for: the run's
+                total on the trainee, each ancestor's own contribution to it
+                below. It rides in the head rather than on a row of its own —
+                the portrait spans the left half, so this takes the right
+                half as a wide tile and the track pair tucks under it, which
+                costs the chip no height. Explained in the focus panel; this
+                is the readout. */}
+            <span className="aff-chip">
+              <span className="aff-chip-tag">Affinity</span>
+              {aff === null ? (
+                <b className="blank">-</b>
+              ) : (
+                <span className="aff-chip-val">
+                  {aff.symbol !== null && (
+                    <span className={`aff-chip-sym ${affinityClass(aff.symbol)}`}>
+                      {aff.symbol}
+                    </span>
+                  )}
+                  <b>{aff.text}</b>
+                </span>
+              )}
+            </span>
             {trackKeys.map(cell)}
           </span>
           <span className="apt-row">{distanceKeys.map(cell)}</span>

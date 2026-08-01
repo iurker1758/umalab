@@ -10,6 +10,8 @@ import {
 import {
   ApiError,
   api,
+  type AffinityRequest,
+  type AffinityResult,
   type AptitudeLetters,
   type Blueprint,
   type BlueprintIn,
@@ -41,6 +43,7 @@ import {
   slotConflicts,
   sourceAt,
   sparkLocked,
+  toAffinityRequest,
   toApi,
   withDeep,
   withDeepCard,
@@ -60,6 +63,9 @@ const AUTOSAVE_MS = 800;
 // backend that comes back after lunch is still picked up promptly.
 const RETRY_MS = 4000;
 const RETRY_MAX_MS = 30000;
+// Scoring is a POST per edit, so it waits out a burst of picks. Shorter than
+// the autosave: this one has a number on screen waiting on it.
+const AFFINITY_DEBOUNCE_MS = 250;
 
 // One bootstrap create per page load, shared across mounts. The page
 // unmounts on every route change, so a quick Designer → Roster → Designer
@@ -152,6 +158,8 @@ export function DesignerPage({
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
+  const [affinity, setAffinity] = useState<AffinityResult | null>(null);
+  const [scoreFailed, setScoreFailed] = useState(false);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [autosaving, setAutosaving] = useState(false);
@@ -311,6 +319,14 @@ export function DesignerPage({
         setSavedJson(JSON.stringify(bodyOf(d)));
         writeOpenId(bp.id);
         setSelected(0);
+        // The score belongs to the blueprint you just left. Keyed on the
+        // request payload alone it would survive the switch — the new design
+        // is scorable too — and the incoming blueprint would wear the old
+        // one's total, band and six per-node numbers until the debounce and
+        // round trip finished. Cleared here rather than in the scoring
+        // effect: this is the one place a design's IDENTITY changes.
+        setAffinity(null);
+        setScoreFailed(false);
       } catch {
         // Left alone rather than opened half-parsed: editing it here would
         // overwrite whatever the row actually holds. The design on screen
@@ -450,6 +466,60 @@ export function DesignerPage({
     (cardId: number) => cardById.get(cardId)?.outfit ?? null,
     [cardById]
   );
+
+  // ---------- run affinity ----------
+  // Scoring threshold: a trainee plus at least one parent. Below that there
+  // is no pairing to score, and an empty request would come back as a
+  // confident zero. Keyed on the request JSON, so renaming the blueprint or
+  // typing a spark four generations down doesn't re-score — only the six
+  // slots and the trainee are in it.
+  const affinityKey = useMemo(() => {
+    const request = toAffinityRequest(design);
+    const scorable =
+      request.trainee_chara_id !== null && (request.p1 != null || request.p2 != null);
+    return scorable ? JSON.stringify(request) : null;
+  }, [design]);
+
+  useEffect(() => {
+    if (affinityKey === null) return;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      api
+        .scoreAffinity(JSON.parse(affinityKey) as AffinityRequest, ctrl.signal)
+        .then((result) => {
+          if (!ctrl.signal.aborted) {
+            setAffinity(result);
+            setScoreFailed(false);
+          }
+        })
+        .catch(() => {
+          // Aborts are ours (a newer edit superseded this request). Real
+          // failures clear the result — the old design's numbers must not
+          // keep masquerading as current — and report inline in the panel
+          // rather than toasting once per edit while the backend is down.
+          if (!ctrl.signal.aborted) {
+            setAffinity(null);
+            setScoreFailed(true);
+          }
+        });
+    }, AFFINITY_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [affinityKey]);
+
+  // Below the threshold the last result is simply not shown — gating at
+  // render time avoids a synchronous setState-in-effect just to clear it.
+  // The failure goes with it: emptying the tree after a failed score should
+  // leave the "pick a trainee" hint, not an error about a request that is no
+  // longer being made.
+  const shownAffinity = affinityKey === null ? null : affinity;
+  const shownScoreFailed = affinityKey !== null && scoreFailed;
+  // Scorable, but no answer yet — the debounce, the request, or a blueprint
+  // switch that just cleared the previous one. Distinguishes "waiting" from
+  // "you haven't picked enough yet", which look identical from `affinity`.
+  const affinityPending = shownAffinity === null && !shownScoreFailed && affinityKey !== null;
 
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
@@ -867,6 +937,7 @@ export function DesignerPage({
             charaName={charaName}
             aptitudesFor={aptitudesFor}
             iconIndex={iconIndex}
+            affinity={shownAffinity}
             side={shownSide}
           />
         </div>
@@ -878,6 +949,9 @@ export function DesignerPage({
             charaName={charaName}
             outfitFor={outfitFor}
             aptitudesFor={aptitudesFor}
+            affinity={shownAffinity}
+            affinityFailed={shownScoreFailed}
+            affinityPending={affinityPending}
             onOpenPicker={setPickerFor}
             onClear={clearSlot}
             onSetSpark={setSpark}

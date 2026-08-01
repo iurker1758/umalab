@@ -132,6 +132,45 @@ export interface CatalogEntry {
   cards: CatalogCard[];
 }
 
+// ---------- run affinity ----------
+// The six lineage slots the game scores affinity over: the parents and their
+// parents. Everything deeper in the 31-node tree exists for the bracket math
+// and never reaches this request.
+export const AFFINITY_SLOTS = ["p1", "p2", "g11", "g12", "g21", "g22"] as const;
+export type AffinitySlotId = (typeof AFFINITY_SLOTS)[number];
+
+// A filled slot in the stateless scoring request: the chara plus its raw
+// won-saddle ids, which the server expands to G1 race sets. Catalog picks
+// legitimately send an empty array — they still score their relation terms,
+// so no wins is not the same as no slot.
+export interface AffinitySlotRequest {
+  chara_id: number;
+  win_saddle_ids: number[];
+}
+
+export type AffinityRequest = {
+  trainee_chara_id: number | null;
+} & Partial<Record<AffinitySlotId, AffinitySlotRequest | null>>;
+
+export interface AffinityLink {
+  link: string;
+  relation_points: number;
+  win_points: number;
+}
+
+// Per-slot attribution: what one ancestor contributes on the links it
+// appears in. Null while that slot is empty — which the panel shows as no
+// row at all, not as a zero.
+export type AffinityShares = Record<`${AffinitySlotId}_affinity`, number | null>;
+
+export type AffinityResult = {
+  total: number;
+  symbol: string;
+  relation_total: number;
+  win_total: number;
+  links: AffinityLink[];
+} & AffinityShares;
+
 export interface BlueprintSlot {
   source: "catalog" | "roster" | "lineage";
   // Null together on a spark-only slot — a node whose pink is planned but
@@ -232,8 +271,15 @@ export const api = {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     }),
   catalog: () => fetch("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
-  // /api/affinity exists but the designer doesn't call it yet — run affinity
-  // needs per-grandparent attribution, which lands in the next PR.
+  // Takes a signal so the designer's debounced effect can abort a stale
+  // request instead of racing it against the newer one.
+  scoreAffinity: (body: AffinityRequest, signal?: AbortSignal) =>
+    fetch("/api/affinity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    }).then((r) => json<AffinityResult>(r)),
   blueprints: () => fetch("/api/blueprints").then((r) => json<Blueprint[]>(r)),
   createBlueprint: (body: BlueprintIn) =>
     fetch("/api/blueprints", {

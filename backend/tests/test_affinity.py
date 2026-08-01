@@ -4,6 +4,9 @@ also exercise the saddle→race expansion pipeline production uses) and the
 shape sanity checks at the bottom.
 """
 from app.affinity import (
+    ATTRIBUTED_SLOTS,
+    GRANDPARENT_PARENT,
+    PARENT_GRANDPARENTS,
     RELATION_LINKS,
     WIN_POINTS_PER_SHARED_G1,
     RelationTable,
@@ -133,8 +136,14 @@ def test_full_tree_totals_decompose() -> None:
     assert result["relation_total"] == 42
     assert result["win_total"] == 0
     assert result["total"] == 42
-    assert result["p1_affinity"] == 15 + 5 + 0
-    assert result["p2_affinity"] == 5 + 5 + 0
+    # Each parent's own side plus the p1-p2 link (12), which both of them get.
+    assert result["p1_affinity"] == 15 + 5 + 0 + 12
+    assert result["p2_affinity"] == 5 + 5 + 0 + 12
+    # A grandparent carries only its own triple.
+    assert result["g11_affinity"] == 5
+    assert result["g12_affinity"] == 0
+    assert result["g21_affinity"] == 5
+    assert result["g22_affinity"] == 0
 
 
 def test_partial_blueprint_scores_live() -> None:
@@ -162,8 +171,9 @@ def test_no_trainee_scores_trainee_independent_links() -> None:
     assert result["relation_total"] == 15  # rel2(100, 200); all t-links 0
     assert result["win_total"] == WIN_POINTS_PER_SHARED_G1
     assert result["total"] == 15 + WIN_POINTS_PER_SHARED_G1
-    assert result["p1_affinity"] == 0  # set parent, but no t-links or GP wins
-    assert result["p2_affinity"] == 0
+    # No t-links and no GP wins, but the p1-p2 link still lands in both.
+    assert result["p1_affinity"] == 15 + WIN_POINTS_PER_SHARED_G1
+    assert result["p2_affinity"] == 15 + WIN_POINTS_PER_SHARED_G1
 
 
 def test_shared_wins_score_on_parent_links() -> None:
@@ -178,10 +188,11 @@ def test_shared_wins_score_on_parent_links() -> None:
     assert win_by_link["p1-p2"] == WIN_POINTS_PER_SHARED_G1
     assert win_by_link["t-p1-g11"] == WIN_POINTS_PER_SHARED_G1
     assert result["win_total"] == 2 * WIN_POINTS_PER_SHARED_G1
-    # Parent-own-grandparent wins count toward that parent's individual
-    # affinity; the p1-p2 overlap doesn't (pending in-game verification).
-    assert result["p1_affinity"] == 15 + WIN_POINTS_PER_SHARED_G1
-    assert result["p2_affinity"] == 5
+    # Both the parent-own-grandparent win and the p1-p2 link (rel 12 + one
+    # shared race) count toward each parent's individual affinity.
+    pair_link = 12 + WIN_POINTS_PER_SHARED_G1  # rel2(200, 300) + their shared race
+    assert result["p1_affinity"] == 15 + WIN_POINTS_PER_SHARED_G1 + pair_link
+    assert result["p2_affinity"] == 5 + pair_link
 
 
 def test_cross_family_wins_never_score() -> None:
@@ -201,6 +212,102 @@ def test_duplicate_race_counts_once() -> None:
     wins = g1_wins([1, 2], SADDLE_FIXTURE)  # race 10 appears in both saddles
     result = score_blueprint(TABLE, 100, p1=Slot(200, wins=wins), p2=Slot(300, wins=_w(10)))
     assert result["win_total"] == WIN_POINTS_PER_SHARED_G1
+
+
+# ---------- per-slot attribution ----------
+# Each ancestor's own share of the total. The inspiration-proc model rolls
+# per ancestor, so a grandparent needs ITS number rather than its parent's.
+
+
+def test_attributed_slots_match_the_link_families() -> None:
+    # A guard on the three constants staying one description of the tree:
+    # the spelled-out result keys below are built from these.
+    assert set(ATTRIBUTED_SLOTS) == set(PARENT_GRANDPARENTS) | set(GRANDPARENT_PARENT)
+    assert len(ATTRIBUTED_SLOTS) == len(set(ATTRIBUTED_SLOTS)) == 6
+    result = score_blueprint(TABLE, 100, p1=Slot(200))
+    for node in ATTRIBUTED_SLOTS:
+        assert f"{node}_affinity" in result
+
+
+def test_grandparent_attribution_is_its_own_triple_and_win_link() -> None:
+    result = score_blueprint(
+        TABLE, 100,
+        p1=Slot(200, wins=_w(10, 15)),
+        g11=Slot(300, wins=_w(10)),
+        g12=Slot(400, wins=_w(15)),
+    )
+    # g11: rel3(100, 200, 300) = 5, plus the race it shares with its parent.
+    assert result["g11_affinity"] == 5 + WIN_POINTS_PER_SHARED_G1
+    # g12: no group holds all three, but it shares race 15 with p1.
+    assert result["g12_affinity"] == WIN_POINTS_PER_SHARED_G1
+    # Unset slots stay None — "nobody there" is not "there and worth zero",
+    # and the proc panel shows a row for one and not the other.
+    assert result["g21_affinity"] is None
+    assert result["g22_affinity"] is None
+    # A parent still carries its whole side, its grandparents included.
+    assert result["p1_affinity"] == 15 + 5 + WIN_POINTS_PER_SHARED_G1 * 2
+
+
+def test_parent_attributions_double_count_the_parent_pair_link() -> None:
+    # The two sides cover every link, and the p1-p2 link lands in BOTH — it is
+    # counted twice on purpose (DECISIONS.md #15), so the shares sum to the
+    # total PLUS that link rather than to the total.
+    result = score_blueprint(
+        TABLE, 100,
+        p1=Slot(200, wins=_w(10, 15)), p2=Slot(300, wins=_w(10)),
+        g11=Slot(300), g12=Slot(400, wins=_w(15)), g21=Slot(200), g22=Slot(400),
+    )
+    pair = next(entry for entry in result["links"] if entry["link"] == "p1-p2")
+    pair_total = pair["relation_points"] + pair["win_points"]
+    p1_share, p2_share = result["p1_affinity"], result["p2_affinity"]
+    assert p1_share is not None
+    assert p2_share is not None
+    assert p1_share + p2_share == result["total"] + pair_total
+    # Each parent individually: its own side, plus the whole pair link.
+    assert p1_share == pair_total + sum(
+        entry["relation_points"] + entry["win_points"]
+        for entry in result["links"]
+        if entry["link"] in ("t-p1", "t-p1-g11", "t-p1-g12")
+    )
+
+
+def test_a_parent_with_no_partner_gets_no_pair_term() -> None:
+    # The pair link scores 0 when the other parent is empty, so a half-built
+    # design attributes what is actually there rather than a phantom bonus.
+    result = score_blueprint(TABLE, 100, p1=Slot(200, wins=_w(10)))
+    assert result["p1_affinity"] == 15
+    assert result["p2_affinity"] is None
+
+
+def test_grandparent_without_its_parent_attributes_nothing() -> None:
+    # Every link it could score through runs via the empty parent slot.
+    result = score_blueprint(TABLE, 100, g11=Slot(300, wins=_w(10)))
+    assert result["g11_affinity"] == 0
+    assert result["p1_affinity"] is None
+
+
+def test_voided_sibling_grandparent_attributes_nothing() -> None:
+    # g12 repeating g11's chara is game-rejected: the whole slot is void, so
+    # it must not attribute the win overlap the duplicate would otherwise add.
+    result = score_blueprint(
+        TABLE, 100,
+        p1=Slot(200, wins=_w(10)),
+        g11=Slot(300, wins=_w(10)),
+        g12=Slot(300, wins=_w(10)),
+    )
+    assert result["g11_affinity"] == 5 + WIN_POINTS_PER_SHARED_G1
+    assert result["g12_affinity"] == 0
+
+
+def test_grandparent_repeating_trainee_attributes_only_its_wins() -> None:
+    # The legal duplicate: the triple is excluded, the win overlap is
+    # chara-blind and stays. Attribution has to split the same way.
+    result = score_blueprint(
+        TABLE, 100,
+        p1=Slot(200, wins=_w(10)),
+        g11=Slot(100, wins=_w(10)),
+    )
+    assert result["g11_affinity"] == WIN_POINTS_PER_SHARED_G1
 
 
 # ---------- duplicate-chara exclusions ----------

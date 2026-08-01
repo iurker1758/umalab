@@ -34,9 +34,16 @@ real pedigree in with her — her succession parents and grandparents, their
 sparks, and her own trained aptitudes. That branch then reads as history
 rather than plan: it's shown but not editable, since it describes a horse you
 actually own. Manual entry stays the primary path and works with no roster at
-all. Run affinity and inspiration estimates are still to come, then
-hunted-skill spark scoring (expected sparks before/after reroll, ported from
-the predecessor tkinter app).
+all.
+
+The designer also scores the run's inheritance affinity, right on the map:
+the total and band the game shows on the parent-select screen sit on the
+trainee's node, and each parent and grandparent carries its own affinity —
+every compatibility link that member is part of, which is what decides how
+often her sparks actually pass down. The panel behind each node shows what
+that number is made of. Inspiration proc
+estimates are still to come, then hunted-skill spark scoring (expected sparks
+before/after reroll, ported from the predecessor tkinter app).
 
 ## Stack
 

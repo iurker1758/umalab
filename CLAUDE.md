@@ -15,10 +15,11 @@ Current milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation
 aptitude calculator, and roster pulls — any node but the trainee can be
 filled from your roster, which brings that veteran's real pedigree with her
-and makes the branch read-only (DECISIONS.md #28). Manual entry stays the
-primary path throughout. Still open in V2: run affinity on the trainee
-(the only backend code change left — `app/affinity.py` needs per-grandparent
-attribution), then inspiration proc estimates, labelled "est.".
+and makes the branch read-only (DECISIONS.md #28), and run affinity on the
+trainee's panel, attributed per ancestor (DECISIONS.md #29 — this was V2's
+only backend code change). Manual entry stays the primary path throughout.
+Still open in V2: inspiration proc estimates, labelled "est.", rolled per
+ancestor against that ancestor's `*_affinity` share.
 Still planned after that: hunted-skill spark scoring
 (port of the pure `expected_sparks` before/after-reroll math from the
 predecessor local tool). Leave room for it; don't build it early.

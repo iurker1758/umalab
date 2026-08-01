@@ -29,9 +29,16 @@ checks both scored the bonus, 2026-07-30). Win overlaps are NOT subject to
 the chara exclusion — a slot's races count even when its chara duplicates
 the trainee's.
 
-The per-parent `p1_affinity` / `p2_affinity` fields are the individual
-affinities the spark-scoring milestone plugs into
-`base_rate * (1 + affinity / 100)`.
+Alongside the total, every filled lineage slot gets its OWN attribution —
+`p1_affinity` / `p2_affinity` and the four `g*_affinity` fields. These are
+what the inspiration-proc and spark-scoring models plug into
+`base_rate * (1 + node_affinity / 100)`: a proc is rolled per ancestor, so
+the number that drives it is that ancestor's individual affinity, not the
+total. Attribution follows every link a node appears in, which is why a
+grandparent's is small (one triple plus one win link) and a parent's covers
+its whole side plus the p1-p2 link. The p1-p2 link therefore lands in BOTH
+parents and the six do not sum to the total — verified, not an oversight
+(DECISIONS.md #15).
 
 Algorithm structure adapted from hakuraku's VeteransHelper.ts (MIT — see
 README credits); its legacy win constants are deliberately not ported.
@@ -59,6 +66,18 @@ EMPTY_WINS = WinSet(frozenset())
 # shared G1s. Cross-family links (e.g. p1 with p2's parents) never score.
 RELATION_LINKS = ("t-p1", "t-p2", "p1-p2", "t-p1-g11", "t-p1-g12", "t-p2-g21", "t-p2-g22")
 WIN_LINKS = ("p1-p2", "p1-g11", "p1-g12", "p2-g21", "p2-g22")
+
+# Which grandparents hang off each parent — the only links either of them
+# scores through, and so the whole of what attribution has to walk.
+PARENT_GRANDPARENTS: dict[str, tuple[str, str]] = {
+    "p1": ("g11", "g12"),
+    "p2": ("g21", "g22"),
+}
+GRANDPARENT_PARENT: dict[str, str] = {
+    gp: parent for parent, gps in PARENT_GRANDPARENTS.items() for gp in gps
+}
+# The six slots an inspiration can proc from, in tree order.
+ATTRIBUTED_SLOTS = ("p1", "p2", "g11", "g12", "g21", "g22")
 
 
 @dataclass(frozen=True)
@@ -89,10 +108,16 @@ class AffinityResult(TypedDict):
     relation_total: int
     win_total: int
     links: list[LinkScore]
-    # Individual affinity per parent (None while that parent is unset):
-    # rel2(T,P) + rel3(T,P,each GP) + that parent's win links.
+    # Individual affinity per slot — None while that slot is unset, so the
+    # caller can tell "empty" from "fills no group with the trainee".
+    # A parent: rel2(T,P) + rel3(T,P,each GP) + that parent's win links.
+    # A grandparent: its own rel3(T,P,GP) + its own win link with its parent.
     p1_affinity: int | None
     p2_affinity: int | None
+    g11_affinity: int | None
+    g12_affinity: int | None
+    g21_affinity: int | None
+    g22_affinity: int | None
 
 
 def build_relation_table(
@@ -238,23 +263,51 @@ def score_blueprint(
     relation_total = sum(entry["relation_points"] for entry in links)
     win_total = sum(win_by_link.values())
 
-    def parent_affinity(parent: str, gps: tuple[str, str]) -> int | None:
-        # p1-p2 shared wins are excluded here pending in-game verification of
-        # whether they attribute to individual affinity (DECISIONS.md #15);
-        # the per-link table above makes reassignment a one-line change.
-        if slots[parent] is None:
+    def node_affinity(node: str) -> int | None:
+        """One slot's individual affinity: every link it appears in.
+
+        A parent carries its whole side — its pair link with the trainee, both
+        of its triples, both of its win links, AND the p1-p2 link. A
+        grandparent carries only the one triple and the one win link it is
+        part of, which is the difference that made this worth generalizing: a
+        proc is rolled per ancestor, so a grandparent needs ITS number, not
+        its parent's. Measured composition, not a guess — see DECISIONS.md #15.
+
+        The p1-p2 link counts toward BOTH parents, relation points and win
+        bonus alike — it is deliberately double-counted, which is why the six
+        attributions do not partition the total (DECISIONS.md #15). Voided and
+        unfilled links already score 0 above, so a slot the game would reject
+        attributes nothing rather than garbage, and a parent with no partner
+        simply picks up no pair term.
+        """
+        if slots[node] is None:
             return None
-        rel = relation_points(f"t-{parent}") + sum(
-            relation_points(f"t-{parent}-{gp}") for gp in gps
-        )
-        wins = sum(win_by_link[f"{parent}-{gp}"] for gp in gps)
-        return rel + wins
+        gps = PARENT_GRANDPARENTS.get(node)
+        if gps is not None:
+            return (
+                relation_points(f"t-{node}")
+                + sum(
+                    relation_points(f"t-{node}-{gp}") + win_by_link[f"{node}-{gp}"]
+                    for gp in gps
+                )
+                + relation_points("p1-p2")
+                + win_by_link["p1-p2"]
+            )
+        parent = GRANDPARENT_PARENT[node]
+        return relation_points(f"t-{parent}-{node}") + win_by_link[f"{parent}-{node}"]
 
     return {
         "total": relation_total + win_total,
         "relation_total": relation_total,
         "win_total": win_total,
         "links": links,
-        "p1_affinity": parent_affinity("p1", ("g11", "g12")),
-        "p2_affinity": parent_affinity("p2", ("g21", "g22")),
+        # Spelled out rather than built from ATTRIBUTED_SLOTS: a comprehension
+        # unpacked into a TypedDict is untypable, and these keys are exactly
+        # the contract AffinityOut mirrors.
+        "p1_affinity": node_affinity("p1"),
+        "p2_affinity": node_affinity("p2"),
+        "g11_affinity": node_affinity("g11"),
+        "g12_affinity": node_affinity("g12"),
+        "g21_affinity": node_affinity("g21"),
+        "g22_affinity": node_affinity("g22"),
     }

@@ -417,10 +417,25 @@ Keep adding entries as the build evolves. This file is the interview.
   the cross-venue bonus (2026-07-30), overturning the JP-documented
   old-system behavior — so races.json canonicalizes every variant
   group to one id at build time.
-  Whether the parent↔parent win overlap also feeds each parent's
-  *individual* affinity is still unverified — it is excluded there for
-  now and the per-link breakdown keeps that a one-line change; it
-  affects only the scoring milestone's per-parent rates, not totals.
+  **RESOLVED 2026-07-31 — the parent↔parent link DOES feed each
+  parent's individual affinity, relation points and win bonus alike,
+  and it feeds BOTH of them.** Left open at first (excluded from both
+  parents pending evidence), then settled by **Polaris's**
+  compatibility-0 study (`@BourBon_Polaris`, Aug 2025 — linked in
+  RESOURCES.md): a JP dataset of 1000 inheritances at known
+  compatibility, cross-checked against the in-app 相性値の内訳 panel:
+  「各親・祖の相性ボーナス(親7・祖2・祖2) / 親① (青1+青4+青5)+緑3 /
+  祖① 青4 / 祖② 青5 / ※両親の相性値とG1ボーナス(緑3)は重複します」.
+  The numerals index the seven breakdown rows, so a **parent** takes its
+  trainee-pair link, both of its triples *and* the p1-p2 row, while a
+  **grandparent** takes only its own triple — and the p1-p2 row is
+  explicitly 重複 (duplicated) across the two parents. Verified against
+  their own lineage (rows 9/9/10/0/0/0/0 → each parent 19pt → ×1.19,
+  every grandparent 0pt → ×1.00) and against the measured rates in the
+  same post. `node_affinity` implements exactly this, so the six
+  attributions deliberately do NOT sum to the total. Consequence: the
+  attributions changed, the total did not — this was never a totals
+  question.
 - **Rejected:** porting hakuraku's constants as-is — they predate the
   system change; hardcoding relation points or thresholds — they are
   game data and live in #14's files.
@@ -1213,3 +1228,212 @@ Keep adding entries as the build evolves. This file is the interview.
   on a pulled grandparent — the next lever is flooring the row she
   demonstrably dropped a pink in at A, which is derived from a rule we
   already trust rather than projected.
+
+## 29. Affinity attributed per ancestor: two decompositions, one each
+
+- **Requirements:** designer V2 restores the run-affinity readout the
+  V1 rewrite dropped, and the inspiration-proc estimates that follow it
+  (#26's deferred list) roll a chance *per ancestor* against that
+  ancestor's affinity. `app/affinity.py` attributed only whole parent
+  sides (`p1_affinity` / `p2_affinity`), which is the wrong grain: a
+  grandparent's proc would be rolled against a number four links wide.
+- **Choice:** one `node_affinity(node)` helper covering all six slots,
+  driven by two constants (`PARENT_GRANDPARENTS`, `GRANDPARENT_PARENT`)
+  that describe the tree once. A parent's share is its pair link with
+  the trainee plus both of its triples and both of its win links; a
+  **grandparent's is the one triple and the one win link it appears
+  in** — its own `rel3(T, P, GP)` plus its `P–GP` race overlap. The
+  four new `g*_affinity` fields are **additive** on `AffinityOut`, so
+  the response only grew. Every rule the totals already encode is
+  reused rather than restated: a voided sibling grandparent attributes
+  nothing, a grandparent repeating the trainee keeps its wins and loses
+  its triple, and a grandparent whose parent slot is empty attributes 0
+  — while an *unfilled* slot stays `null`, because "nobody there" and
+  "there and worth nothing" are different rows in the panel. **The p1–p2
+  link counts into BOTH parents' shares** — relation points and win
+  bonus alike, deliberately double-counted; #15 records the measurement
+  that settled it.
+
+  **There are two decompositions, and each answers a different
+  question. Both are needed; neither is a view of the other.**
+
+  - **Individual affinity (`*_affinity`, the API).** Every link the
+    ancestor appears in: a parent gets her pair link, both of her
+    triples *and* the p1-p2 link; a grandparent gets the one triple it
+    sits in. A grandparent's number is therefore *contained in* its
+    parent's, the p1-p2 link lands in both parents, and the six sum to
+    the total **plus** that link rather than to the total. This is the
+    **proc-roll** quantity: an inspiration is rolled per ancestor, and
+    the composition is measured, not chosen (#15).
+  - **Owned-link (built, then withdrawn — see below).** Every term
+    belongs to its deepest participant: a parent gets only her pair link
+    with the trainee, a grandparent its triple. Nothing is counted
+    twice, and the six values plus the `p1-p2` link equal the total
+    exactly. This is the
+    **contribution** quantity — "what does this uma add?"
+
+  **The map shows individual affinity on every named node**, with the
+  composition in the focus panel — the number, then the links it is made
+  of (a parent's four, a grandparent's one named rather than tabulated).
+  The tiles are unsigned, because `+175` invites adding them up and this
+  is the one quantity that doesn't support it.
+
+  **Owned-link was built first, shipped on the map, and then withdrawn —
+  it ranks the tree wrong.** `t-p1` and `t-p2` are the only two links in
+  the system that can never carry a win bonus (the trainee hasn't raced
+  at design time), so attributing each link to its deepest participant
+  hands every win point to a grandparent and leaves parents with
+  relation points alone. On a real ◎ blueprint with 210 of its 332
+  points in wins, the tiles read parents **+18/+24** against
+  grandparents **+48/+50/+63/+70** — the parents, who carry 175 and 216
+  individually, showing as the weakest nodes in the tree. The better the
+  lineage's win overlap, the more wrong it looked; catalog-only designs
+  hid it completely because `win_total` was 0.
+
+  That also exposed the flaw in the idea: "deepest participant owns the
+  link" is a convention, not a truth. A race that a parent *and* her
+  grandparent both won is symmetric between them, and assigning all of
+  it to the grandparent is arbitrary — which is exactly what produced
+  the misranking. Additive tidiness was the only thing it bought, and
+  nobody sums tiles across generations while planning; everybody
+  compares slots. Correct ranking wins.
+
+  What survives is the reason the panel exists: individual affinity
+  nests (a grandparent's sits inside its parent's) and double-counts
+  (the p1-p2 link sits inside both parents'), so the six do not sum to
+  the total. The panel is where that is shown rather than left to be
+  inferred. uma.moe carries both decompositions too —
+  `getTreeNodeDirectBaseAffinity` for its tree nodes,
+  `getTreeSideTotalAffinity` for its proc table — but its base omits the
+  p1-p2 relation points that #15's evidence includes.
+
+  On the map the trainee's tile shows the run total with its band
+  symbol; the six ancestors are **plain and bandless** — no `+`, because
+  the numbers nest and adding them up is exactly what the sign would
+  invite, and no symbol, because the △/○/◎ table grades whole pairings
+  and one on a single ancestor would read as a rating for her alone.
+
+  It goes **inside the head row**, not on a row of its own: the head is
+  a four-column grid whose left half is the portrait, so the affinity
+  takes the right half as a two-wide tile and Turf/Dirt tuck into the
+  row beneath it (portrait 2×2, affinity 2×1, each letter 1×1). That
+  costs the chips no height — the head was always as tall as the
+  portrait, with the track pair floating at its bottom edge. The tile
+  holds its footprint with a `-` before there is a score, as empty
+  cards hold their letter cells, so the map never reflows when one
+  arrives. It stops at the grandparents because the game's affinity
+  stops there: generations 3–4 are anonymous spark slots that appear
+  in no link.
+
+  The panel returns to the **trainee's focus panel only** (#26's
+  ruling): affinity is a property of the run you are about to make, so
+  hanging it off a grandparent invites reading it as that
+  grandparent's own. It shows **two things and no third**: the total
+  with its band symbol, and the seven-link table v1 had — now under
+  column headers, because three bare numbers per row ("19 +0 19") say
+  nothing about which is relations, which is the win bonus, and which
+  is the two added up. Both of the panel's other candidates were built
+  and then cut for redundancy (Jason, 2026-07-31): a per-ancestor
+  share list, which is only the link rows regrouped, and v1's
+  `Relations N + G1 wins N` summary line, which the labelled columns
+  now say per link. The `*_affinity` numbers stay in the response
+  regardless — 7c reads them — and earn screen space when something
+  shows them. The two middle headers are abbreviated (`Rel.` / `Wins`,
+  full wording on hover) because spelled out they are wider than a
+  docked panel can give them and every link name wraps to two lines.
+  Scoring stays the stateless `POST /api/affinity` of #17, debounced
+  250 ms and aborted on the next edit, with failures reported inline
+  rather than as a toast per keystroke.
+- **Rejected:** replacing the two parent fields with one
+  `node_affinity` map — tidier on the wire, but it churns the shape
+  #15's write-up and the existing tests describe, for no reader that
+  benefits; attributing the p1–p2 overlap to both parents so the six
+  shares sum to the total — a nicer identity and an unverified claim
+  about the game; showing the shares at all, in either of the two forms
+  built (a second ~7-row table, then a compact two-column grid under
+  its own heading) — a parent's share is its own link rows added up and
+  a grandparent's is one of them, so both forms restated the table
+  above them; scoring client-side to skip the round trip — #26
+  already rejected forking the one in-game-verified implementation of
+  this formula; **owned-link on the map tiles — built, shipped, and
+  withdrawn the same day** for the misranking described above (its one
+  advantage, that the tiles sum to the total, cost the tree its
+  ordering); keeping the numbers in the panel only, which is where they
+  started — the total sat under ten aptitude rows on the one node
+  whose headline number it is, and the shares sat in a list that read
+  as the link table regrouped. On the map neither problem exists: each
+  number is on the node it describes.
+
+  **Reversed during the build (Jason, 2026-07-31):** an earlier draft
+  of this entry rejected per-node readouts on the map outright, on the
+  grounds that the 31-node map has no room (#25) and the attribution's
+  audience was the proc model. The room objection was wrong — the head
+  row's right half was already empty space above the track pair — and
+  "audience is the proc model" mistook the first consumer for the only
+  one. What survives of it is the floor: no readout on generations 3–4,
+  which is not a space decision but a correctness one.
+- **Sources checked before settling this (2026-07-31), since 7c
+  depends on it:**
+  - **The Global client's `master.mdb`** (416 tables) **confirms our
+    bracket math outright** — `succession_initial_factor` gives
+    1–3★→+1, 4–6→+2, 7–9→+3, 10+→+4, exactly `aptitude.ts`, and
+    `succession_relation_rank` gives our bands verbatim. It contains
+    **no proc-rate table at all**: the seven `succession_*` tables hold
+    factors, effects, brackets and relation points/members/ranks, and
+    every probability column in the file belongs to gacha, racing,
+    training failure or the crane game. **The affinity→spark-chance
+    conversion is server-side and cannot be datamined**, so 7c's "est."
+    label is the honest ceiling, not caution.
+  - **uma.moe** (`umamoe-frontend/src/app/services/affinity.service.ts`)
+    decomposes affinity exactly as `affinity.py` does
+    (`pair`/`tripleLeft`/`tripleRight`, `legacy` = rel2(p1,p2)) — an
+    independent confirmation — and implements
+    `sparkProcChance = min(base × (1 + affinity/100), 100)` with
+    `sparkRunChance = 1 − (1 − p)²`. Its planner feeds a parent
+    `p1SideTotal` and a grandparent its own node total: **whole-side,
+    confirming the split above.**
+  - **Crazyfellow's guide** (already in `RESOURCES.md`) corroborates
+    whole-side arithmetically: *"The chances are ~ halved compared to
+    the main parent if the gene belongs to a grandparent (rough maths,
+    **based on how GP compatibility is calculated**)"* — the halving
+    falls out of the grandparent's smaller number rather than being a
+    separate ×0.5 term, which only works if the parent's figure is the
+    much larger one. It also confirms individual over overall
+    compatibility (with an honest *"minor empirical concrete
+    evidence"*), and that gold inspiration is cosmetic — *"only a
+    placebo and it is just an indicator that a 3 star gene procc-ed"* —
+    so 7c should not model it.
+  - Base rates agree across both: blue 70/80/90, pink 1/3/5, unique
+    5/10/15, race 1/2/3, other whites 3/6/9.
+- **Both 7c forks CLOSED the same day, by two further sources:**
+  - **Individual-affinity composition** — Polaris's compatibility-0
+    study (`@BourBon_Polaris`, 1000 inheritances, Aug 2025; both posts
+    linked in RESOURCES.md) publishes the rule outright and
+    verifies it against the in-app breakdown panel: parent = pair +
+    both triples + the p1-p2 link, grandparent = its own triple, p1-p2
+    duplicated into both. Full quote and arithmetic in #15, which this
+    resolves. The same post's predicted-vs-observed table confirms
+    every base rate we had recorded (blue 70/80/90 measured 68.6/–/90.5,
+    pink 3/5 measured 3.5/5.0, green 10/15 measured 9.5/16.6, white
+    3/6/9, race 1/2/3, scenario 6), and shows inbred grandparents
+    running normal base rates at 0pt — the exclusion, confirmed a third
+    time and from the rate side rather than the points side.
+  - **Events per run = 2.** Three inheritance events occur (career
+    start, Classic April, Senior April), but only the second and third
+    vary with compatibility — 「二回目、三回目の継承では、継承される因子の
+    数やその効果が継承ウマ娘との相性によって異なります」. So `1 − (1−p)²`
+    is right, and now for a stated reason rather than an assumption.
+- **Would change my mind:** the nesting proving genuinely misleading on
+  the map once people use it — the fallback is to reframe the tiles as
+  *loss* ("lose 175" is exactly individual affinity, since emptying a
+  parent kills her grandparents' triples too), where non-summing is the
+  point rather than an awkwardness; a post-2026-06-24 replication — every
+  measurement behind #15's composition rule predates Global's affinity
+  rework, and while the rule is structural (which links compose a
+  node's number) rather than constant-bound, a rework that touched
+  attribution would not show up in any of it; the proc model needing a
+  *trainee* share too (it has none: the trainee is in every link and a
+  slot in none), which would mean the model is really about links
+  rather than nodes; reaching Crazyfellow's "bonus chapter" (the
+  plain-text export truncates before it) and finding base rates that
+  disagree with the three records that now agree.

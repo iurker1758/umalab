@@ -11,6 +11,16 @@ resource informs a feature, so future work can find it again.
   name/type table, skills); their open-source stack documented the factor-id
   encoding `app/ingest.py` decodes. Needs `UMA_MOE_API_KEY` for
   `scripts/build_reference_data.py`.
+  - Also a **code** reference, not just a data one:
+    `umamoe-frontend/src/app/services/affinity.service.ts` decomposes affinity
+    exactly as `app/affinity.py` does, and is the only implementation we know
+    of the **spark proc model** — `sparkProcChance = min(base × (1 +
+    affinity/100), 100)`, `sparkRunChance = 1 − (1 − p)²`, and a
+    `SPARK_BASE_CHANCES` table matching Crazyfellow's row for row. Its planner
+    feeds a parent her **whole side** and a grandparent its own triple, which
+    is what settled that question for us (DECISIONS #29). It carries both
+    decompositions as named functions — `getTreeNodeDirectBaseAffinity` for
+    tree-node display, `getTreeSideTotalAffinity` for the proc table.
 - [xancia/UmaExtractor](https://github.com/xancia/UmaExtractor) (fork of
   [rockisch/umadump](https://github.com/rockisch/umadump)) — the veteran-dump
   tool whose `data.json` format we import. Watch it for dump-format changes
@@ -118,3 +128,31 @@ resource informs a feature, so future work can find it again.
     planner](https://gametora.com/umamusume/compatibility) (per-server),
     [uma.pwnation.net](https://uma.pwnation.net/) race planner (supports
     Global), u-tools (JP).
+
+- [Polaris / ポラリス (@BourBon_Polaris)](https://x.com/BourBon_Polaris) —
+  the JP measurement the guides above are ultimately quoting, and the
+  primary source behind DECISIONS #15's individual-affinity rule. Posts raw
+  per-factor proc counts over 1000 inheritances with the lineage's
+  compatibility breakdown alongside, so the model can be checked rather than
+  taken on trust. Two runs we rely on:
+  - [Compatibility-0 study, Aug
+    2025](https://x.com/BourBon_Polaris/status/1952727693390500037) —
+    **canonical for individual affinity's composition.** States it outright
+    and verifies it against the in-app 相性値の内訳 panel:
+    「各親・祖の相性ボーナス(親7・祖2・祖2)」, parent = its own trainee link +
+    both triples + the 両親 row, grandparent = its own triple, and
+    「※両親の相性値とG1ボーナスは重複します」 — the parent-pair row counted into
+    *both* parents. Its predicted-vs-observed table also measures every base
+    rate (blue 70/80/90, pink 3/5, unique 10/15, white 3/6/9, race 1/2/3),
+    and shows inbred grandparents running normal base rates at 0pt.
+  - [Mecha-scenario 1000-inheritance thread, Nov
+    2024](https://x.com/BourBon_Polaris/status/1862711283562553375) —
+    confirms our duplicate-chara exclusion from the rate side
+    (「インブリードが基礎継承率には影響がない…相性値0ptペナルティはあり」) and cites
+    the Cygames patent for the formula.
+
+  Read the *tabulated* images; each post also carries a contact sheet of
+  ~1000 raw screenshots that is proof-of-work, not data. X blocks
+  unauthenticated reads, so `api.fxtwitter.com/<user>/status/<id>` is the way
+  in. Related: [Shoppo (しょっぽ)](https://note.com/shoppo) writes up the same
+  datasets in prose and references Polaris's statistics directly.

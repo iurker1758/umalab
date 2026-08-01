@@ -1,4 +1,11 @@
-import type { AffinityResult, AptitudeLetters, PinkSpark } from "../api";
+import { useState } from "react";
+import type {
+  AffinityResult,
+  AptitudeLetters,
+  FactorRef,
+  PinkSpark,
+  SlotFactor,
+} from "../api";
 import { APTITUDE_LABELS, aptitudeRows, letterModeOf, undroppableSpark } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -10,9 +17,11 @@ import {
   sparkLocked,
   type Design,
 } from "../blueprint";
+import { sparkId } from "../procs";
 import { AffinityPanel, NodeAffinity } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
+import { NodeProcs, TraineeProcs } from "./ProcPanel";
 
 // A locked node's pink, shown rather than edited. Same shape as the editor's
 // readout so the panel doesn't jump when you move between locked and free
@@ -40,6 +49,36 @@ const LockNote = ({ owner }: { owner: number }) => (
   <p className="focus-note">{nodeLabel(owner)}&apos;s real pedigree.</p>
 );
 
+type Tab = "details" | "procs";
+
+// Two buttons, not a `role="tablist"`. They behave like the app's other
+// segmented controls — click to switch, `aria-pressed` for state — and real
+// tab semantics promise arrow-key navigation between them that nothing here
+// implements. Announcing a contract we don't keep is worse than announcing
+// none.
+const FocusTabs = ({
+  label,
+  tab,
+  onPick,
+}: {
+  label: string;
+  tab: Tab;
+  onPick: (t: Tab) => void;
+}) => (
+  <div className="focus-tabs" role="group" aria-label={`${label} sections`}>
+    {(["details", "procs"] as const).map((t) => (
+      <button
+        key={t}
+        className={tab === t ? "focus-tab active" : "focus-tab"}
+        aria-pressed={tab === t}
+        onClick={() => onPick(t)}
+      >
+        {t === "details" ? "Details" : "Procs"}
+      </button>
+    ))}
+  </div>
+);
+
 // The docked focus panel (Option C): everything about the selected node —
 // read and edit — lives here, so the map never needs popovers.
 export function FocusPanel({
@@ -52,9 +91,11 @@ export function FocusPanel({
   affinity,
   affinityFailed,
   affinityPending,
+  factorRefs,
   onOpenPicker,
   onClear,
   onSetSpark,
+  onSetFactors,
 }: {
   design: Design;
   index: number;
@@ -68,10 +109,27 @@ export function FocusPanel({
   affinityFailed: boolean;
   // A score is on the wire — see AffinityPanel's `pending`.
   affinityPending: boolean;
+  // The pickable sparks, from the committed factor reference. Empty until the
+  // fetch lands, which costs the hand-entry search its results and shows
+  // stored sparks by key — every CHANCE on the Procs tab reads the design,
+  // not this.
+  factorRefs: FactorRef[];
   onOpenPicker: (i: number) => void;
   onClear: (i: number) => void;
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
+  onSetFactors: (i: number, factors: SlotFactor[]) => void;
 }) {
+  // Which tab, kept across node switches on purpose: comparing the same view
+  // between two ancestors is the common move, and resetting to Details every
+  // time you click the map would undo it. Nodes with nothing to show in Procs
+  // — deep slots, and the trainee before anyone is cast — simply render
+  // Details and no tab bar.
+  const [tab, setTab] = useState<Tab>("details");
+  // Keyed by kind AND key, as the sparks themselves are: the kinds number
+  // their keys independently, so a bare key would collide across them. Built
+  // above the early returns because every branch that can show sparks needs
+  // it.
+  const sparkNames = new Map(factorRefs.map((f) => [sparkId({ type: f.kind, key: f.key }), f.name]));
   // No lineage lists here: the map already shows every node and is the one
   // place you navigate from, so a second, worse copy of it in the panel was
   // pure duplication.
@@ -112,7 +170,7 @@ export function FocusPanel({
         {locked === null && (
           <div className="focus-actions">
             <button className="designer-secondary" onClick={() => onOpenPicker(index)}>
-              {pulled === null ? "Choose character…" : "Replace…"}
+              {pulled === null ? "Choose Character…" : "Replace…"}
             </button>
             {/* Nothing in the slot, nothing to undo — same rule as above. */}
             {(spark !== null || pulled !== null) && (
@@ -126,7 +184,7 @@ export function FocusPanel({
             )}
           </div>
         )}
-        <h4>Pink spark</h4>
+        <h4>Pink Spark</h4>
         {/* Fixed on a roster pick here for the same reason as on a parent:
             that pink is the horse's own. Its identity stays replaceable. */}
         {pinkFixed ? <SparkReadout spark={spark} /> : (
@@ -167,11 +225,13 @@ export function FocusPanel({
           <div className="focus-name">{nodeLabel(index)}</div>
         </div>
         <button className="focus-pick" onClick={() => onOpenPicker(index)}>
-          Choose character…
+          Choose Character…
         </button>
         {/* A planned spark is state worth undoing, so Clear appears for it
-            too — not only once a character is cast. */}
-        {slot?.spark != null && (
+            too — not only once a character is cast. Any spark: a node planned
+            around the whites you're hunting is as real as one planned around
+            a pink, and the server stores either on its own. */}
+        {slot !== null && (
           <div className="focus-actions">
             <button
               className="designer-secondary"
@@ -184,12 +244,31 @@ export function FocusPanel({
         )}
         {index > 0 ? (
           <>
-            <h4>Pink spark</h4>
-            <PinkSparkEditor
-              label={nodeLabel(index)}
-              spark={slot?.spark ?? null}
-              onChange={(s) => onSetSpark(index, s)}
-            />
+            {/* Tabbed exactly as a cast node is. Spark entry lives on Procs,
+                and a member planned by spark alone is the case that most
+                needs it — gating the tab on a cast (or on a score) would put
+                the only editor behind the thing you haven't decided yet. */}
+            <FocusTabs label={nodeLabel(index)} tab={tab} onPick={setTab} />
+            {tab === "procs" ? (
+              <NodeProcs
+                design={design}
+                affinity={affinity}
+                index={index}
+                sparkNames={sparkNames}
+                factorRefs={factorRefs}
+                locked={false}
+                onSetFactors={onSetFactors}
+              />
+            ) : (
+              <>
+                <h4>Pink Spark</h4>
+                <PinkSparkEditor
+                  label={nodeLabel(index)}
+                  spark={slot?.spark ?? null}
+                  onChange={(s) => onSetSpark(index, s)}
+                />
+              </>
+            )}
           </>
         ) : (
           // The trainee with nobody cast yet: the section is what says the
@@ -252,45 +331,70 @@ export function FocusPanel({
           </button>
         </div>
       )}
-      <AptitudeTable rows={rows} />
-      {index === 0 ? (
-        <>
-          <AffinityPanel
+      {/* Always offered, never gated on a score. The chances behind it are
+          this member's affinity times a spark, so before one lands they read
+          "—" — but the tab is also where a member's sparks are TYPED, and
+          hiding the only editor until the design happens to be scorable
+          (or until the backend answers) made entered sparks vanish with it. */}
+      <FocusTabs label={nodeLabel(index)} tab={tab} onPick={setTab} />
+      {tab === "procs" ? (
+        index === 0 ? (
+          <TraineeProcs design={design} affinity={affinity} sparkNames={sparkNames} />
+        ) : (
+          <NodeProcs
+            design={design}
             affinity={affinity}
-            failed={affinityFailed}
-            pending={affinityPending}
-            traineeSet
+            index={index}
+            sparkNames={sparkNames}
+            factorRefs={factorRefs}
+            locked={pinkFixed}
+            onSetFactors={onSetFactors}
           />
-          <p className="focus-note">Inspiration proc estimates are still to come.</p>
-        </>
+        )
       ) : (
         <>
-          {/* Ancestors get their own affinity, not the run's — the number a
-              proc off them rolls against. Above the spark editor: it is what
-              decides whether the pink below it ever lands. */}
-          <NodeAffinity affinity={affinity} index={index} />
-          <h4>Pink spark</h4>
-          {pinkFixed ? (
-            <SparkReadout spark={slot.spark} />
-          ) : (
-            <PinkSparkEditor
-              label={nodeLabel(index)}
-              spark={slot.spark}
-              onChange={(s) => onSetSpark(index, s)}
+          <AptitudeTable rows={rows} />
+          {index === 0 ? (
+            <AffinityPanel
+              affinity={affinity}
+              failed={affinityFailed}
+              pending={affinityPending}
+              traineeSet
             />
+          ) : (
+            <>
+              {/* Ancestors get their own affinity, not the run's — the number
+                  a proc off them rolls against. Above the spark editor: it is
+                  what decides whether the pink below it ever lands. */}
+              <NodeAffinity affinity={affinity} index={index} />
+              <h4>Pink Spark</h4>
+              {pinkFixed ? (
+                <SparkReadout spark={slot.spark} />
+              ) : (
+                <PinkSparkEditor
+                  label={nodeLabel(index)}
+                  spark={slot.spark}
+                  onChange={(s) => onSetSpark(index, s)}
+                />
+              )}
+            </>
           )}
-          {undroppable && slot.spark !== null && (
-            <p
-              className="spark-warn"
-              role="alert"
-              title="Pink sparks only generate on aptitudes the member reached A in."
-            >
-              {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A — pinks only drop at A.
-            </p>
-          )}
-          {locked !== null && <LockNote owner={locked} />}
         </>
       )}
+      {/* Both tabs, outside the switch. The tab choice persists across node
+          switches, so anything that only rendered on Details would never
+          reach someone reading procs down the tree — and these two are the
+          panel's guardrails, not part of either view. */}
+      {undroppable && slot.spark !== null && (
+        <p
+          className="spark-warn"
+          role="alert"
+          title="Pink sparks only generate on aptitudes the member reached A in."
+        >
+          {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A — pinks only drop at A.
+        </p>
+      )}
+      {locked !== null && <LockNote owner={locked} />}
     </div>
   );
 }

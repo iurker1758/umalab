@@ -17,7 +17,9 @@ import {
   type BlueprintIn,
   type CatalogCard,
   type CatalogEntry,
+  type FactorRef,
   type PinkSpark,
+  type SlotFactor,
   type Veteran,
 } from "../api";
 import { FocusPanel } from "../components/FocusPanel";
@@ -48,6 +50,7 @@ import {
   withDeep,
   withDeepCard,
   withNamed,
+  withFactors,
   withSpark,
   writeOpenId,
   type Design,
@@ -155,6 +158,11 @@ export function DesignerPage({
   // it returned anything: a failed fetch leaves the list empty forever, and
   // names have to degrade to ids then rather than staying blank.
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  // The pickable sparks. Static reference data like the catalog, and fetched
+  // beside it: a failure costs the hand-entry search its results and shows
+  // stored sparks as "Unknown (key)", but every proc estimate reads the
+  // design and keeps working.
+  const [factorRefs, setFactorRefs] = useState<FactorRef[]>([]);
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
@@ -383,16 +391,27 @@ export function DesignerPage({
   };
 
   useEffect(() => {
-    // Both fetches are page-scoped (catalog is static reference data, the
-    // saved list is small) — refetching per visit keeps the shell out of it.
+    // All three fetches are page-scoped (catalog and the factor reference are
+    // static, the saved list is small) — refetching per visit keeps the shell
+    // out of it.
     let cancelled = false;
     void (async () => {
-      const [cat, bps] = await Promise.allSettled([api.catalog(), api.blueprints()]);
+      const [cat, bps, factors] = await Promise.allSettled([
+        api.catalog(),
+        api.blueprints(),
+        api.factors(),
+      ]);
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
+      if (factors.status === "fulfilled") setFactorRefs(factors.value);
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
+      } else if (factors.status === "rejected") {
+        // Said separately, because it fails differently: the designer works,
+        // but hand entry finds nothing and stored sparks show as keys. Left
+        // silent, that is indistinguishable from "no such spark exists".
+        onError("Couldn't load the spark reference — hand entry won't find anything.");
       }
       if (bps.status !== "fulfilled") return;
       setSaved(bps.value);
@@ -559,14 +578,17 @@ export function DesignerPage({
         // hand-picked character who doesn't have it, unlocked and unowned.
         // Her pink goes with it: it was hers, not a plan for this slot.
         const owned = ownedBranch(d, target);
-        const spark = sourceAt(d, target) === "roster" ? null : (d.named[target]?.spark ?? null);
-        // A re-pick otherwise keeps the slot's typed spark: the pink is a
-        // plan input for the bracket math, not part of the card's identity,
-        // and re-typing it after every swap would be pure friction.
+        const wasPulled = sourceAt(d, target) === "roster";
+        // A re-pick otherwise keeps every spark the slot was given by hand —
+        // the pink AND the list feeding the proc estimates. They are plan
+        // inputs, not part of the card's identity, and re-typing a member's
+        // sparks after every outfit swap would be pure friction.
+        const spark = wasPulled ? null : (d.named[target]?.spark ?? null);
+        const factors = wasPulled ? [] : (d.named[target]?.factors ?? []);
         return withNamed(
           clearNodes(d, owned),
           target,
-          catalogSlot(pick.chara_id, pick.card_id, spark)
+          catalogSlot(pick.chara_id, pick.card_id, spark, factors)
         );
       });
       select(target);
@@ -620,6 +642,12 @@ export function DesignerPage({
 
   const setSpark = (target: number, spark: PinkSpark | null) => {
     setDesign((d) => (sparkLocked(d, target) ? d : withSpark(d, target, spark)));
+  };
+
+  // Same lock as the pink: inside a pulled branch (and on the roster pick
+  // herself) these sparks are the horse's own, read off her dump.
+  const setFactors = (target: number, factors: SlotFactor[]) => {
+    setDesign((d) => (sparkLocked(d, target) ? d : withFactors(d, target, factors)));
   };
 
   // Every edit autosaves. Queued immediately (so nothing depends on this
@@ -952,9 +980,11 @@ export function DesignerPage({
             affinity={shownAffinity}
             affinityFailed={shownScoreFailed}
             affinityPending={affinityPending}
+            factorRefs={factorRefs}
             onOpenPicker={setPickerFor}
             onClear={clearSlot}
             onSetSpark={setSpark}
+            onSetFactors={setFactors}
           />
         </div>
       </div>

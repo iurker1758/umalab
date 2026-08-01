@@ -496,12 +496,22 @@ try {
   check("trainee mile = card base", (await rowLetter("Mile")) === T.apt.mile);
   check("trainee has no spark editor",
     (await page.locator('select[aria-label="Trainee pink spark"]').count()) === 0);
-  check("inspiration estimates still flagged as to come",
-    (await page.locator(".focus-note", { hasText: "Inspiration proc" }).count()) === 1);
+  // A trainee alone has no affinity, so no proc chance can be estimated. The
+  // tab is there anyway: it is where sparks are TYPED, and gating it on a
+  // score once made the only editor vanish whenever the design was too sparse
+  // to score or the backend blipped. It opens onto an honest empty state.
+  check("the Procs tab exists before there's a score to roll against",
+    (await page.locator(".focus-tab").count()) === 2 &&
+    (await page.locator(".proc-table").count()) === 0);
+  await page.locator(".focus-tabs .focus-tab", { hasText: "Procs" }).click();
+  check("and says the tree is empty rather than showing numbers",
+    (await page.locator(".focus .proc-table").count()) === 0 &&
+    (await page.locator(".focus .focus-note", { hasText: "No sparks on the ancestors" }).count()) === 1);
+  await page.locator(".focus-tabs .focus-tab", { hasText: "Details" }).click();
   // A trainee alone is not a pairing: the panel says what's missing rather
   // than scoring an empty tree as a confident zero.
   check("affinity waits for a parent",
-    (await page.locator(".focus", { hasText: "Run affinity" }).count()) === 1 &&
+    (await page.locator(".focus", { hasText: "Run Affinity" }).count()) === 1 &&
     (await page.locator(".focus .aff-total").count()) === 0 &&
     (await page.locator(".focus-note", { hasText: "at least one parent" }).count()) === 1);
   // The tile keeps its footprint before there's a number, the way empty
@@ -684,7 +694,277 @@ try {
   check("a parent's composition skips links into empty slots",
     (await page.locator(".focus .aff-compose .aff-link-name").allTextContents()).join(",") ===
       "Trainee · Parent 2,Parent 1 · Parent 2");
+  // ---------- inspiration proc estimates ----------
+  // Unlike affinity, this model has no server implementation to compare
+  // against and no unit runner behind it — procs.ts is pure client math, so
+  // these checks are the only place it is verified at all. Hence a second
+  // copy of the formula here, which the affinity checks above deliberately
+  // avoid: there, a reimplementation would test nothing the endpoint didn't
+  // already answer.
+  const procPct = (type, stars, aff) => {
+    const base = {
+      pink: [1, 3, 5], white: [3, 6, 9], unique: [5, 10, 15],
+      race: [1, 2, 3], scenario: [3, 6, 9],
+    }[type][stars - 1];
+    const p = Math.min(base * (1 + aff / 100), 100) / 100;
+    return 1 - (1 - p) ** 2;
+  };
+  const pct = (p) => `${(p * 100).toFixed(1)}%`;
+  const openTab = async (name) =>
+    page.locator(".focus-tabs .focus-tab", { hasText: name }).click();
+
+  // Every node that can hold sparks is tabbed, scored or not. A deep spark
+  // slot is the one that isn't: the document gives generations 3-4 a pink and
+  // nothing else, so there is no spark list to type and no tab to hold one.
+  check("a named ancestor has a Procs tab", (await page.locator(".focus-tab").count()) === 2);
+  await selectNode("Sparks 3-1");
+  check("a deep spark slot has no tabs", (await page.locator(".focus-tab").count()) === 0);
+
+  await selectNode("Grandparent 1-1");
+  await openTab("Procs");
+  const rowFor = (name) => page.locator(".focus .proc-table tbody tr", { hasText: name });
+  const chanceOf = (name) => rowFor(name).locator(".proc-chance").textContent();
+  const g11Pink = procPct("pink", 3, expectedAff.g11_affinity);
+  check(`g11's 3★ pink at ${expectedAff.g11_affinity} affinity estimates ${pct(g11Pink)}`,
+    (await page.locator(".focus .proc-table tbody tr").allTextContents()).length === 1 &&
+    (await chanceOf("Mile")) === pct(g11Pink));
+  check("named as the spark it is, with its stars and its kind's colour",
+    (await rowFor("Mile").locator(".proc-name").textContent())?.trim() === "Mile ★★★" &&
+    (await rowFor("Mile").getAttribute("class"))?.includes("proc-row-pink"));
+  // The tab is where the other kinds are typed: they feed nothing but these
+  // numbers, unlike the pink, which bumps the letters on the Details tab.
+  // Driven off the served reference rather than hardcoded names, the same way
+  // this suite derives its cast from /api/catalog.
+  const factorRef = await (await fetch(`${BASE}/api/factors`)).json();
+  const pickOf = (kind) => factorRef.find((f) => f.kind === kind);
+  // By id, never by displayed name: race and scenario sparks routinely
+  // contain a skill's name as a substring, so a `hasText` match would click a
+  // different kind's row and every assertion below would fail on reference
+  // data alone.
+  const addSpark = async (label, ref) => {
+    await page.locator(`input[aria-label="${label} spark search"]`).fill(ref.name);
+    await page.locator(`.spark-matches button[data-spark="${ref.kind}:${ref.key}"]`).click();
+  };
+  const added = [];
+  for (const kind of ["white", "unique", "race", "scenario"]) {
+    const ref = pickOf(kind);
+    await addSpark("G1-1", ref);
+    added.push(ref);
+  }
+  // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
+  // 1/2/3, scenario 3/6/9 — so a 1★ of each at one affinity must produce
+  // three distinct numbers, not one repeated.
+  const expected1Star = Object.fromEntries(
+    added.map((r) => [r.kind, pct(procPct(r.kind, 1, expectedAff.g11_affinity))])
+  );
+  check(`each kind rolls on its own base (${added.map((r) => `${r.kind} ${expected1Star[r.kind]}`).join(", ")})`,
+    await until(async () =>
+      (await Promise.all(added.map((r) => chanceOf(r.name)))).join(",") ===
+        added.map((r) => expected1Star[r.kind]).join(",")));
+  check("green outruns white, and race trails both, at the same star and affinity",
+    Number(expected1Star.unique.replace("%", "")) >
+      Number(expected1Star.white.replace("%", "")) &&
+    Number(expected1Star.white.replace("%", "")) >
+      Number(expected1Star.race.replace("%", "")));
+  check("each is named from the reference and coloured by its kind",
+    (await Promise.all(
+      added.map(async (r) => (await rowFor(r.name).getAttribute("class")))
+    )).every((cls, i) => cls?.includes(`proc-row-${added[i].kind}`)));
+  // The kind is colour and bar fill only — spelling it out cost the names
+  // width they need, and the tables never repeat it as a word.
+  check("no spelled-out kind in the spark column",
+    (await page.locator(".focus .proc-table .proc-kind").count()) === 0);
+  // Ranked like the trainee's, and for the same reason: which of these is
+  // actually likely to land is the question either table answers.
+  check("an ancestor's own sparks are ordered by chance",
+    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+      const nums = [...el.querySelectorAll(".proc-pct")].map((n) =>
+        Number(n.textContent.replace("%", ""))
+      );
+      return nums.length > 3 && nums.every((n, i) => i === 0 || nums[i - 1] >= n);
+    }));
+  // Stars are editable in place, and the estimate follows.
+  const white = pickOf("white");
+  await page.locator(`[aria-label="${white.name} stars"] button`, { hasText: "3★" }).click();
+  check("raising one to 3★ raises its estimate",
+    await until(async () =>
+      (await chanceOf(white.name)) === pct(procPct("white", 3, expectedAff.g11_affinity))));
+
+  // The trainee's tab answers a different question: what she is likely to
+  // come out with, per spark rather than per member.
   await selectNode("Trainee");
+  check("the tab choice follows you between nodes",
+    (await page.locator(".focus .proc-table").count()) === 1);
+  const traineeRows = async () =>
+    Promise.all(
+      (await page.locator(".focus .proc-table tbody tr").all()).map(async (row) =>
+        (await row.locator("td").allTextContents()).map((t) => t.trim()).join("|")
+      )
+    );
+  // G1-1 and G1-2 both hold 3★ Mile, so it is ONE row, at the chance either
+  // lands it — 1 − ∏(1−p), not the sum and not the larger.
+  const bothMile =
+    1 -
+    (1 - procPct("pink", 3, expectedAff.g11_affinity)) *
+      (1 - procPct("pink", 3, expectedAff.g12_affinity));
+  check(`a spark two members carry is one row at the combined ${pct(bothMile)}`,
+    (await traineeRows()).includes(`Mile ★★★|${pct(bothMile)}`));
+  check("the combined chance beats either carrier alone but isn't their sum",
+    bothMile > procPct("pink", 3, expectedAff.g11_affinity) &&
+    bothMile <
+      procPct("pink", 3, expectedAff.g11_affinity) +
+        procPct("pink", 3, expectedAff.g12_affinity));
+  // Order is by chance (asserted below), so this is the set, not a sequence.
+  check("every kind reaches the roll-up",
+    [...new Set(
+      (await page.locator(".focus .proc-table tbody tr").evaluateAll((rows) =>
+        rows.map((r) => [...r.classList].find((c) => c.startsWith("proc-row-")))
+      ))
+    )].sort().join(",") ===
+      "proc-row-pink,proc-row-race,proc-row-scenario,proc-row-unique,proc-row-white");
+  // Which members carry it is deliberately NOT here: this table answers what
+  // the trainee is likely to come out with, and the breakdown is one click
+  // away on each member's own tab.
+  // Two columns and no member named anywhere in the body — asserted against
+  // what the table RENDERS, not against a class a From column would have to
+  // opt into. A check for an absent selector passes whatever is there.
+  const traineeBody = await page.locator(".focus .proc-table tbody").textContent();
+  check("no From column on the trainee's table",
+    (await page.locator(".focus .proc-table thead th").count()) === 2 &&
+    (await page.locator(".focus .proc-table tbody tr").first().locator("td").count()) === 2 &&
+    !["P1", "P2", "G1-1", "G1-2", "G2-1", "G2-2"].some((m) => traineeBody.includes(m)));
+  // Ranked, because the roll-up exists to be compared down.
+  check("rows are ordered by chance",
+    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+      const nums = [...el.querySelectorAll(".proc-chance")]
+        .map((n) => Number(n.textContent.replace("%", "")))
+        .filter((n) => !Number.isNaN(n));
+      return nums.every((n, i) => i === 0 || nums[i - 1] >= n);
+    }));
+  // Said once, in the column header — and it says PER RUN, because the
+  // difference between one inheritance event and the career's two is a factor
+  // of nearly two on every row.
+  check("the trainee's table labels the numbers estimates, per run, exactly once",
+    (await page.locator(".focus .proc-table thead th").allTextContents()).join(",") ===
+      "Spark,Est. Per Run");
+  // The number rides on a bar filled in the spark's own colour, and the bar
+  // is the chance: 0–100 absolutely, so an unlikely spark reads as a sliver
+  // rather than filling because nothing beat it.
+  const topRow = page.locator(".focus .proc-table tbody tr").first();
+  check("each chance is drawn as a bar in its spark's colour",
+    (await page.locator(".focus .proc-table .proc-bar").count()) ===
+      (await page.locator(".focus .proc-table tbody tr").count()) &&
+    (await topRow.locator(".proc-fill").getAttribute("class"))?.includes("proc-fill-pink"));
+  check("the bar's width is the chance itself, not a rank",
+    await topRow.locator(".proc-bar").evaluate((el) => {
+      const pct = Number(el.querySelector(".proc-pct").textContent.replace("%", ""));
+      const bar = el.getBoundingClientRect().width;
+      const fill = el.querySelector(".proc-fill").getBoundingClientRect().width;
+      // The top row is the highest chance; a table-relative scale would make
+      // it full. Within a pixel of its own percentage instead.
+      return Math.abs(fill - (bar * pct) / 100) < 1 && fill < bar * 0.9;
+    }));
+  // The proc table must not answer to the link table's selectors: those
+  // checks assert the run decomposes into exactly seven links, and a second
+  // table sharing their classes would silently break that claim.
+  await openTab("Details");
+  check("the affinity tab is unchanged underneath",
+    (await page.locator(".focus .aff-links").count()) === 1 &&
+    (await page.locator(".focus .proc-table").count()) === 0);
+  // The sparks reach the server, or a reload would quietly lower every
+  // estimate the design was judged on. Read from the API rather than by
+  // reloading: this suite's later sections build on the page state as it is.
+  await settled();
+  const withSparks = (await (await fetch(`${BASE}/api/blueprints`)).json())
+    .find((b) => b.name === bpName);
+  check("typed sparks are persisted with their kind on the member carrying them",
+    JSON.stringify(withSparks?.slots.named[3]?.factors ?? []) ===
+      JSON.stringify(
+        added.map((r) => ({ kind: r.kind, key: r.key, stars: r.kind === "white" ? 3 : 1 }))
+      ));
+  check("and land on nobody else",
+    [0, 1, 2, 4, 5, 6].every(
+      (i) => (withSparks?.slots.named[i]?.factors ?? []).length === 0));
+
+  // A re-pick keeps them. They are plan inputs typed onto the node, not part
+  // of the card's identity — rebuilding the slot without them deleted hand
+  // entry silently, and the autosave then persisted the loss.
+  await selectNode("Grandparent 1-1");
+  await pickInto(G11);
+  await settled();
+  const rePicked = (await (await fetch(`${BASE}/api/blueprints`)).json())
+    .find((b) => b.name === bpName);
+  check("re-picking a character keeps the sparks typed on that node",
+    JSON.stringify(rePicked?.slots.named[3]?.factors ?? []) ===
+      JSON.stringify(withSparks?.slots.named[3]?.factors ?? []) &&
+    (rePicked?.slots.named[3]?.factors ?? []).length === added.length);
+
+  // Entry is offered on an ancestor with nobody cast and no score to roll
+  // against — G2-1 is empty here, so its chances read "—" while its editor
+  // works. Gating the tab on a score once put the only editor behind the
+  // thing you hadn't decided yet.
+  await selectNode("Grandparent 1-2");
+  await openTab("Procs");
+  await page.locator('input[aria-label="G1-2 spark search"]').fill(pickOf("white").name);
+  await selectNode("Grandparent 2-1");
+  check("an uncast ancestor still offers spark entry",
+    (await page.locator('input[aria-label="G2-1 spark search"]').count()) === 1);
+  // The box is per node: an abandoned query must not follow you, or its
+  // leftover matches would add the spark to the wrong member.
+  check("and an abandoned search doesn't follow you there",
+    (await page.locator('input[aria-label="G2-1 spark search"]').inputValue()) === "" &&
+    (await page.locator(".focus .spark-matches").count()) === 0);
+  await selectNode("Trainee");
+
+  // ---------- the trainee's table caps its tail ----------
+  // A fully bred tree runs to ~34 distinct sparks, which is a panel 1.2x the
+  // viewport. The cast so far is under the cap, so this loads P2 up until it
+  // is over — everything above ran against the short list, which is the
+  // common case and must keep showing every row.
+  await openTab("Procs");
+  const shortList = await page.locator(".focus .proc-table tbody tr").count();
+  check(`no cap while the list is short (${shortList} rows)`,
+    shortList < 12 && (await page.locator(".focus .proc-more").count()) === 0);
+  // Distinct from anything already in the tree — slice past the white G1-1
+  // holds, so every one of these adds a row rather than joining one.
+  const filler = factorRef.filter((f) => f.kind === "white").slice(1, 10);
+  await selectNode("Parent 2");
+  await openTab("Procs");
+  for (const f of filler) {
+    await addSpark("P2", f);
+  }
+  await selectNode("Trainee");
+  await openTab("Procs");
+  const allRows = shortList + filler.length;
+  check(`${allRows} sparks show as 12, with the rest behind a button`,
+    await until(async () =>
+      (await page.locator(".focus .proc-table tbody tr").count()) === 12 &&
+      (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}`));
+  // What's hidden is always the least likely — the cap is only honest because
+  // the table is ranked, so the twelve shown must be the twelve best.
+  check("the rows kept are the twelve highest chances",
+    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+      const nums = [...el.querySelectorAll(".proc-pct")].map((n) =>
+        Number(n.textContent.replace("%", ""))
+      );
+      return nums.every((n, i) => i === 0 || nums[i - 1] >= n);
+    }));
+  await page.locator(".focus .proc-more").click();
+  check("and the button reveals every one of them",
+    (await page.locator(".focus .proc-table tbody tr").count()) === allRows &&
+    (await page.locator(".focus .proc-more").textContent()) === "Show Fewer");
+  await page.locator(".focus .proc-more").click();
+  check("and folds them away again",
+    (await page.locator(".focus .proc-table tbody tr").count()) === 12);
+  // Ancestor tables are never capped: a member holds a handful, and hiding
+  // rows on the tab where you EDIT them would hide what you just typed.
+  await selectNode("Parent 2");
+  await openTab("Procs");
+  check("an ancestor's own table shows everything she carries",
+    (await page.locator(".focus .proc-table tbody tr").count()) === filler.length &&
+    (await page.locator(".focus .proc-more").count()) === 0);
+  await selectNode("Trainee");
+  await openTab("Details");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');
   check("map chip shows all ten labeled letters",
     (await mapChip("Trainee").locator(".apt-cell").count()) === 10 &&

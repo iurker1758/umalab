@@ -34,7 +34,7 @@ export function AffinityPanel({
 }) {
   return (
     <>
-      <h4>Run affinity</h4>
+      <h4>Run Affinity</h4>
       {failed ? (
         <p className="focus-note aff-error">
           Couldn&apos;t score this design — is the backend running? It retries on the next
@@ -157,11 +157,6 @@ export function NodeAffinity({
           </tbody>
         </table>
       )}
-      <p className="focus-note">
-        What an inspiration proc from this member would roll against.
-        {rows.length > 1 &&
-          " It covers every link this member is part of, the two below included, so it isn't a share of the trainee's total."}
-      </p>
     </>
   );
 }

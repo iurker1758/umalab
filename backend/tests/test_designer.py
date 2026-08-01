@@ -3,6 +3,12 @@ triangle), a save/read round-trip at the schema layer, and the catalog's
 per-card aptitude shape. Pure-module tests like the rest of the suite —
 no DB, no HTTP; the routers only pass these models through.
 
+One exception: GET /api/factors is exercised over HTTP. It is the one route
+that IS its own logic — a static list plus a response_model — so a broken
+path, verb or serialization would otherwise pass every test here green and
+only surface in the Playwright suite, which needs a running stack and does
+not gate the backend job. It touches no database, so it costs nothing.
+
 Tree indexing (DECISIONS.md #25): 31 nodes breadth-first, node i's kids at
 2i+1 / 2i+2. `named` covers indices 0-6, `sparks` indices 7-30.
 """
@@ -15,7 +21,7 @@ from pydantic import ValidationError
 
 from app.ingest import derive_chara_id
 from app.reference import CardAptitudes
-from app.routers.designer import CATALOG
+from app.routers.designer import CATALOG, PICKABLE_FACTORS
 from app.schemas import (
     NAMED_SLOT_COUNT,
     SPARK_SLOT_COUNT,
@@ -459,6 +465,168 @@ def test_v2_document_round_trips_through_blueprint_out() -> None:
     assert named1 is not None
     assert named1.spark == PinkSparkIn(aptitude="mile", stars=3)
     assert out.slots.sparks[11] == PinkSparkIn(aptitude="dirt", stars=2)
+
+
+# ---------- non-pink sparks (designer V2, inspiration procs) ----------
+
+
+def white(key: int = 20035, stars: int = 2) -> dict[str, Any]:
+    return {"kind": "white", "key": key, "stars": stars}
+
+
+def test_named_slot_carries_sparks_of_every_pickable_kind() -> None:
+    body = BlueprintIn.model_validate(
+        doc(
+            named={
+                1: slot(
+                    1002,
+                    spark=pink(),
+                    factors=[
+                        white(),
+                        {"kind": "unique", "key": 100101, "stars": 3},
+                        {"kind": "race", "key": 10001, "stars": 1},
+                        {"kind": "scenario", "key": 40001, "stars": 2},
+                    ],
+                )
+            }
+        )
+    )
+    named1 = body.slots.named[1]
+    assert named1 is not None
+    assert [(f.kind, f.stars) for f in named1.factors] == [
+        ("white", 2), ("unique", 3), ("race", 1), ("scenario", 2),
+    ]
+
+
+def test_blue_sparks_are_not_a_slot_kind() -> None:
+    # Deliberately out: nothing reads stat sparks yet, and their 70/80/90
+    # bases would dominate every proc table if they were merely accepted.
+    _rejects(doc(named={1: slot(1002, factors=[{"kind": "blue", "key": 1, "stars": 3}])}),
+             "kind")
+
+
+def test_factors_default_to_empty_so_older_rows_parse() -> None:
+    # The one way this document is allowed to grow (DECISIONS.md #28): every
+    # blueprint saved before this field existed must still validate, and read
+    # as a member carrying none rather than failing the whole list.
+    body = BlueprintIn.model_validate(doc(named=FULL_TRIANGLE))
+    named1 = body.slots.named[1]
+    assert named1 is not None
+    assert named1.factors == []
+
+
+def test_factors_survive_the_document_round_trip() -> None:
+    body = BlueprintIn.model_validate(
+        doc(named={1: slot(1002, factors=[white(), white(20141, 1)])})
+    )
+    now = dt.datetime(2026, 8, 1, 12, 0, 0, tzinfo=dt.UTC)
+    out = BlueprintOut.model_validate(
+        {
+            "id": 1,
+            "name": body.name,
+            "slots": body.slots.model_dump(),
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    assert out.slots == body.slots
+
+
+def test_duplicate_sparks_rejected() -> None:
+    # The proc estimate combines a spark's carriers, so the same one twice on
+    # one member would roll it against itself.
+    _rejects(
+        doc(named={1: slot(1002, factors=[white(20035, 2), white(20035, 1)])}),
+        "same spark twice",
+    )
+
+
+def test_the_same_key_under_two_kinds_is_legal() -> None:
+    # The kinds number their keys independently — a race and a white can
+    # collide on a number and still be different sparks.
+    body = BlueprintIn.model_validate(
+        doc(named={1: slot(1002, factors=[{"kind": "white", "key": 500, "stars": 1},
+                                          {"kind": "race", "key": 500, "stars": 1}])})
+    )
+    named1 = body.slots.named[1]
+    assert named1 is not None
+    assert len(named1.factors) == 2
+
+
+@pytest.mark.parametrize("stars", [0, 4])
+def test_spark_star_range_enforced(stars: int) -> None:
+    _rejects(doc(named={1: slot(1002, factors=[white(stars=stars)])}), "factors")
+
+
+def test_named_slot_may_carry_sparks_without_a_pink_or_a_character() -> None:
+    # "The parent who carries these two whites" is a plan in its own right
+    # now that the document holds non-pink sparks. Requiring a pink beside
+    # them would make clearing the pink destroy the spark list, since a slot
+    # carrying neither is pruned away.
+    body = BlueprintIn.model_validate(
+        doc(named={1: {"source": "catalog", "chara_id": None, "card_id": None,
+                       "factors": [white()]}})
+    )
+    parent1 = body.slots.named[1]
+    assert parent1 is not None
+    assert parent1.spark is None
+    assert len(parent1.factors) == 1
+
+
+def test_trainee_cannot_carry_non_pink_sparks_either() -> None:
+    # Same reason her pink is refused: nothing is bred from her here.
+    _rejects(
+        doc(named={0: slot(1001, factors=[white()])}),
+        "the trainee slot can't carry a spark",
+    )
+
+
+def test_unknown_spark_key_accepted() -> None:
+    # Deliberate: app/data is regenerated by hand and can run behind a dump
+    # that already carries a new skill. Rejecting the key would turn a
+    # reference gap into a saved blueprint that 500s the whole list on read.
+    body = BlueprintIn.model_validate(doc(named={1: slot(1002, factors=[white(999_999, 3)])}))
+    named1 = body.slots.named[1]
+    assert named1 is not None
+    assert named1.factors[0].key == 999_999
+
+
+def test_factor_reference_serves_every_pickable_kind() -> None:
+    # What the hand-entry picker lists, from the same committed reference the
+    # decoder reads.
+    kinds = {f.kind for f in PICKABLE_FACTORS}
+    assert kinds == {"white", "unique", "race", "scenario"}
+    # Grouped by kind, then alphabetical within it — the picker searches names
+    # and shows the kind, so this is the order it renders in.
+    assert sorted(PICKABLE_FACTORS, key=lambda f: (f.kind, f.name)) == PICKABLE_FACTORS
+    ids = [(f.kind, f.key) for f in PICKABLE_FACTORS]
+    assert len(set(ids)) == len(ids)
+    # Keys a real dump decodes to must be pickable by hand as well, or the two
+    # paths would disagree about what a spark is.
+    assert ("white", 20035) in ids
+    assert ("unique", 100101) in ids
+    # Pinks and blues have no place here: the pink has its own editor, and
+    # blue is not a slot kind at all.
+    assert all(f.kind not in {"pink", "blue"} for f in PICKABLE_FACTORS)
+
+
+async def test_factors_endpoint_serves_the_reference_over_http() -> None:
+    # Driven through httpx's ASGI transport rather than fastapi's TestClient,
+    # which is deprecated against the httpx version pinned here and warns.
+    import httpx
+
+    from app.main import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/factors")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == len(PICKABLE_FACTORS)
+    # The serialized shape is the contract the picker reads: kind, key, name
+    # and nothing else — the frontend types it exactly this way.
+    assert body[0].keys() == {"kind", "key", "name"}
+    assert body[0] == PICKABLE_FACTORS[0].model_dump()
 
 
 # ---------- catalog shape (real committed data) ----------

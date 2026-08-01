@@ -490,6 +490,85 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* A grandparent's single link, named rather than tabulated. */
 .aff-caption { opacity: 0.65; font-size: 0.82rem; }
 
+/* The focus panel's tab bar. Present on every node that can hold sparks,
+   score or no score — Procs is where they are typed, not only where they are
+   read. */
+.focus-tabs { display: flex; gap: 2px; margin: 0.7rem 0 0.2rem; border-bottom: 1px solid #1f2833; }
+.focus-tab { flex: 1; padding: 0.32rem 0.5rem; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: inherit; background: none; border: 0; border-bottom: 2px solid transparent; opacity: 0.5; cursor: pointer; }
+.focus-tab:hover { opacity: 0.8; }
+.focus-tab.active { opacity: 1; border-bottom-color: #4da3ff; }
+
+/* Inspiration procs. Styled to match the affinity link table so the panel
+   reads the same on either tab, but on its own selectors — the affinity
+   checks count `.aff-links` rows to assert the run decomposes into exactly
+   seven links, and a second table answering to them would break that. */
+.proc-table { width: 100%; margin-top: 0.6rem; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.proc-table td { padding: 0.22rem 0.3rem; font-size: 0.85rem; border-top: 1px solid #1f2833; }
+.proc-table th { padding: 0 0.3rem 0.15rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.45; white-space: nowrap; }
+.proc-table th.proc-name { text-align: left; }
+.proc-name { text-align: left; }
+.proc-stars { font-size: 0.75rem; opacity: 0.85; }
+.proc-empty { opacity: 0.55; }
+/* The chance column carries a bar, so it needs real width — the spark names
+   ellipsize, the numbers don't. */
+.proc-table th.proc-chance { text-align: right; }
+.proc-chance { width: 36%; }
+/* Bar, filled 0–100 absolutely (see ChanceBar), with the number riding on the
+   track rather than on the fill — at these rates most fills are too short to
+   hold a label, and a number that jumps between inside and outside its bar as
+   the chance changes is worse than one that sits still. The track is drawn
+   clearly enough to read as the bar it is. */
+.proc-bar { position: relative; display: flex; align-items: center; justify-content: flex-end; height: 1.2rem; padding: 0 0.4rem; border-radius: 3px; background: #1b2430; box-shadow: inset 0 0 0 1px #232e3c; overflow: hidden; }
+.proc-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px 0 0 3px; }
+.proc-pct { position: relative; font-weight: 600; font-size: 0.8rem; }
+.proc-none { display: block; text-align: right; padding-right: 0.35rem; opacity: 0.55; }
+/* Each spark's own colour, dimmed enough that the number stays legible where
+   the fill runs under it. */
+.proc-fill-pink { background: #7d2f4d; }
+.proc-fill-white { background: #46505d; }
+.proc-fill-unique { background: #2c5c41; }
+.proc-fill-race { background: #6b5722; }
+.proc-fill-scenario { background: #453a70; }
+/* The kind, carried by colour rather than a word: the spark's name takes it
+   and the bar beside it is filled to match, so naming it as well said the
+   same thing a third time. Colours follow the game's own spark colours. */
+.proc-row-pink .proc-name { color: #ff7fb8; }
+.proc-row-white .proc-name { color: #d7dee8; }
+.proc-row-unique .proc-name { color: #7fdba2; }
+.proc-row-race .proc-name { color: #ffd257; }
+.proc-row-scenario .proc-name { color: #b9a0ff; }
+
+/* The tag survives in the hand-entry search, where you are choosing BETWEEN
+   kinds rather than reading your own — several race and scenario sparks share
+   wording with skills. */
+.proc-kind { display: inline-block; min-width: 3.3em; margin-right: 0.3rem; padding: 0 0.24rem; border-radius: 3px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; text-align: center; vertical-align: 0.08em; }
+.proc-kind-pink { background: #40202f; color: #ff7fb8; }
+.proc-kind-white { background: #262d36; color: #d7dee8; }
+.proc-kind-unique { background: #1e3527; color: #7fdba2; }
+.proc-kind-race { background: #3a3122; color: #ffd257; }
+.proc-kind-scenario { background: #2a2440; color: #b9a0ff; }
+
+/* Reveals the ranked tail of the trainee's table. Full width so it reads as
+   the end of the list rather than an action on the last row. */
+.proc-more { width: 100%; margin-top: 0.45rem; padding: 0.32rem; font-size: 0.78rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #223040; border-radius: 5px; opacity: 0.8; cursor: pointer; }
+.proc-more:hover { opacity: 1; background: #1d2b3a; }
+
+/* Hand entry: a held list, then a search that only lists matches once you
+   type — 400-odd factors under every panel is not a browser. */
+.spark-add { margin-top: 0.7rem; }
+.spark-list { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.spark-list li { display: flex; align-items: center; gap: 0.35rem; }
+.spark-add-name { flex: 1; font-size: 0.82rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spark-drop { padding: 0 0.3rem; font-size: 0.95rem; line-height: 1; color: inherit; background: none; border: 0; opacity: 0.45; cursor: pointer; }
+.spark-drop:hover { opacity: 1; color: #ff8a80; }
+.spark-search { width: 100%; padding: 0.3rem 0.45rem; font-size: 0.82rem; color: inherit; background: #121820; border: 1px solid #253040; border-radius: 5px; }
+.spark-matches { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.spark-matches button { width: 100%; padding: 0.28rem 0.45rem; text-align: left; font-size: 0.82rem; color: inherit; background: #16202c; border: 0; border-radius: 4px; cursor: pointer; }
+.spark-matches button:hover { background: #1d2b3a; }
+/* Says the list was cut. Not a button — narrowing the query is the action,
+   and a "show more" would rebuild the browser the cap exists to avoid. */
+.spark-more { padding: 0.28rem 0.45rem; font-size: 0.76rem; opacity: 0.5; }
+
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */
 .apt-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }

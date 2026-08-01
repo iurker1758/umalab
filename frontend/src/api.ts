@@ -100,6 +100,32 @@ export interface PinkSpark {
   stars: number;
 }
 
+// The non-pink spark kinds a designed node can carry. Blue is absent on
+// purpose — stat sparks are inherited too, but nothing reads them yet and
+// their 70/80/90 bases would dominate every proc table.
+export const SLOT_FACTOR_KINDS = ["white", "unique", "race", "scenario"] as const;
+export type SlotFactorKind = (typeof SLOT_FACTOR_KINDS)[number];
+
+// One non-pink spark on a designed node. The game's factor key, not the
+// name: names are localized strings we render, the key is the identity, and
+// the reference resolves one to the other (see FactorRef). `kind` rides along
+// because it decides the base rate, and the key ranges that separate the
+// kinds are an ingest heuristic rather than a guarantee.
+export interface SlotFactor {
+  kind: SlotFactorKind;
+  key: number;
+  stars: number;
+}
+
+// A pickable spark, from the committed factor reference — what hand entry
+// chooses from. Roster and lineage slots get theirs decoded from the dump
+// instead.
+export interface FactorRef {
+  kind: SlotFactorKind;
+  key: number;
+  name: string;
+}
+
 // A generation-3/4 slot: a pink, a character, or both. Flat rather than
 // nesting the spark under the identity, so every row written before
 // `card_id` existed is already this shape and parses unchanged.
@@ -185,6 +211,10 @@ export interface BlueprintSlot {
   // won saddles. Absent on catalog and lineage slots, which have no horse
   // behind them to have trained.
   aptitudes?: AptitudeLetters | null;
+  // The member's non-pink sparks, for the inspiration-proc estimates. Absent
+  // on every row written before they existed, which reads as "carries none" —
+  // the only way this document is allowed to grow.
+  factors?: SlotFactor[];
 }
 
 // Blueprint document v2 (DECISIONS.md #25): `named` is the identity triangle
@@ -271,6 +301,7 @@ export const api = {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     }),
   catalog: () => fetch("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
+  factors: () => fetch("/api/factors").then((r) => json<FactorRef[]>(r)),
   // Takes a signal so the designer's debounced effect can abort a stale
   // request instead of racing it against the newer one.
   scoreAffinity: (body: AffinityRequest, signal?: AbortSignal) =>

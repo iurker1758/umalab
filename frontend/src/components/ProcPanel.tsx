@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { AffinityResult, FactorRef, SlotFactor } from "../api";
 import { APTITUDE_LABELS } from "../aptitude";
 import {
@@ -161,6 +162,16 @@ export function NodeProcs({
 // how you actually hunt one, so the combined number is the one that says
 // whether the plan is good enough — and it is the question no single
 // ancestor's tab can answer.
+// How many rows the trainee's table shows before asking. A fully bred tree —
+// two roster veterans in the parents, their real parents behind them — runs
+// to about 34 distinct sparks, which is a panel 1.2× the viewport and a page
+// you scroll past the map to read. Twelve keeps the tab close to Details in
+// height, so switching between them doesn't reflow the page under you.
+//
+// Capping is only honest because the table is RANKED: what's hidden is always
+// the least likely, never an arbitrary slice.
+const TRAINEE_ROWS = 12;
+
 export function TraineeProcs({
   design,
   affinity,
@@ -170,6 +181,9 @@ export function TraineeProcs({
   affinity: AffinityResult | null;
   sparkNames: Map<string, string>;
 }) {
+  // Resets when you leave the trainee, which is the right scope: it is a
+  // "show me the tail of THIS list" answer, not a preference.
+  const [expanded, setExpanded] = useState(false);
   const perMember = [];
   for (let i = 1; i < NAMED_COUNT; i++) {
     const id = affinitySlotOf(i);
@@ -182,22 +196,32 @@ export function TraineeProcs({
   if (outlooks.length === 0) {
     return <p className="focus-note">No sparks on the ancestors yet.</p>;
   }
+  const shown = expanded ? outlooks : outlooks.slice(0, TRAINEE_ROWS);
   return (
-    <table className="proc-table">
-      <thead>
-        <tr>
-          <th scope="col" className="proc-name">Spark</th>
-          <ChanceHeader />
-        </tr>
-      </thead>
-      <tbody>
-        {/* Which members carry each spark is deliberately not a column: this
-            table answers "what am I likely to come out with", and the
-            per-member breakdown is one click away on their own tabs. */}
-        {outlooks.map((o) => (
-          <SparkRow key={sparkId(o)} spark={o} name={sparkName(o, sparkNames)} />
-        ))}
-      </tbody>
-    </table>
+    <>
+      <table className="proc-table">
+        <thead>
+          <tr>
+            <th scope="col" className="proc-name">Spark</th>
+            <ChanceHeader />
+          </tr>
+        </thead>
+        <tbody>
+          {/* Which members carry each spark is deliberately not a column: this
+              table answers "what am I likely to come out with", and the
+              per-member breakdown is one click away on their own tabs. */}
+          {shown.map((o) => (
+            <SparkRow key={sparkId(o)} spark={o} name={sparkName(o, sparkNames)} />
+          ))}
+        </tbody>
+      </table>
+      {/* The count is the point of the label: "34" says how much tree there is
+          below the fold, which a bare "Show more" wouldn't. */}
+      {outlooks.length > TRAINEE_ROWS && (
+        <button className="proc-more" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show fewer" : `Show all ${outlooks.length}`}
+        </button>
+      )}
+    </>
   );
 }

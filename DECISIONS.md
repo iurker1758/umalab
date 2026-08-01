@@ -1510,6 +1510,18 @@ Keep adding entries as the build evolves. This file is the interview.
     the trainee comes out with, the breakdown is one click away on each
     member's own tab, and the column cost a third of the width in a
     panel where the spark names are already the tight part.
+    **Capped at 12 rows, with a "Show all N" button.** Measured on a
+    fully bred tree — two roster veterans in the parents, their real
+    parents behind them — the uncapped table ran to **34 rows, a 1120px
+    panel against a 900px viewport** (1.2×, and a 2230px page on a
+    390px phone). Capped it is 555px, 0.6× the viewport, so the tab
+    stays close to Details in height and switching between them doesn't
+    reflow the page. The cap is only honest because the table is ranked:
+    what's hidden is always the least likely. The count rides in the
+    label because "34" says how much tree is below the fold, which
+    "Show more" wouldn't. Ancestor tables are never capped — a member
+    holds a handful, and hiding rows on the tab where you EDIT them
+    would hide what you just typed.
 
   **The kind is carried by colour, not by a word.** The spark's name
   takes its kind's colour and the bar beside it is filled to match, so a
@@ -1557,7 +1569,12 @@ Keep adding entries as the build evolves. This file is the interview.
   spark of each kind would proc at, given this member's affinity) —
   needs no document change and works before anything is cast, but it
   answers a hypothetical; Jason chose the real sparks, which is what
-  makes the trainee's combined view possible at all. *A field per kind*
+  makes the trainee's combined view possible at all. *Scrolling the
+  long table inside a fixed-height box* rather than capping it — it
+  would nest a scroll region inside a page that already scrolls, which
+  on a phone means trapped touch scrolling and no skimming, and a
+  fixed box hides how much is below without saying how much. Ctrl+F
+  over the full list goes too. *A field per kind*
   (`whites`, `greens`, `races`) — four arrays, one shape, same three
   validations in four places; the first cut of this shipped as `whites`
   alone and generalizing it was a rename, which is the argument for

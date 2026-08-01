@@ -547,6 +547,11 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-kind-race { background: #3a3122; color: #ffd257; }
 .proc-kind-scenario { background: #2a2440; color: #b9a0ff; }
 
+/* Reveals the ranked tail of the trainee's table. Full width so it reads as
+   the end of the list rather than an action on the last row. */
+.proc-more { width: 100%; margin-top: 0.45rem; padding: 0.32rem; font-size: 0.78rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #223040; border-radius: 5px; opacity: 0.8; cursor: pointer; }
+.proc-more:hover { opacity: 1; background: #1d2b3a; }
+
 /* Hand entry: a held list, then a search that only lists matches once you
    type — 400-odd factors under every panel is not a browser. */
 .spark-add { margin-top: 0.7rem; }

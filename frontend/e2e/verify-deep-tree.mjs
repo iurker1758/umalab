@@ -866,6 +866,57 @@ try {
   check("and land on nobody else",
     [0, 1, 2, 4, 5, 6].every(
       (i) => (withSparks?.slots.named[i]?.factors ?? []).length === 0));
+
+  // ---------- the trainee's table caps its tail ----------
+  // A fully bred tree runs to ~34 distinct sparks, which is a panel 1.2x the
+  // viewport. The cast so far is under the cap, so this loads P2 up until it
+  // is over — everything above ran against the short list, which is the
+  // common case and must keep showing every row.
+  await openTab("Procs");
+  const shortList = await page.locator(".focus .proc-table tbody tr").count();
+  check(`no cap while the list is short (${shortList} rows)`,
+    shortList < 12 && (await page.locator(".focus .proc-more").count()) === 0);
+  // Distinct from anything already in the tree — slice past the white G1-1
+  // holds, so every one of these adds a row rather than joining one.
+  const filler = factorRef.filter((f) => f.kind === "white").slice(1, 10);
+  await selectNode("Parent 2");
+  await openTab("Procs");
+  for (const f of filler) {
+    await page.locator('input[aria-label="P2 spark search"]').fill(f.name);
+    await page.locator(".spark-matches button", { hasText: f.name }).first().click();
+  }
+  await selectNode("Trainee");
+  await openTab("Procs");
+  const allRows = shortList + filler.length;
+  check(`${allRows} sparks show as 12, with the rest behind a button`,
+    await until(async () =>
+      (await page.locator(".focus .proc-table tbody tr").count()) === 12 &&
+      (await page.locator(".focus .proc-more").textContent()) === `Show all ${allRows}`));
+  // What's hidden is always the least likely — the cap is only honest because
+  // the table is ranked, so the twelve shown must be the twelve best.
+  check("the rows kept are the twelve highest chances",
+    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+      const nums = [...el.querySelectorAll(".proc-pct")].map((n) =>
+        Number(n.textContent.replace("%", ""))
+      );
+      return nums.every((n, i) => i === 0 || nums[i - 1] >= n);
+    }));
+  await page.locator(".focus .proc-more").click();
+  check("and the button reveals every one of them",
+    (await page.locator(".focus .proc-table tbody tr").count()) === allRows &&
+    (await page.locator(".focus .proc-more").textContent()) === "Show fewer");
+  await page.locator(".focus .proc-more").click();
+  check("and folds them away again",
+    (await page.locator(".focus .proc-table tbody tr").count()) === 12);
+  // Ancestor tables are never capped: a member holds a handful, and hiding
+  // rows on the tab where you EDIT them would hide what you just typed.
+  await selectNode("Parent 2");
+  await openTab("Procs");
+  check("an ancestor's own table shows everything she carries",
+    (await page.locator(".focus .proc-table tbody tr").count()) === filler.length &&
+    (await page.locator(".focus .proc-more").count()) === 0);
+  await selectNode("Trainee");
+  await openTab("Details");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');
   check("map chip shows all ten labeled letters",
     (await mapChip("Trainee").locator(".apt-cell").count()) === 10 &&

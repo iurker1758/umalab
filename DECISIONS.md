@@ -420,9 +420,10 @@ Keep adding entries as the build evolves. This file is the interview.
   **RESOLVED 2026-07-31 — the parent↔parent link DOES feed each
   parent's individual affinity, relation points and win bonus alike,
   and it feeds BOTH of them.** Left open at first (excluded from both
-  parents pending evidence), then settled by Polaris's published
-  breakdown — a JP dataset of 1000 inheritances at known compatibility,
-  cross-checked against the in-app 相性値の内訳 panel:
+  parents pending evidence), then settled by **Polaris's**
+  compatibility-0 study (`@BourBon_Polaris`, Aug 2025 — linked in
+  RESOURCES.md): a JP dataset of 1000 inheritances at known
+  compatibility, cross-checked against the in-app 相性値の内訳 panel:
   「各親・祖の相性ボーナス(親7・祖2・祖2) / 親① (青1+青4+青5)+緑3 /
   祖① 青4 / 祖② 青5 / ※両親の相性値とG1ボーナス(緑3)は重複します」.
   The numerals index the seven breakdown rows, so a **parent** takes its
@@ -1404,7 +1405,8 @@ Keep adding entries as the build evolves. This file is the interview.
     5/10/15, race 1/2/3, other whites 3/6/9.
 - **Both 7c forks CLOSED the same day, by two further sources:**
   - **Individual-affinity composition** — Polaris's compatibility-0
-    study (1000 inheritances, Aug 2025) publishes the rule outright and
+    study (`@BourBon_Polaris`, 1000 inheritances, Aug 2025; both posts
+    linked in RESOURCES.md) publishes the rule outright and
     verifies it against the in-app breakdown panel: parent = pair +
     both triples + the p1-p2 link, grandparent = its own triple, p1-p2
     duplicated into both. Full quote and arithmetic in #15, which this

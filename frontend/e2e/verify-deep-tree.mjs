@@ -653,9 +653,26 @@ try {
   // affinity at all, and those chips are anonymous spark slots.
   check("the seven named nodes carry a tile, and nothing deeper does",
     (await page.locator(".vped .aff-chip").count()) === 7);
+  // An ancestor's panel shows its INDIVIDUAL affinity instead — the number a
+  // proc off it rolls against, with the links it's composed of. Nesting and
+  // double-counting are why this lives here and not on a tile.
   await selectNode("Parent 1");
-  check("no affinity on a parent's panel",
-    (await page.locator(".focus .aff-total").count()) === 0);
+  check("a parent's panel shows her individual affinity, not the run's",
+    (await page.locator(".focus .aff-number").textContent()) ===
+      String(expectedAff.p1_affinity) &&
+    (await page.locator(".focus .aff-symbol").count()) === 0);
+  check("and the four links it's composed of, in tree order",
+    (await page.locator(".focus .aff-compose .aff-link-name").allTextContents()).join(",") ===
+      "Trainee · Parent 1,Parent 1 · GP 1-1,Parent 1 · GP 1-2,Parent 1 · Parent 2");
+  check("the composing rows sum to the number above them",
+    (await page.locator(".focus .aff-compose .aff-link-sum").allTextContents())
+      .reduce((n, t) => n + Number(t), 0) === expectedAff.p1_affinity);
+  await selectNode("Grandparent 1-1");
+  check("a grandparent's is one link, named rather than tabulated",
+    (await page.locator(".focus .aff-number").textContent()) ===
+      String(expectedAff.g11_affinity) &&
+    (await page.locator(".focus .aff-compose").count()) === 0 &&
+    (await page.locator(".focus .aff-caption").textContent()) === "Parent 1 · GP 1-1");
   await selectNode("Trainee");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');
   check("map chip shows all ten labeled letters",

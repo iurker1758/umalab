@@ -10,7 +10,7 @@ import {
 import {
   NAMED_COUNT,
   NODE_COUNT,
-  NODE_LINK,
+  OWNED_LINK,
   affinitySlotOf,
   deepCardAt,
   deriveCharaId,
@@ -116,7 +116,7 @@ export function TreeMap({
     // the tile in step with the numbers beside it rather than with a design
     // the debounce hasn't caught up to.
     if (id === null || affinity[`${id}_affinity`] === null) return null;
-    const row = affinity.links.find((l) => l.link === NODE_LINK[i]);
+    const row = affinity.links.find((l) => l.link === OWNED_LINK[i]);
     return row === undefined
       ? null
       : { text: `+${row.relation_points + row.win_points}`, symbol: null };

@@ -10,7 +10,7 @@ import {
   sparkLocked,
   type Design,
 } from "../blueprint";
-import { AffinityPanel } from "./AffinityPanel";
+import { AffinityPanel, NodeAffinity } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
 
@@ -252,6 +252,10 @@ export function FocusPanel({
         </>
       ) : (
         <>
+          {/* Ancestors get their own affinity, not the run's — the number a
+              proc off them rolls against. Above the spark editor: it is what
+              decides whether the pink below it ever lands. */}
+          <NodeAffinity affinity={affinity} index={index} />
           <h4>Pink spark</h4>
           {pinkFixed ? (
             <SparkReadout spark={slot.spark} />

@@ -1271,12 +1271,20 @@ Keep adding entries as the build evolves. This file is the interview.
 
   Conflating them is the trap: displaying individual affinity on a map
   tile puts a parent's grandparents inside her own figure, one row above
-  them on the same screen, and the tree stops adding up
-  (75 + 69 + 16 + 18 + 10 + 17 = 205, not 122). So **the map shows
-  owned-link and the API keeps individual**. uma.moe reached the same
-  split independently — `getTreeNodeDirectBaseAffinity` for its tree
-  nodes, `getTreeSideTotalAffinity` for its proc table (though its base
-  omits the p1-p2 relation points that #15's evidence includes).
+  them on the same screen, and the two parents visibly exceed the total
+  they sit under (75 + 69 = 144 > 122). So **the map shows owned-link**
+  — the only decomposition that survives being read as a tree — **and
+  individual affinity lives in the focus panel**, where there is room to
+  show what it is made of instead of leaving it to be inferred: the
+  number, then the links composing it (a parent's four, a grandparent's
+  one named rather than tabulated), then what it's for. That division
+  falls out of what each surface is for — the map is for comparing
+  slots, the panel for understanding one — and it costs nothing, because
+  the two quantities are *identical* on grandparents and differ only on
+  the two nodes the panel can afford to explain. uma.moe reached the
+  same split independently — `getTreeNodeDirectBaseAffinity` for its
+  tree nodes, `getTreeSideTotalAffinity` for its proc table (though its
+  base omits the p1-p2 relation points that #15's evidence includes).
 
   On the map the trainee's tile shows the run total with its band
   symbol; the six ancestors are **signed (`+16`) and bandless**, because
@@ -1326,8 +1334,16 @@ Keep adding entries as the build evolves. This file is the interview.
   a grandparent's is one of them, so both forms restated the table
   above them; scoring client-side to skip the round trip — #26
   already rejected forking the one in-game-verified implementation of
-  this formula; keeping the numbers in the panel only, which is where
-  they started — the total sat under ten aptitude rows on the one node
+  this formula; putting individual affinity on the map tiles instead of
+  owned-link — it is the better number for "how much is riding on this
+  slot", and it is what 7c rolls against, but two parents reading 75 and
+  69 under a total of 122 is an arithmetic contradiction a user meets in
+  one glance, and no label survives that (a later idea worth weighing
+  once 7c's percentages are on screen: reframe the tiles as *loss* —
+  "lose 75" is exactly individual affinity, since emptying a parent
+  kills her grandparents' triples too, and removals obviously don't sum,
+  which would let the honest number onto the map); keeping the numbers
+  in the panel only, which is where they started — the total sat under ten aptitude rows on the one node
   whose headline number it is, and the shares sat in a list that read
   as the link table regrouped. On the map neither problem exists: each
   number is on the node it describes.

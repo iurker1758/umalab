@@ -484,6 +484,11 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .aff-link-name { opacity: 0.75; }
 .aff-link-pts { text-align: right; opacity: 0.65; }
 .aff-link-sum { text-align: right; font-weight: 600; }
+/* The composition table on an ancestor's panel: two columns, and it sits
+   under a number rather than over one, so no top rule on the first row. */
+.aff-compose tr:first-child td { border-top: 0; }
+/* A grandparent's single link, named rather than tabulated. */
+.aff-caption { opacity: 0.65; font-size: 0.82rem; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */

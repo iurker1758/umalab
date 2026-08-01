@@ -1,5 +1,5 @@
 import type { AffinityResult } from "../api";
-import { LINK_LABELS } from "../blueprint";
+import { LINK_LABELS, NODE_LINKS, affinitySlotOf } from "../blueprint";
 import { affinityClass } from "../domain";
 
 // Run affinity for the trainee — the compatibility number the game shows on
@@ -88,6 +88,63 @@ export function AffinityPanel({
           </table>
         </>
       )}
+    </>
+  );
+}
+
+// One ancestor's INDIVIDUAL affinity — every link it appears in, which is
+// what an inspiration proc off it rolls against. Panel-only by design: a
+// parent's includes the two grandparents below her and the parent-pair link,
+// so it nests and double-counts, and putting it on a map tile would show two
+// parents visibly exceeding the trainee's total one row above them
+// (DECISIONS.md #29). Here there is room to show the composition instead of
+// leaving it to be inferred.
+//
+// Renders nothing when there is no score, or when this slot was empty in the
+// design that was scored — the ancestor panels have plenty else to show.
+export function NodeAffinity({
+  affinity,
+  index,
+}: {
+  affinity: AffinityResult | null;
+  index: number;
+}) {
+  const id = affinitySlotOf(index);
+  if (affinity === null || id === null) return null;
+  const share = affinity[`${id}_affinity`];
+  if (share === null) return null;
+  const byLink = new Map(affinity.links.map((l) => [l.link, l]));
+  const rows = (NODE_LINKS[index] ?? []).flatMap((link) => {
+    const entry = byLink.get(link);
+    return entry === undefined ? [] : [entry];
+  });
+  return (
+    <>
+      <h4>Affinity</h4>
+      <div className="aff-total">
+        <span className="aff-number">{share}</span>
+      </div>
+      {/* A grandparent sits in exactly one link, so a table would restate the
+          number above it — the link is named as a caption instead. */}
+      {rows.length === 1 ? (
+        <div className="aff-caption">{LINK_LABELS[rows[0].link] ?? rows[0].link}</div>
+      ) : (
+        <table className="aff-links aff-compose">
+          <tbody>
+            {rows.map((l) => (
+              <tr key={l.link}>
+                <td className="aff-link-name">{LINK_LABELS[l.link] ?? l.link}</td>
+                <td className="aff-link-sum">{l.relation_points + l.win_points}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="focus-note">
+        What an inspiration proc from this member would roll against.
+        {rows.length > 1 &&
+          " It covers every link this member is part of, the two below included, so it isn't a share of the trainee's total."}
+      </p>
     </>
   );
 }

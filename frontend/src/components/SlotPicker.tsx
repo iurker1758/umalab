@@ -68,9 +68,13 @@ export function SlotPicker({
   const [source, setSource] = useState<Source>("catalog");
   // Sort and filters are the picker's own and deliberately NOT persisted:
   // narrowing the list to find one mare shouldn't silently reorder or filter
-  // the roster page you go back to. Starts where the roster does — best
-  // first — so the list opens on your strongest veterans.
-  const [sort, setSort] = useState<SortPref>({ key: "rank_score", asc: false });
+  // the roster page you go back to. It opens on the same default the roster
+  // page does — newest first — because the veteran you want to breed from is
+  // usually one you just finished, not your best-ever.
+  const [sort, setSort] = useState<SortPref>({
+    key: "register_time",
+    asc: DEFAULT_ASC.register_time,
+  });
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [filterOpen, setFilterOpen] = useState(false);
 

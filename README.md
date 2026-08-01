@@ -38,10 +38,10 @@ all.
 
 The designer also scores the run's inheritance affinity, right on the map:
 the total and band the game shows on the parent-select screen sit on the
-trainee's node, and each parent and grandparent shows what it contributes to
-that total — the six adding up to it exactly, bar the parent-to-parent link
-that belongs to neither alone. The seven-link breakdown sits behind it in the
-panel. Inspiration proc
+trainee's node, and each parent and grandparent carries its own affinity —
+every compatibility link that member is part of, which is what decides how
+often her sparks actually pass down. The panel behind each node shows what
+that number is made of. Inspiration proc
 estimates are still to come, then hunted-skill spark scoring (expected sparks
 before/after reroll, ported from the predecessor tkinter app).
 

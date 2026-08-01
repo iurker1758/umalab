@@ -608,38 +608,31 @@ try {
         aff.width > turf.width  // two columns to the letters' one
       );
     }));
-  // Every ancestor shows the link it OWNS — signed, and bandless: the △/○/◎
-  // table grades whole pairings, so a symbol on a part would read as a
-  // compatibility rating.
+  // Every ancestor shows its INDIVIDUAL affinity — every link it appears in,
+  // the number a proc off it rolls against. Bandless: the △/○/◎ table grades
+  // whole pairings, so a symbol on one ancestor would read as a rating for
+  // her alone.
   const chipAff = (node) => mapChip(node).locator(".aff-chip b").textContent();
   const linkPts = (id) => {
     const l = expectedAff.links.find((x) => x.link === id);
     return l.relation_points + l.win_points;
   };
-  check("each ancestor carries the link it owns",
-    (await chipAff("Parent 1")) === `+${linkPts("t-p1")}` &&
-    (await chipAff("Parent 2")) === `+${linkPts("t-p2")}` &&
-    (await chipAff("Grandparent 1-1")) === `+${linkPts("t-p1-g11")}` &&
-    (await chipAff("Grandparent 1-2")) === `+${linkPts("t-p1-g12")}`);
+  check("each ancestor carries its individual affinity",
+    (await chipAff("Parent 1")) === String(expectedAff.p1_affinity) &&
+    (await chipAff("Parent 2")) === String(expectedAff.p2_affinity) &&
+    (await chipAff("Grandparent 1-1")) === String(expectedAff.g11_affinity) &&
+    (await chipAff("Grandparent 1-2")) === String(expectedAff.g12_affinity));
   check("only the trainee's tile carries a band symbol",
     (await page.locator(".vped .aff-chip-sym").count()) === 1);
-  // The property that makes the map's decomposition honest: every term lands
-  // on exactly one tile, except the parent-pair link, which belongs to
-  // neither parent alone (DECISIONS.md #15) and is the gap between the tiles
-  // and the trainee's total. Empty slots show "-" and score 0, so they drop
-  // out of both sides.
-  const tileSum = (await page.locator(".vped .aff-chip b").allTextContents())
-    .filter((t) => t.startsWith("+"))
-    .reduce((n, t) => n + Number(t.slice(1)), 0);
-  check("the tiles plus the parent-pair link equal the trainee's total",
-    tileSum + linkPts("p1-p2") === expectedAff.total, `tiles ${tileSum}`);
-  // Meanwhile the API keeps the OTHER decomposition — individual affinity,
-  // every link an ancestor appears in, which is what an inspiration proc off
-  // her is rolled against (7c). A parent's includes the parent-pair link, so
-  // it lands in BOTH parents and the six deliberately do not partition the
-  // total. This is the number the map isn't showing, and the two must not be
-  // conflated (DECISIONS.md #15/#29).
-  check("the API carries each parent's individual affinity, pair link included",
+  // Unsigned on purpose: "+175" invites adding the tiles up, and this is the
+  // one quantity that doesn't support it.
+  check("ancestor tiles are unsigned",
+    (await page.locator(".vped .aff-chip b").allTextContents()).every((t) => !t.startsWith("+")));
+  // What those numbers are: every link the ancestor is part of. A parent's
+  // includes the parent-pair link, so it lands in BOTH parents and a
+  // grandparent's triple sits inside its parent's number — which is why they
+  // deliberately do not partition the total (DECISIONS.md #15/#29).
+  check("a parent's is her own link, both triples and the parent pair",
     expectedAff.p1_affinity ===
       linkPts("t-p1") + linkPts("t-p1-g11") + linkPts("t-p1-g12") + linkPts("p1-p2") &&
     expectedAff.p2_affinity ===
@@ -647,6 +640,14 @@ try {
   check("a grandparent's is its own triple alone",
     expectedAff.g11_affinity === linkPts("t-p1-g11") &&
     expectedAff.g12_affinity === linkPts("t-p1-g12"));
+  // The misranking that owned-link produced, guarded against: `t-p1`/`t-p2`
+  // are the only links that can never carry a win bonus, so attributing each
+  // link to its deepest node left parents below their own grandparents on any
+  // lineage with real overlap. A parent must never read lower than a
+  // grandparent beneath her — her number contains that grandparent's.
+  check("a parent never reads below her own grandparents",
+    expectedAff.p1_affinity >= expectedAff.g11_affinity &&
+    expectedAff.p1_affinity >= expectedAff.g12_affinity);
   check("an empty ancestor shows no number",
     (await mapChip("Grandparent 2-1").locator(".aff-chip b.blank").count()) === 1);
   // The tile stops at the grandparents: below them the game scores no

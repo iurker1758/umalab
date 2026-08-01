@@ -10,7 +10,6 @@ import {
 import {
   NAMED_COUNT,
   NODE_COUNT,
-  OWNED_LINK,
   affinitySlotOf,
   deepCardAt,
   deriveCharaId,
@@ -91,19 +90,27 @@ export function TreeMap({
     );
   };
 
-  // What a named node is worth in affinity, and how it reads. The trainee
-  // shows the RUN's total with its band symbol — the number the game puts on
-  // the parent-select screen. Every ancestor shows what IT contributes to
-  // that total: the one link it OWNS, so the six tiles plus the parent-pair
-  // link add up to the total and nothing is counted twice. Signed, because a
-  // contribution is an addend, and bandless, because the △/○/◎ table grades
-  // whole pairings — a symbol on a part would invite reading a grandparent's
-  // 16 as a compatibility rating.
+  // What a named node is worth in affinity. The trainee shows the RUN's total
+  // with its band symbol — the number the game puts on the parent-select
+  // screen. Every ancestor shows its INDIVIDUAL affinity: every link it
+  // appears in, which is what an inspiration proc off it rolls against.
+  // Bandless, because the △/○/◎ table grades whole pairings — a symbol on one
+  // ancestor would read as a compatibility rating for her alone.
   //
-  // Deliberately NOT the API's `*_affinity`, which gives a parent her whole
-  // side. That is the proc-roll quantity (DECISIONS.md #29); showing it here
-  // would nest her grandparents' numbers inside her own, one row above them
-  // on the same map. uma.moe splits these two the same way.
+  // These deliberately do NOT sum to the trainee's total: a grandparent's
+  // number sits inside its parent's, and the p1-p2 link sits inside both
+  // parents'. The focus panel shows each node's composition, which is where
+  // that nesting is explained (DECISIONS.md #29).
+  //
+  // The rejected alternative was the owned-link decomposition — one link per
+  // node, six tiles summing to the total. It reads tidily and it RANKS THE
+  // TREE WRONG: `t-p1` and `t-p2` are the only links that can never carry a
+  // win bonus (the trainee hasn't raced), so every win point lands on a
+  // grandparent's tile and parents show as the weakest nodes on any lineage
+  // with real overlap. Measured on a real ◎ blueprint: parents +18/+24
+  // against grandparents +48/+50/+63/+70, where the individual numbers are
+  // 175/216 against 48/50/63/70. Correct ranking beats additive tidiness —
+  // nobody sums across generations, everybody compares slots.
   //
   // Null ⇒ nothing to show yet: no score, or a slot with nobody in it. Both
   // render as the placeholder, so the tile holds its footprint either way.
@@ -111,15 +118,13 @@ export function TreeMap({
     if (affinity === null) return null;
     if (i === 0) return { text: String(affinity.total), symbol: affinity.symbol };
     const id = affinitySlotOf(i);
-    // `*_affinity` is read only as the "is this slot filled?" test: it is null
-    // exactly when the design that was SCORED had nobody there, which keeps
-    // the tile in step with the numbers beside it rather than with a design
-    // the debounce hasn't caught up to.
-    if (id === null || affinity[`${id}_affinity`] === null) return null;
-    const row = affinity.links.find((l) => l.link === OWNED_LINK[i]);
-    return row === undefined
-      ? null
-      : { text: `+${row.relation_points + row.win_points}`, symbol: null };
+    // Null exactly when the design that was SCORED had nobody here, which
+    // keeps the tile in step with the numbers beside it rather than with a
+    // design the debounce hasn't caught up to.
+    const share = id === null ? null : affinity[`${id}_affinity`];
+    // Unsigned: "+175" invites adding the tiles up, which is the one thing
+    // this quantity doesn't support.
+    return share === null ? null : { text: String(share), symbol: null };
   };
 
   const chip = (i: number, gen: number) => {

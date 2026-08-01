@@ -1269,22 +1269,40 @@ Keep adding entries as the build evolves. This file is the interview.
     plus the `p1-p2` link equal the total exactly. This is the
     **contribution** quantity — "what does this uma add?"
 
-  Conflating them is the trap: displaying individual affinity on a map
-  tile puts a parent's grandparents inside her own figure, one row above
-  them on the same screen, and the two parents visibly exceed the total
-  they sit under (75 + 69 = 144 > 122). So **the map shows owned-link**
-  — the only decomposition that survives being read as a tree — **and
-  individual affinity lives in the focus panel**, where there is room to
-  show what it is made of instead of leaving it to be inferred: the
-  number, then the links composing it (a parent's four, a grandparent's
-  one named rather than tabulated), then what it's for. That division
-  falls out of what each surface is for — the map is for comparing
-  slots, the panel for understanding one — and it costs nothing, because
-  the two quantities are *identical* on grandparents and differ only on
-  the two nodes the panel can afford to explain. uma.moe reached the
-  same split independently — `getTreeNodeDirectBaseAffinity` for its
-  tree nodes, `getTreeSideTotalAffinity` for its proc table (though its
-  base omits the p1-p2 relation points that #15's evidence includes).
+  **The map shows individual affinity on every named node**, with the
+  composition in the focus panel — the number, then the links it is made
+  of (a parent's four, a grandparent's one named rather than tabulated).
+  The tiles are unsigned, because `+175` invites adding them up and this
+  is the one quantity that doesn't support it.
+
+  **Owned-link was built first, shipped on the map, and then withdrawn —
+  it ranks the tree wrong.** `t-p1` and `t-p2` are the only two links in
+  the system that can never carry a win bonus (the trainee hasn't raced
+  at design time), so attributing each link to its deepest participant
+  hands every win point to a grandparent and leaves parents with
+  relation points alone. On a real ◎ blueprint with 210 of its 332
+  points in wins, the tiles read parents **+18/+24** against
+  grandparents **+48/+50/+63/+70** — the parents, who carry 175 and 216
+  individually, showing as the weakest nodes in the tree. The better the
+  lineage's win overlap, the more wrong it looked; catalog-only designs
+  hid it completely because `win_total` was 0.
+
+  That also exposed the flaw in the idea: "deepest participant owns the
+  link" is a convention, not a truth. A race that a parent *and* her
+  grandparent both won is symmetric between them, and assigning all of
+  it to the grandparent is arbitrary — which is exactly what produced
+  the misranking. Additive tidiness was the only thing it bought, and
+  nobody sums tiles across generations while planning; everybody
+  compares slots. Correct ranking wins.
+
+  What survives is the reason the panel exists: individual affinity
+  nests (a grandparent's sits inside its parent's) and double-counts
+  (the p1-p2 link sits inside both parents'), so the six do not sum to
+  the total. The panel is where that is shown rather than left to be
+  inferred. uma.moe carries both decompositions too —
+  `getTreeNodeDirectBaseAffinity` for its tree nodes,
+  `getTreeSideTotalAffinity` for its proc table — but its base omits the
+  p1-p2 relation points that #15's evidence includes.
 
   On the map the trainee's tile shows the run total with its band
   symbol; the six ancestors are **signed (`+16`) and bandless**, because
@@ -1334,16 +1352,11 @@ Keep adding entries as the build evolves. This file is the interview.
   a grandparent's is one of them, so both forms restated the table
   above them; scoring client-side to skip the round trip — #26
   already rejected forking the one in-game-verified implementation of
-  this formula; putting individual affinity on the map tiles instead of
-  owned-link — it is the better number for "how much is riding on this
-  slot", and it is what 7c rolls against, but two parents reading 75 and
-  69 under a total of 122 is an arithmetic contradiction a user meets in
-  one glance, and no label survives that (a later idea worth weighing
-  once 7c's percentages are on screen: reframe the tiles as *loss* —
-  "lose 75" is exactly individual affinity, since emptying a parent
-  kills her grandparents' triples too, and removals obviously don't sum,
-  which would let the honest number onto the map); keeping the numbers
-  in the panel only, which is where they started — the total sat under ten aptitude rows on the one node
+  this formula; **owned-link on the map tiles — built, shipped, and
+  withdrawn the same day** for the misranking described above (its one
+  advantage, that the tiles sum to the total, cost the tree its
+  ordering); keeping the numbers in the panel only, which is where they
+  started — the total sat under ten aptitude rows on the one node
   whose headline number it is, and the shares sat in a list that read
   as the link table regrouped. On the map neither problem exists: each
   number is on the node it describes.
@@ -1406,7 +1419,11 @@ Keep adding entries as the build evolves. This file is the interview.
     vary with compatibility — 「二回目、三回目の継承では、継承される因子の
     数やその効果が継承ウマ娘との相性によって異なります」. So `1 − (1−p)²`
     is right, and now for a stated reason rather than an assumption.
-- **Would change my mind:** a post-2026-06-24 replication — every
+- **Would change my mind:** the nesting proving genuinely misleading on
+  the map once people use it — the fallback is to reframe the tiles as
+  *loss* ("lose 175" is exactly individual affinity, since emptying a
+  parent kills her grandparents' triples too), where non-summing is the
+  point rather than an awkwardness; a post-2026-06-24 replication — every
   measurement behind #15's composition rule predates Global's affinity
   rework, and while the rule is structural (which links compose a
   node's number) rather than constant-bound, a rework that touched

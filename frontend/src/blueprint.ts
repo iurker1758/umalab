@@ -76,16 +76,12 @@ export const affinitySlotOf = (i: number): AffinitySlotId | null =>
 // whole side (both triples included) because that is what an inspiration proc
 // off her is rolled against. The two agree on grandparents and differ on
 // parents; uma.moe carries both for the same reason.
-export const OWNED_LINK: readonly (string | null)[] = [
-  null, "t-p1", "t-p2", "t-p1-g11", "t-p1-g12", "t-p2-g21", "t-p2-g22",
-];
-
-// The other decomposition: every link a node APPEARS in, which is what its
-// individual affinity sums (see affinity.node_affinity) and what an
-// inspiration proc off it rolls against. A parent's four include the two
-// below her and the parent pair — so a grandparent's single link is also
-// inside its parent's number, and `p1-p2` is inside both parents'. That is
-// why these don't sum to the total and the map doesn't show them.
+// Every link a node APPEARS in — what its individual affinity sums (see
+// affinity.node_affinity) and what an inspiration proc off it rolls against.
+// A parent's four include the two below her and the parent pair, so a
+// grandparent's single link is also inside its parent's number and `p1-p2` is
+// inside both parents'. They therefore don't sum to the total; the focus
+// panel shows the composition rather than leaving that to be inferred.
 //
 // The trainee has none: it is in every link and a slot in none.
 export const NODE_LINKS: readonly (readonly string[])[] = [

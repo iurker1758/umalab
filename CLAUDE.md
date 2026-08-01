@@ -17,9 +17,14 @@ aptitude calculator, and roster pulls — any node but the trainee can be
 filled from your roster, which brings that veteran's real pedigree with her
 and makes the branch read-only (DECISIONS.md #28), and run affinity on the
 trainee's panel, attributed per ancestor (DECISIONS.md #29 — this was V2's
-only backend code change). Manual entry stays the primary path throughout.
-Still open in V2: inspiration proc estimates, labelled "est.", rolled per
-ancestor against that ancestor's `*_affinity` share.
+only backend code change), and inspiration proc estimates on a Procs tab in
+the focus panel — every spark (pink, white, green, race, scenario) as the
+chance the trainee inherits it, per ancestor and combined across carriers on
+the trainee's own tab, labelled "est." (DECISIONS.md #30). Non-pink sparks
+are part of the blueprint document as of that work — `factors: [{kind, key,
+stars}]` on a named slot, decoded from the dump on a roster pull and typed in
+against `GET /api/factors` otherwise. Manual entry stays the primary path
+throughout. That closes V2's scope.
 Still planned after that: hunted-skill spark scoring
 (port of the pure `expected_sparks` before/after-reroll math from the
 predecessor local tool). Leave room for it; don't build it early.

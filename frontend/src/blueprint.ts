@@ -1,6 +1,7 @@
 import {
   AFFINITY_SLOTS,
   APTITUDE_KEYS,
+  SLOT_FACTOR_KINDS,
   type AffinityRequest,
   type AffinitySlotId,
   type AptitudeKey,
@@ -12,6 +13,8 @@ import {
   type Factor,
   type LineageMember,
   type PinkSpark,
+  type SlotFactor,
+  type SlotFactorKind,
   type Veteran,
 } from "./api";
 import { apt, isLetter } from "./domain";
@@ -57,6 +60,19 @@ export const NAMED_LABELS: readonly string[] = [
   "Grandparent 1-2",
   "Grandparent 2-1",
   "Grandparent 2-2",
+];
+
+// The same seven, abbreviated. For the trainee's proc roll-up, where a row
+// can name several carriers at once and "Grandparent 1-1, Grandparent 2-1"
+// would be wider than the panel.
+export const NAMED_SHORT: readonly string[] = [
+  "T",
+  "P1",
+  "P2",
+  "G1-1",
+  "G1-2",
+  "G2-1",
+  "G2-2",
 ];
 
 // ---------- run affinity ----------
@@ -144,13 +160,20 @@ export interface SlotValue {
   // the same inheritance twice. Null on catalog picks (a card, not a horse)
   // and on lineage slots (the dump gives its members no aptitudes).
   aptitudes: AptitudeLetters | null;
+  // The member's non-pink sparks — white, unique (green), race, scenario.
+  // Decoded from the dump on a roster or lineage pick, typed in by hand on a
+  // catalog one. Unlike the pink, these feed nothing deterministic: they are
+  // inherited by inspiration or not at all, so they exist for the proc
+  // estimates alone.
+  factors: SlotFactor[];
 }
 
 // A hand-picked node: everything a catalog pick knows, which is only who.
 export const catalogSlot = (
   charaId: number | null,
   cardId: number | null,
-  spark: PinkSpark | null
+  spark: PinkSpark | null,
+  factors: SlotFactor[] = []
 ): SlotValue => ({
   source: "catalog",
   chara_id: charaId,
@@ -160,6 +183,7 @@ export const catalogSlot = (
   position_id: null,
   spark,
   aptitudes: null,
+  factors,
 });
 
 export interface Design {
@@ -228,6 +252,24 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
         : { card_id: card }
       : { aptitude: spark.aptitude, stars: spark.stars, ...(card === null ? {} : { card_id: card }) }
   );
+}
+
+// Set a named node's non-pink sparks.
+//
+// A node that holds nothing else is left alone rather than created: the
+// server requires a slot without a character to carry a PINK (these feed no
+// deterministic math, so a sparks-only husk is not a plan), and writing one
+// would 422 the autosave for the whole design. The editor is only offered on
+// a node that exists, so this is a guard rather than a path users can take.
+// Clearing the last one off a node that has nothing else prunes it away, the
+// same rule `withSpark` follows.
+export function withFactors(design: Design, i: number, factors: SlotFactor[]): Design {
+  const slot = design.named[i];
+  if (slot === null) return design;
+  if (factors.length === 0 && slot.spark === null && slot.card_id === null) {
+    return withNamed(design, i, null);
+  }
+  return withNamed(design, i, { ...slot, factors });
 }
 
 // Replace a deep slot wholesale.
@@ -344,6 +386,34 @@ export function pinkOf(factors: readonly Factor[]): PinkSpark | null {
     if (best === null || f.star > best.stars) best = { aptitude, stars: f.star };
   }
   return best;
+}
+
+// Every non-pink spark a dump member carries, strongest first so the list
+// reads in the order that matters — a 3★ skill is worth three times a 1★ one
+// at the same affinity. Deduped by kind+key: a member holds a given factor at
+// exactly one star level (the factor_id encodes both), a duplicate would be
+// counted twice when a spark's carriers are combined, and the kinds number
+// their keys independently.
+//
+// The member's PINK is not in here: it lives in the slot's own `spark`,
+// because it is the one that also feeds the career-start brackets. Blue and
+// anything the reference couldn't classify are dropped — the document has no
+// kind for them.
+export function factorsOf(factors: readonly Factor[]): SlotFactor[] {
+  const best = new Map<string, SlotFactor>();
+  for (const f of factors) {
+    if (!(SLOT_FACTOR_KINDS as readonly string[]).includes(f.kind)) continue;
+    if (f.star < 1 || f.star > 3) continue;
+    const kind = f.kind as SlotFactorKind;
+    const id = `${kind}:${f.key}`;
+    const seen = best.get(id);
+    if (seen === undefined || f.star > seen.stars) {
+      best.set(id, { kind, key: f.key, stars: f.star });
+    }
+  }
+  return [...best.values()].sort(
+    (a, b) => b.stars - a.stars || a.kind.localeCompare(b.kind) || a.key - b.key
+  );
 }
 
 // Which succession slot feeds which tree node, relative to the node the
@@ -506,6 +576,9 @@ const lineageSlot = (
   // A dump's succession members carry no aptitude fields — only the veteran
   // record itself does. So a lineage node falls back to card base + brackets.
   aptitudes: null,
+  // Their other sparks ARE in the dump though, decoded like the pink. This is
+  // the whole reason a pulled ancestor's proc estimates need no typing.
+  factors: factorsOf(member.factors),
 });
 
 // Which dump field holds each aptitude, in the API's key order. The values
@@ -581,6 +654,7 @@ export function planPull(design: Design, target: number, veteran: Veteran): Pull
             position_id: null,
             spark: ownPink,
             aptitudes: veteranAptitudes(veteran),
+            factors: factorsOf(veteran.factors),
           },
         }
       : {
@@ -664,6 +738,7 @@ const slotToApi = (s: SlotValue | null): BlueprintSlot | null =>
         position_id: s.position_id,
         spark: s.spark,
         aptitudes: s.aptitudes,
+        factors: s.factors,
       };
 
 // The scoring request: the trainee's chara plus every filled ancestor in the
@@ -763,11 +838,12 @@ function slotFromApi(raw: BlueprintSlot | null | undefined): SlotValue | null {
   if (source === "lineage" && typeof position !== "number") {
     throw new Error("a lineage slot needs a position_id");
   }
+  const factors = factorsFromApi(raw.factors);
   // Spark-only slot: no character chosen yet. Only a catalog slot can be
   // one — a roster/lineage pick always knows who it pulled.
   if (raw.chara_id === null && raw.card_id === null) {
     if (spark === null || source !== "catalog") throw new Error("malformed blueprint slot");
-    return catalogSlot(null, null, spark);
+    return catalogSlot(null, null, spark, factors);
   }
   if (typeof raw.chara_id !== "number" || typeof raw.card_id !== "number") {
     throw new Error("malformed blueprint slot");
@@ -781,7 +857,39 @@ function slotFromApi(raw: BlueprintSlot | null | undefined): SlotValue | null {
     position_id: position,
     spark,
     aptitudes: lettersFromApi(raw.aptitudes, source),
+    factors,
   };
+}
+
+// A slot's non-pink sparks. Absent means none — every row written before they
+// existed, which is most of them. A malformed entry throws like every other
+// shape this client doesn't understand: silently dropping one would quietly
+// lower a proc estimate the design was judged on.
+function factorsFromApi(raw: SlotFactor[] | undefined): SlotFactor[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new Error("malformed sparks");
+  const out: SlotFactor[] = [];
+  const seen = new Set<string>();
+  for (const f of raw) {
+    const ok =
+      f !== null &&
+      typeof f === "object" &&
+      (SLOT_FACTOR_KINDS as readonly string[]).includes(f.kind) &&
+      Number.isInteger(f.key) &&
+      f.key >= 1 &&
+      Number.isInteger(f.stars) &&
+      f.stars >= 1 &&
+      f.stars <= 3;
+    if (!ok) throw new Error("malformed spark");
+    // The same rule the server validates on write: one entry per spark, or
+    // combining its carriers would roll it against itself. Kind and key
+    // together — the kinds number their keys independently.
+    const id = `${f.kind}:${f.key}`;
+    if (seen.has(id)) throw new Error("duplicate spark");
+    seen.add(id);
+    out.push({ kind: f.kind, key: f.key, stars: f.stars });
+  }
+  return out;
 }
 
 // A roster pick's stored letters. Absent on every catalog and lineage slot,

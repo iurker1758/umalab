@@ -1,7 +1,15 @@
-import type { AffinityResult, AptitudeLetters, PinkSpark } from "../api";
+import { useState } from "react";
+import type {
+  AffinityResult,
+  AptitudeLetters,
+  FactorRef,
+  PinkSpark,
+  SlotFactor,
+} from "../api";
 import { APTITUDE_LABELS, aptitudeRows, letterModeOf, undroppableSpark } from "../aptitude";
 import {
   NAMED_COUNT,
+  affinitySlotOf,
   deepCardAt,
   deriveCharaId,
   lockedBy,
@@ -13,6 +21,7 @@ import {
 import { AffinityPanel, NodeAffinity } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
+import { NodeProcs, TraineeProcs } from "./ProcPanel";
 
 // A locked node's pink, shown rather than edited. Same shape as the editor's
 // readout so the panel doesn't jump when you move between locked and free
@@ -52,9 +61,11 @@ export function FocusPanel({
   affinity,
   affinityFailed,
   affinityPending,
+  factorRefs,
   onOpenPicker,
   onClear,
   onSetSpark,
+  onSetFactors,
 }: {
   design: Design;
   index: number;
@@ -68,10 +79,21 @@ export function FocusPanel({
   affinityFailed: boolean;
   // A score is on the wire — see AffinityPanel's `pending`.
   affinityPending: boolean;
+  // The pickable sparks, from the committed factor reference. Empty until the
+  // fetch lands, which costs the hand-entry search its results and shows
+  // stored sparks by key — every CHANCE on the Procs tab reads the design,
+  // not this.
+  factorRefs: FactorRef[];
   onOpenPicker: (i: number) => void;
   onClear: (i: number) => void;
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
+  onSetFactors: (i: number, factors: SlotFactor[]) => void;
 }) {
+  // Which tab, kept across node switches on purpose: comparing the same view
+  // between two ancestors is the common move, and resetting to Details every
+  // time you click the map would undo it. Nodes with nothing to show in Procs
+  // simply render Details and no tab bar.
+  const [tab, setTab] = useState<"details" | "procs">("details");
   // No lineage lists here: the map already shows every node and is the one
   // place you navigate from, so a second, worse copy of it in the panel was
   // pure duplication.
@@ -221,6 +243,18 @@ export function FocusPanel({
     slot.aptitudes
   );
   const undroppable = undroppableSpark(rows, design, index);
+  // Is there a Procs tab behind the button? Every chance on it is this
+  // member's affinity times a spark, so a design too sparse to score has
+  // nothing to put there — the trainee needs a total, an ancestor her own
+  // share. Deep slots never get here: affinity stops at the grandparents.
+  const affinitySlot = affinitySlotOf(index);
+  const procsReady =
+    index === 0
+      ? affinity !== null
+      : affinity !== null && affinitySlot !== null && affinity[`${affinitySlot}_affinity`] !== null;
+  // Keyed by kind AND key, as the sparks themselves are: the kinds number
+  // their keys independently, so a bare key would collide across them.
+  const sparkNames = new Map(factorRefs.map((f) => [`${f.kind}:${f.key}`, f.name]));
 
   return (
     <div className="focus">
@@ -252,41 +286,74 @@ export function FocusPanel({
           </button>
         </div>
       )}
-      <AptitudeTable rows={rows} />
-      {index === 0 ? (
-        <>
-          <AffinityPanel
+      {/* The tab bar, only once there is a Procs tab worth opening: every
+          number on it is derived from a score, so before one lands there is
+          nothing behind it but empty tables. */}
+      {procsReady && (
+        <div className="focus-tabs" role="tablist" aria-label={`${nodeLabel(index)} sections`}>
+          {(["details", "procs"] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              className={tab === t ? "focus-tab active" : "focus-tab"}
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+            >
+              {t === "details" ? "Details" : "Procs"}
+            </button>
+          ))}
+        </div>
+      )}
+      {procsReady && tab === "procs" ? (
+        index === 0 ? (
+          <TraineeProcs design={design} affinity={affinity} sparkNames={sparkNames} />
+        ) : (
+          <NodeProcs
+            design={design}
             affinity={affinity}
-            failed={affinityFailed}
-            pending={affinityPending}
-            traineeSet
+            index={index}
+            sparkNames={sparkNames}
+            factorRefs={factorRefs}
+            locked={pinkFixed}
+            onSetFactors={onSetFactors}
           />
-          <p className="focus-note">Inspiration proc estimates are still to come.</p>
-        </>
+        )
       ) : (
         <>
-          {/* Ancestors get their own affinity, not the run's — the number a
-              proc off them rolls against. Above the spark editor: it is what
-              decides whether the pink below it ever lands. */}
-          <NodeAffinity affinity={affinity} index={index} />
-          <h4>Pink spark</h4>
-          {pinkFixed ? (
-            <SparkReadout spark={slot.spark} />
-          ) : (
-            <PinkSparkEditor
-              label={nodeLabel(index)}
-              spark={slot.spark}
-              onChange={(s) => onSetSpark(index, s)}
+          <AptitudeTable rows={rows} />
+          {index === 0 ? (
+            <AffinityPanel
+              affinity={affinity}
+              failed={affinityFailed}
+              pending={affinityPending}
+              traineeSet
             />
-          )}
-          {undroppable && slot.spark !== null && (
-            <p
-              className="spark-warn"
-              role="alert"
-              title="Pink sparks only generate on aptitudes the member reached A in."
-            >
-              {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A — pinks only drop at A.
-            </p>
+          ) : (
+            <>
+              {/* Ancestors get their own affinity, not the run's — the number
+                  a proc off them rolls against. Above the spark editor: it is
+                  what decides whether the pink below it ever lands. */}
+              <NodeAffinity affinity={affinity} index={index} />
+              <h4>Pink spark</h4>
+              {pinkFixed ? (
+                <SparkReadout spark={slot.spark} />
+              ) : (
+                <PinkSparkEditor
+                  label={nodeLabel(index)}
+                  spark={slot.spark}
+                  onChange={(s) => onSetSpark(index, s)}
+                />
+              )}
+              {undroppable && slot.spark !== null && (
+                <p
+                  className="spark-warn"
+                  role="alert"
+                  title="Pink sparks only generate on aptitudes the member reached A in."
+                >
+                  {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A — pinks only drop at A.
+                </p>
+              )}
+            </>
           )}
           {locked !== null && <LockNote owner={locked} />}
         </>

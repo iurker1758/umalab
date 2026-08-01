@@ -1,0 +1,179 @@
+import type { AptitudeKey, PinkSpark, SlotFactor, SlotFactorKind } from "./api";
+
+// ---------- inspiration proc estimates ----------
+// What an ancestor's sparks are worth to the TRAINEE: the chance each one is
+// inherited during the run, which is what an inspiration proc off that member
+// actually is. Distinct from the deterministic career-start bracket in
+// aptitude.ts, which applies a pink's letters whether anything procs or not:
+//
+//   aptitude.ts — every pink in a node's window bumps its letters at career
+//                 start, always, capped at A. Certain.
+//   here        — during the run, an inspiration may fire off one lineage
+//                 member and pass her spark on, which for a pink is the only
+//                 route past A to S. Probabilistic, and the chance scales
+//                 with that member's affinity.
+//
+// Every number this module produces is an ESTIMATE and has to be labelled
+// one. The Global client's master.mdb carries no proc-rate table anywhere
+// (all 416 checked during 7b), so unlike the affinity bands and the bracket
+// thresholds this can never be anchored in game data — the conversion is
+// server-side. What we have is one published measurement study and one
+// independent implementation that agree, which is good enough to show and
+// not good enough to state as fact. See DECISIONS.md #29/#30.
+
+// Base per-event chance by ★, before affinity, per spark type. Measured
+// (Polaris's compatibility-0 study, cross-checked against uma.moe's
+// implementation — RESOURCES.md has both).
+//
+// Every kind the blueprint document can hold. Blue (70/80/90) is the one
+// missing: stat sparks are inherited too, but the document has no kind for
+// them and their bases would dominate every table if it did.
+export const SPARK_BASE = {
+  pink: [1, 3, 5],
+  white: [3, 6, 9],
+  unique: [5, 10, 15],
+  race: [1, 2, 3],
+  scenario: [3, 6, 9],
+} as const;
+
+export type SparkType = keyof typeof SPARK_BASE;
+
+// What each kind is called in the panel. "Green" is the in-game name for a
+// unique-skill spark, which is what players call it — `unique` is the
+// reference's word, kept in the document because it is the game's own.
+export const SPARK_TYPE_LABELS: Record<SparkType, string> = {
+  pink: "Pink",
+  white: "White",
+  unique: "Green",
+  race: "Race",
+  scenario: "Scenario",
+};
+
+// Three inheritance events happen over a career, but only the 2nd and 3rd
+// vary with compatibility — so a spark gets two chances that this model can
+// speak to, and the run chance is 1 − (1−p)².
+const EVENTS = 2;
+
+// One event's chance, as a fraction. Affinity scales the base linearly and
+// the product is capped at certainty: a 9-base white at 1000 affinity would
+// otherwise compute past 100%.
+export function eventChance(type: SparkType, stars: number, affinity: number): number {
+  const base = SPARK_BASE[type][stars - 1];
+  if (base === undefined) return 0;
+  return Math.min(base * (1 + affinity / 100), 100) / 100;
+}
+
+// The chance ONE member passes this spark on over the run, as a PERCENT
+// (0–100).
+//
+// Null when it can't be estimated rather than 0: a member who isn't cast has
+// no affinity to roll against, and "no answer" is a different row from a real
+// zero — the same distinction the affinity panels keep.
+export function runChance(
+  type: SparkType,
+  stars: number,
+  affinity: number | null
+): number | null {
+  if (affinity === null) return null;
+  const p = eventChance(type, stars, affinity);
+  return (1 - (1 - p) ** EVENTS) * 100;
+}
+
+// Which spark, as the document identifies it — the pink's aptitude, or any
+// other kind's factor key. Two members carry the SAME spark when these match;
+// the display name is resolved from the reference at render time.
+export type SparkRef =
+  | { type: "pink"; aptitude: AptitudeKey }
+  | { type: SlotFactorKind; key: number };
+
+export const sparkId = (ref: SparkRef): string =>
+  ref.type === "pink" ? `pink:${ref.aptitude}` : `${ref.type}:${ref.key}`;
+
+// One member's spark, with the chance she is the reason the trainee has it.
+export type SparkChance = SparkRef & {
+  stars: number;
+  chance: number | null;
+};
+
+// Every spark a member carries, best chance first — the same ranking the
+// trainee's roll-up uses, because the question is the same one: which of
+// these is actually likely to land. Ties break on the spark id so the order
+// is stable across re-scores rather than shuffling on every keystroke.
+export function memberSparks(
+  pink: PinkSpark | null,
+  factors: readonly SlotFactor[],
+  affinity: number | null
+): SparkChance[] {
+  const out: SparkChance[] = [];
+  if (pink !== null) {
+    out.push({
+      type: "pink",
+      aptitude: pink.aptitude,
+      stars: pink.stars,
+      chance: runChance("pink", pink.stars, affinity),
+    });
+  }
+  for (const f of factors) {
+    out.push({
+      type: f.kind,
+      key: f.key,
+      stars: f.stars,
+      chance: runChance(f.kind, f.stars, affinity),
+    });
+  }
+  return out.sort(
+    (a, b) => (b.chance ?? -1) - (a.chance ?? -1) || sparkId(a).localeCompare(sparkId(b))
+  );
+}
+
+// One spark on the trainee's roll-up: every member carrying it, and the
+// chance she ends up with it from ANY of them.
+export type SparkOutlook = SparkRef & {
+  // The highest star level among the carriers. Two members can hold the same
+  // skill at different levels, and the spark that lands is the one that
+  // procced — so this labels the row rather than defining its chance.
+  stars: number;
+  // Tree indices of the members carrying it, in tree order.
+  from: number[];
+  chance: number | null;
+};
+
+// Combine per-member chances into "will the trainee come out with this".
+// Independent events, so the union is 1 − ∏(1−p): two members each at 16.7%
+// give 30.6%, not 33.4%. Carriers whose chance is unknown (nobody cast) are
+// left out of the product rather than treated as zero — the row still lists
+// them, and its chance stays null if that leaves no estimable carrier.
+export function combineOutlooks(
+  perMember: readonly { index: number; sparks: readonly SparkChance[] }[]
+): SparkOutlook[] {
+  const byId = new Map<string, SparkOutlook>();
+  for (const { index, sparks } of perMember) {
+    for (const s of sparks) {
+      const id = sparkId(s);
+      const seen = byId.get(id);
+      if (seen === undefined) {
+        byId.set(id, { ...s, from: [index] });
+        continue;
+      }
+      seen.from.push(index);
+      seen.stars = Math.max(seen.stars, s.stars);
+      if (s.chance !== null) {
+        seen.chance =
+          seen.chance === null
+            ? s.chance
+            : (1 - (1 - seen.chance / 100) * (1 - s.chance / 100)) * 100;
+      }
+    }
+  }
+  // Best chance first — the roll-up exists to be ranked. Ties break on the
+  // spark id so the order is stable across re-scores.
+  return [...byId.values()].sort(
+    (a, b) => (b.chance ?? -1) - (a.chance ?? -1) || sparkId(a).localeCompare(sparkId(b))
+  );
+}
+
+// One decimal throughout: the inputs are ★ (three values) and an integer
+// affinity, so more precision would dress a coarse model as a fine one, and
+// less would collapse the 1★ pink range — a 1★ at 0 affinity is 2.0% and at
+// 300 is 7.8%, which rounds to one number at zero decimals.
+export const formatChance = (pct: number): string => `${pct.toFixed(1)}%`;

@@ -301,7 +301,7 @@ const selectNode = async (node) => {
 };
 const pickInto = async (who) => {
   // The picker opens from the panel: Choose (empty) or Replace (filled).
-  const open = page.locator(".focus-pick, .focus-actions button", { hasText: /Choose|Replace/ });
+  const open = page.locator('.focus-pick, .focus-actions button[aria-label^="Replace "]');
   await open.first().click();
   await page.waitForSelector(".designer-picker");
   await page.locator(".uma-search").fill(who.entry.name);
@@ -321,7 +321,7 @@ const vetChipLabel = (v) => {
 // the app raised, or null if it went through without asking.
 const pullInto = async (v, action = "accept") =>
   withDialog(action, async () => {
-    const open = page.locator(".focus-pick, .focus-actions button", { hasText: /Choose|Replace/ });
+    const open = page.locator('.focus-pick, .focus-actions button[aria-label^="Replace "]');
     await open.first().click();
     await page.waitForSelector(".designer-picker");
     await page.locator(".picker-source .seg", { hasText: "My Roster" }).click();
@@ -536,7 +536,7 @@ try {
 
   // Conflict grey-outs in the P2 picker: sibling P1 and the trainee.
   await selectNode("Parent 2");
-  await page.locator(".focus-actions button", { hasText: "Replace" }).click();
+  await page.locator('.focus-actions button[aria-label^="Replace "]').click();
   await page.waitForSelector(".designer-picker");
   await page.locator(".uma-search").fill(P1.entry.name);
   const p1Chip = page.locator(`.designer-picker .card-chip[aria-label*="${P1.entry.name}"]`).first();
@@ -807,8 +807,13 @@ try {
     1 -
     (1 - procPct("pink", 3, expectedAff.g11_affinity)) *
       (1 - procPct("pink", 3, expectedAff.g12_affinity));
+  // No star level on this table: the carriers can hold a spark at different
+  // levels and the chance is the union across them, so a ★ figure beside it
+  // would answer a different question from the number it sits next to.
   check(`a spark two members carry is one row at the combined ${pct(bothMile)}`,
-    (await traineeRows()).includes(`Mile ★★★|${pct(bothMile)}`));
+    (await traineeRows()).includes(`Mile|${pct(bothMile)}`));
+  check("and the trainee's rows carry no star level",
+    (await page.locator(".focus .proc-table .proc-stars").count()) === 0);
   check("the combined chance beats either carrier alone but isn't their sum",
     bothMile > procPct("pink", 3, expectedAff.g11_affinity) &&
     bothMile <

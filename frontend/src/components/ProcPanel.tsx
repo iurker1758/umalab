@@ -75,13 +75,18 @@ const ChanceHeader = () => (
 const SparkRow = ({
   spark,
   name,
+  stars,
 }: {
-  spark: SparkRef & { stars: number; chance: number | null };
+  spark: SparkRef & { chance: number | null };
   name: string;
+  // Null on the trainee's roll-up, where the row combines carriers who may
+  // hold this spark at different levels — see SparkOutlook. An ancestor's own
+  // table always has one, and it is what her chance is computed from.
+  stars: number | null;
 }) => (
   <tr className={`proc-row proc-row-${spark.type}`}>
     <td className="proc-name">
-      {name} <Stars n={spark.stars} />
+      {stars === null ? name : <>{name} <Stars n={stars} /></>}
     </td>
     <td className="proc-chance">
       <ChanceBar type={spark.type} chance={spark.chance} />
@@ -137,7 +142,12 @@ export function NodeProcs({
             </tr>
           ) : (
             rows.map((r) => (
-              <SparkRow key={sparkId(r)} spark={r} name={sparkName(r, sparkNames)} />
+              <SparkRow
+                key={sparkId(r)}
+                spark={r}
+                name={sparkName(r, sparkNames)}
+                stars={r.stars}
+              />
             ))
           )}
         </tbody>
@@ -216,7 +226,12 @@ export function TraineeProcs({
               table answers "what am I likely to come out with", and the
               per-member breakdown is one click away on their own tabs. */}
           {shown.map((o) => (
-            <SparkRow key={sparkId(o)} spark={o} name={sparkName(o, sparkNames)} />
+            <SparkRow
+              key={sparkId(o)}
+              spark={o}
+              name={sparkName(o, sparkNames)}
+              stars={null}
+            />
           ))}
         </tbody>
       </table>

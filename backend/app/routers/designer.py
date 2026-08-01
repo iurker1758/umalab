@@ -2,6 +2,8 @@
 saved-blueprint CRUD."""
 from __future__ import annotations
 
+from typing import get_args
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,8 @@ from ..schemas import (
     BlueprintOut,
     CatalogCardOut,
     CatalogEntryOut,
+    PickableFactorOut,
+    SlotFactorKind,
 )
 
 router = APIRouter(prefix="/api")
@@ -71,6 +75,38 @@ async def get_catalog():
     """Every known character (deduped across outfits) for theoretical slot
     picks in the blueprint designer."""
     return CATALOG
+
+
+# ---------- spark reference ----------
+# The kinds a designed node can be given by hand, from the game's own factor
+# table. Served rather than bundled into the frontend: it is the same
+# committed reference the decoder reads, so one regen keeps the names a dump
+# decodes to and the names you can pick from in step — they would drift the
+# moment one was copied.
+PICKABLE_KINDS: tuple[SlotFactorKind, ...] = get_args(SlotFactorKind)
+
+
+def _pickable_factors() -> list[PickableFactorOut]:
+    out: list[PickableFactorOut] = []
+    for key, info in reference.FACTORS.items():
+        kind = reference.FACTOR_TYPE_KINDS.get(info["type"])
+        # Narrowed against the Literal rather than a set membership test, so
+        # the kinds a slot may hold stay defined in exactly one place.
+        for pickable in PICKABLE_KINDS:
+            if kind == pickable:
+                out.append(PickableFactorOut(kind=pickable, key=key, name=info["name"]))
+                break
+    return sorted(out, key=lambda f: (f.kind, f.name))
+
+
+PICKABLE_FACTORS = _pickable_factors()
+
+
+@router.get("/factors", response_model=list[PickableFactorOut])
+async def get_factors():
+    """Every non-pink spark a designed node can be given by hand — white,
+    unique (green), race and scenario."""
+    return PICKABLE_FACTORS
 
 
 # ---------- affinity ----------

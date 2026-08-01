@@ -18,6 +18,10 @@ import {
   type Veteran,
 } from "./api";
 import { apt, isLetter } from "./domain";
+// One owner for the spark identity string. It lives with the model that
+// defines what a spark IS, and every dedupe in this file keys on it — five
+// hand-built copies of the same template were five places to miss.
+import { sparkId } from "./procs";
 
 // ---------- the designed lineage ----------
 // Pure designer domain (the analog of filters.ts): the 31-node tree shape,
@@ -235,7 +239,12 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
     if (slot === null) {
       return spark === null ? design : withNamed(design, i, catalogSlot(null, null, spark));
     }
-    if (spark === null && slot.card_id === null) return withNamed(design, i, null);
+    // Pruned only when nothing else is left: a node planned around its white
+    // sparks survives having its pink cleared, which is the whole point of
+    // the server accepting a spark list without one.
+    if (spark === null && slot.card_id === null && slot.factors.length === 0) {
+      return withNamed(design, i, null);
+    }
     return withNamed(design, i, { ...slot, spark });
   }
   // Deep slot: replace the pink half, keeping whoever is in it. Clearing the
@@ -256,16 +265,19 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
 
 // Set a named node's non-pink sparks.
 //
-// A node that holds nothing else is left alone rather than created: the
-// server requires a slot without a character to carry a PINK (these feed no
-// deterministic math, so a sparks-only husk is not a plan), and writing one
-// would 422 the autosave for the whole design. The editor is only offered on
-// a node that exists, so this is a guard rather than a path users can take.
-// Clearing the last one off a node that has nothing else prunes it away, the
-// same rule `withSpark` follows.
+// Creates the slot when there wasn't one, exactly as `withSpark` does for a
+// pink: "the parent who carries these two whites" is a plan before any
+// character or pink is chosen, and the server accepts a character-less slot
+// carrying either kind of spark. Clearing the last one off a node that has
+// nothing else prunes it away, the same rule `withSpark` follows — an
+// untouched node never persists as a husk.
 export function withFactors(design: Design, i: number, factors: SlotFactor[]): Design {
   const slot = design.named[i];
-  if (slot === null) return design;
+  if (slot === null) {
+    return factors.length === 0
+      ? design
+      : withNamed(design, i, catalogSlot(null, null, null, factors));
+  }
   if (factors.length === 0 && slot.spark === null && slot.card_id === null) {
     return withNamed(design, i, null);
   }
@@ -405,7 +417,7 @@ export function factorsOf(factors: readonly Factor[]): SlotFactor[] {
     if (!(SLOT_FACTOR_KINDS as readonly string[]).includes(f.kind)) continue;
     if (f.star < 1 || f.star > 3) continue;
     const kind = f.kind as SlotFactorKind;
-    const id = `${kind}:${f.key}`;
+    const id = sparkId({ type: kind, key: f.key });
     const seen = best.get(id);
     if (seen === undefined || f.star > seen.stars) {
       best.set(id, { kind, key: f.key, stars: f.star });
@@ -884,7 +896,7 @@ function factorsFromApi(raw: SlotFactor[] | undefined): SlotFactor[] {
     // The same rule the server validates on write: one entry per spark, or
     // combining its carriers would roll it against itself. Kind and key
     // together — the kinds number their keys independently.
-    const id = `${f.kind}:${f.key}`;
+    const id = sparkId({ type: f.kind, key: f.key });
     if (seen.has(id)) throw new Error("duplicate spark");
     seen.add(id);
     out.push({ kind: f.kind, key: f.key, stars: f.stars });

@@ -490,8 +490,9 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* A grandparent's single link, named rather than tabulated. */
 .aff-caption { opacity: 0.65; font-size: 0.82rem; }
 
-/* The focus panel's tab bar. Only appears once there is a Procs tab worth
-   opening, so it reads as part of the content rather than permanent chrome. */
+/* The focus panel's tab bar. Present on every node that can hold sparks,
+   score or no score — Procs is where they are typed, not only where they are
+   read. */
 .focus-tabs { display: flex; gap: 2px; margin: 0.7rem 0 0.2rem; border-bottom: 1px solid #1f2833; }
 .focus-tab { flex: 1; padding: 0.32rem 0.5rem; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: inherit; background: none; border: 0; border-bottom: 2px solid transparent; opacity: 0.5; cursor: pointer; }
 .focus-tab:hover { opacity: 0.8; }
@@ -564,6 +565,9 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .spark-matches { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .spark-matches button { width: 100%; padding: 0.28rem 0.45rem; text-align: left; font-size: 0.82rem; color: inherit; background: #16202c; border: 0; border-radius: 4px; cursor: pointer; }
 .spark-matches button:hover { background: #1d2b3a; }
+/* Says the list was cut. Not a button — narrowing the query is the action,
+   and a "show more" would rebuild the browser the cap exists to avoid. */
+.spark-more { padding: 0.28rem 0.45rem; font-size: 0.76rem; opacity: 0.5; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */

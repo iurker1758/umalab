@@ -407,6 +407,11 @@ export function DesignerPage({
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
+      } else if (factors.status === "rejected") {
+        // Said separately, because it fails differently: the designer works,
+        // but hand entry finds nothing and stored sparks show as keys. Left
+        // silent, that is indistinguishable from "no such spark exists".
+        onError("Couldn't load the spark reference — hand entry won't find anything.");
       }
       if (bps.status !== "fulfilled") return;
       setSaved(bps.value);
@@ -573,14 +578,17 @@ export function DesignerPage({
         // hand-picked character who doesn't have it, unlocked and unowned.
         // Her pink goes with it: it was hers, not a plan for this slot.
         const owned = ownedBranch(d, target);
-        const spark = sourceAt(d, target) === "roster" ? null : (d.named[target]?.spark ?? null);
-        // A re-pick otherwise keeps the slot's typed spark: the pink is a
-        // plan input for the bracket math, not part of the card's identity,
-        // and re-typing it after every swap would be pure friction.
+        const wasPulled = sourceAt(d, target) === "roster";
+        // A re-pick otherwise keeps every spark the slot was given by hand —
+        // the pink AND the list feeding the proc estimates. They are plan
+        // inputs, not part of the card's identity, and re-typing a member's
+        // sparks after every outfit swap would be pure friction.
+        const spark = wasPulled ? null : (d.named[target]?.spark ?? null);
+        const factors = wasPulled ? [] : (d.named[target]?.factors ?? []);
         return withNamed(
           clearNodes(d, owned),
           target,
-          catalogSlot(pick.chara_id, pick.card_id, spark)
+          catalogSlot(pick.chara_id, pick.card_id, spark, factors)
         );
       });
       select(target);

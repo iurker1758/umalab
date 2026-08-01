@@ -147,6 +147,11 @@ export function NodeProcs({
           entered here. */}
       {!locked && (
         <SparkEditor
+          // Remounted per node: the search box is component state, and the
+          // panel keeps its position in the tree when you click another
+          // ancestor — so an abandoned query would follow you there and its
+          // stale matches would add to the wrong member.
+          key={index}
           label={NAMED_SHORT[index]}
           factors={factors}
           refs={factorRefs}

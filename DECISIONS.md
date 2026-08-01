@@ -1531,15 +1531,49 @@ Keep adding entries as the build evolves. This file is the interview.
   choosing BETWEEN kinds rather than reading your own, and where race
   and scenario sparks share wording with skills.
 
-  Deep gen-3/4 slots get no tab bar: affinity stops at the grandparents,
-  so there is nothing to roll against below them. The bar only appears
-  once a score exists at all — before that both tabs would be empty
-  tables. The tab choice **persists across node selection**, because
-  comparing one view between two ancestors is the common move.
+  That search shows 8 matches, **ranked by where the query lands in the
+  name** and then alphabetically — deliberately not in the order the
+  reference arrives. `GET /api/factors` serves them sorted by (kind,
+  name), so capping that order directly returned eight race sparks and
+  hid every white match behind them: a systematic bias against the kind
+  people search for most (caught in review). A cut list also says how
+  many it dropped, so it never reads as an exhausted one — the
+  difference between "no such spark" and "not shown".
+
+  Deep gen-3/4 slots get no tab bar: the document gives them a pink and
+  nothing else, so there is no spark list to type and no affinity to
+  roll it against — attribution stops at the grandparents. Every named
+  node has one. The tab choice **persists across node selection**,
+  because comparing one view between two ancestors is the common move.
   The non-pink sparks are edited on the Procs tab (they feed nothing
   else); the pink stays on Details, beside the letters it bumps at
   career start. Map chips stay out, as V1 ruled: the 31 nodes have no
   room.
+
+  **The tab is never gated on a score** — corrected after review; the
+  first cut showed it only once that node had an affinity. The tab is
+  where sparks are *typed*, not only where they are read, so gating it
+  put the only editor behind the very thing you hadn't decided yet: a
+  grandparent cast before her parent had no way to be given sparks at
+  all, and a backend blip made the tab — and with it every spark
+  already entered — disappear from the screen with no explanation.
+  Display and entry needed different conditions, and one was used for
+  both. Unscored chances render "—", the same "no answer is not a zero"
+  rule the affinity panels follow. For the same reason the below-A pink
+  warning and the lock note now render **outside** the tab switch: they
+  are the panel's guardrails, not part of either view, and a persisted
+  tab choice meant a warning living on Details would never be seen by
+  someone reading procs down the tree.
+
+  **A named slot may carry non-pink sparks with no pink and no
+  character.** The server previously required a character-less slot to
+  carry a pink ("a sparks-only husk is not a plan") — a rule written
+  when the pink was the only spark the document held. With `factors` in
+  it, "the parent who carries these two whites" is as real a plan, and
+  the old rule had a sharper cost: because a slot carrying neither is
+  pruned away, clearing the pink off such a node silently destroyed the
+  spark list with it. The trainee still refuses both kinds — nothing is
+  bred from her inside the design.
 
   **The rates, all measured** (Polaris, cross-checked against uma.moe —
   RESOURCES.md): pink 1/3/5, white 3/6/9, green 5/10/15, race 1/2/3,

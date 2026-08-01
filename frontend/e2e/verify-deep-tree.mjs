@@ -496,11 +496,18 @@ try {
   check("trainee mile = card base", (await rowLetter("Mile")) === T.apt.mile);
   check("trainee has no spark editor",
     (await page.locator('select[aria-label="Trainee pink spark"]').count()) === 0);
-  // A trainee alone has no affinity, so no proc chance can be estimated —
-  // and the tab itself is absent rather than opening onto empty tables.
-  check("no Procs tab before there's a score to roll against",
-    (await page.locator(".focus-tab").count()) === 0 &&
+  // A trainee alone has no affinity, so no proc chance can be estimated. The
+  // tab is there anyway: it is where sparks are TYPED, and gating it on a
+  // score once made the only editor vanish whenever the design was too sparse
+  // to score or the backend blipped. It opens onto an honest empty state.
+  check("the Procs tab exists before there's a score to roll against",
+    (await page.locator(".focus-tab").count()) === 2 &&
     (await page.locator(".proc-table").count()) === 0);
+  await page.locator(".focus-tabs .focus-tab", { hasText: "Procs" }).click();
+  check("and says the tree is empty rather than showing numbers",
+    (await page.locator(".focus .proc-table").count()) === 0 &&
+    (await page.locator(".focus .focus-note", { hasText: "No sparks on the ancestors" }).count()) === 1);
+  await page.locator(".focus-tabs .focus-tab", { hasText: "Details" }).click();
   // A trainee alone is not a pairing: the panel says what's missing rather
   // than scoring an empty tree as a confident zero.
   check("affinity waits for a parent",
@@ -706,10 +713,10 @@ try {
   const openTab = async (name) =>
     page.locator(".focus-tabs .focus-tab", { hasText: name }).click();
 
-  // The tab only exists where there's a score behind it. P2 is still
-  // selected and scored, so hers is there; a deep spark slot has no affinity
-  // at all and gets no tab bar.
-  check("a scored ancestor has a Procs tab", (await page.locator(".focus-tab").count()) === 2);
+  // Every node that can hold sparks is tabbed, scored or not. A deep spark
+  // slot is the one that isn't: the document gives generations 3-4 a pink and
+  // nothing else, so there is no spark list to type and no tab to hold one.
+  check("a named ancestor has a Procs tab", (await page.locator(".focus-tab").count()) === 2);
   await selectNode("Sparks 3-1");
   check("a deep spark slot has no tabs", (await page.locator(".focus-tab").count()) === 0);
 
@@ -730,11 +737,18 @@ try {
   // this suite derives its cast from /api/catalog.
   const factorRef = await (await fetch(`${BASE}/api/factors`)).json();
   const pickOf = (kind) => factorRef.find((f) => f.kind === kind);
+  // By id, never by displayed name: race and scenario sparks routinely
+  // contain a skill's name as a substring, so a `hasText` match would click a
+  // different kind's row and every assertion below would fail on reference
+  // data alone.
+  const addSpark = async (label, ref) => {
+    await page.locator(`input[aria-label="${label} spark search"]`).fill(ref.name);
+    await page.locator(`.spark-matches button[data-spark="${ref.kind}:${ref.key}"]`).click();
+  };
   const added = [];
   for (const kind of ["white", "unique", "race", "scenario"]) {
     const ref = pickOf(kind);
-    await page.locator('input[aria-label="G1-1 spark search"]').fill(ref.name);
-    await page.locator(".spark-matches button", { hasText: ref.name }).first().click();
+    await addSpark("G1-1", ref);
     added.push(ref);
   }
   // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
@@ -811,9 +825,14 @@ try {
   // Which members carry it is deliberately NOT here: this table answers what
   // the trainee is likely to come out with, and the breakdown is one click
   // away on each member's own tab.
+  // Two columns and no member named anywhere in the body — asserted against
+  // what the table RENDERS, not against a class a From column would have to
+  // opt into. A check for an absent selector passes whatever is there.
+  const traineeBody = await page.locator(".focus .proc-table tbody").textContent();
   check("no From column on the trainee's table",
-    (await page.locator(".focus .proc-table .proc-from").count()) === 0 &&
-    (await page.locator(".focus .proc-table tbody tr").first().locator("td").count()) === 2);
+    (await page.locator(".focus .proc-table thead th").count()) === 2 &&
+    (await page.locator(".focus .proc-table tbody tr").first().locator("td").count()) === 2 &&
+    !["P1", "P2", "G1-1", "G1-2", "G2-1", "G2-2"].some((m) => traineeBody.includes(m)));
   // Ranked, because the roll-up exists to be compared down.
   check("rows are ordered by chance",
     await page.locator(".focus .proc-table tbody").evaluate((el) => {
@@ -867,6 +886,36 @@ try {
     [0, 1, 2, 4, 5, 6].every(
       (i) => (withSparks?.slots.named[i]?.factors ?? []).length === 0));
 
+  // A re-pick keeps them. They are plan inputs typed onto the node, not part
+  // of the card's identity — rebuilding the slot without them deleted hand
+  // entry silently, and the autosave then persisted the loss.
+  await selectNode("Grandparent 1-1");
+  await pickInto(G11);
+  await settled();
+  const rePicked = (await (await fetch(`${BASE}/api/blueprints`)).json())
+    .find((b) => b.name === bpName);
+  check("re-picking a character keeps the sparks typed on that node",
+    JSON.stringify(rePicked?.slots.named[3]?.factors ?? []) ===
+      JSON.stringify(withSparks?.slots.named[3]?.factors ?? []) &&
+    (rePicked?.slots.named[3]?.factors ?? []).length === added.length);
+
+  // Entry is offered on an ancestor with nobody cast and no score to roll
+  // against — G2-1 is empty here, so its chances read "—" while its editor
+  // works. Gating the tab on a score once put the only editor behind the
+  // thing you hadn't decided yet.
+  await selectNode("Grandparent 1-2");
+  await openTab("Procs");
+  await page.locator('input[aria-label="G1-2 spark search"]').fill(pickOf("white").name);
+  await selectNode("Grandparent 2-1");
+  check("an uncast ancestor still offers spark entry",
+    (await page.locator('input[aria-label="G2-1 spark search"]').count()) === 1);
+  // The box is per node: an abandoned query must not follow you, or its
+  // leftover matches would add the spark to the wrong member.
+  check("and an abandoned search doesn't follow you there",
+    (await page.locator('input[aria-label="G2-1 spark search"]').inputValue()) === "" &&
+    (await page.locator(".focus .spark-matches").count()) === 0);
+  await selectNode("Trainee");
+
   // ---------- the trainee's table caps its tail ----------
   // A fully bred tree runs to ~34 distinct sparks, which is a panel 1.2x the
   // viewport. The cast so far is under the cap, so this loads P2 up until it
@@ -882,8 +931,7 @@ try {
   await selectNode("Parent 2");
   await openTab("Procs");
   for (const f of filler) {
-    await page.locator('input[aria-label="P2 spark search"]').fill(f.name);
-    await page.locator(".spark-matches button", { hasText: f.name }).first().click();
+    await addSpark("P2", f);
   }
   await selectNode("Trainee");
   await openTab("Procs");

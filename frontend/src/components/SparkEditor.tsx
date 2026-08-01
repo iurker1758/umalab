@@ -9,6 +9,11 @@ import { SPARK_TYPE_LABELS, sparkId } from "../procs";
 // A roster or lineage pick never needs it — hers are decoded from the dump —
 // so this only appears on hand-built nodes, which is also why it is not
 // offered inside a locked branch.
+
+// How many matches the search offers at once. Short on purpose: it is a
+// "which of these did you mean" list, not a browser.
+const MATCH_LIMIT = 8;
+
 export function SparkEditor({
   label,
   factors,
@@ -23,17 +28,29 @@ export function SparkEditor({
   onChange: (factors: SlotFactor[]) => void;
 }) {
   const [query, setQuery] = useState("");
-  const held = new Set(factors.map((f) => `${f.kind}:${f.key}`));
+  const held = new Set(factors.map((f) => sparkId({ type: f.kind, key: f.key })));
   const q = query.trim().toLowerCase();
   // Only search once there's something to search for: 400 rows under every
   // ancestor panel is a list nobody reads, and the control is an "add one"
   // affordance rather than a browser.
-  const matches =
+  const hits =
     q === ""
       ? []
-      : refs
-          .filter((r) => !held.has(`${r.kind}:${r.key}`) && r.name.toLowerCase().includes(q))
-          .slice(0, 8);
+      : refs.filter(
+          (r) => !held.has(sparkId({ type: r.kind, key: r.key })) && r.name.toLowerCase().includes(q)
+        );
+  // Ranked by where the query lands in the name, then alphabetically —
+  // deliberately NOT in the order the reference arrives. That order is
+  // (kind, name), so capping it directly returned eight race sparks and hid
+  // every white match behind them: a systematic bias against the kind people
+  // search for most, with nothing on screen to say so.
+  hits.sort((a, b) => {
+    const ai = a.name.toLowerCase().indexOf(q);
+    const bi = b.name.toLowerCase().indexOf(q);
+    return ai - bi || a.name.localeCompare(b.name);
+  });
+  const matches = hits.slice(0, MATCH_LIMIT);
+  const hidden = hits.length - matches.length;
   const add = (ref: FactorRef) => {
     // New sparks start at 1★ — the honest default for one you're planning to
     // hunt, where the pink editor's 3★ default reflects a spark you already
@@ -95,8 +112,12 @@ export function SparkEditor({
       {matches.length > 0 && (
         <ul className="spark-matches">
           {matches.map((r) => (
-            <li key={`${r.kind}:${r.key}`}>
-              <button onClick={() => add(r)}>
+            <li key={sparkId({ type: r.kind, key: r.key })}>
+              {/* The spark's identity on the button, so anything driving this
+                  list picks by id rather than by matching the displayed name
+                  — several race and scenario sparks contain a skill's name as
+                  a substring, which makes name-matching pick the wrong row. */}
+              <button data-spark={sparkId({ type: r.kind, key: r.key })} onClick={() => add(r)}>
                 {/* The kind is part of the identity here: several race and
                     scenario sparks share wording with skills. */}
                 <span className={`proc-kind proc-kind-${r.kind}`}>
@@ -106,6 +127,11 @@ export function SparkEditor({
               </button>
             </li>
           ))}
+          {/* Said when it applies, so a cut list never reads as an exhausted
+              one — the difference between "no such spark" and "not shown". */}
+          {hidden > 0 && (
+            <li className="spark-more">{hidden} more — keep typing to narrow.</li>
+          )}
         </ul>
       )}
     </div>

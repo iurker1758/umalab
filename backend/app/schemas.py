@@ -332,11 +332,18 @@ class BlueprintSlotIn(BaseModel):
     catalog picks have no dump to read it from, and the bracket math needs
     it (the trainee slot never carries one; nothing is bred from it).
 
-    chara_id/card_id are nullable so a named node can carry a spark with no
+    chara_id/card_id are nullable so a named node can carry sparks with no
     character chosen yet: the bracket math only needs the pinks below a node,
     and planning usually starts from the sparks you're hunting rather than
-    from a cast. Such a slot must actually carry a spark — an empty node is
-    written as a null slot, not as an identity-less husk."""
+    from a cast. Such a slot must actually carry SOMETHING — a pink, a
+    non-pink spark, or both. An empty node is written as a null slot, not as
+    an identity-less husk.
+
+    The pink used to be the only thing that counted here, because it was the
+    only spark the document held. Now that `factors` exists, a parent planned
+    as "whatever carries these two whites" is as real a plan as one planned
+    around a pink, and requiring a pink beside it would make clearing the
+    pink destroy the spark list."""
 
     source: Literal["catalog", "roster", "lineage"]
     chara_id: int | None = None
@@ -366,7 +373,7 @@ class BlueprintSlotIn(BaseModel):
         if (self.chara_id is None) != (self.card_id is None):
             raise ValueError("chara_id and card_id must be set together")
         if self.card_id is None:
-            if self.spark is None:
+            if self.spark is None and not self.factors:
                 raise ValueError("a slot without a character must carry a spark")
             if self.source != "catalog":
                 raise ValueError(f"a {self.source} slot needs a character")
@@ -450,7 +457,11 @@ class BlueprintIn(BaseModel):
         # allowed — the game permits it, and app/affinity.py scores it
         # correctly.
         trainee = self.slots.named[0]
-        if trainee is not None and trainee.spark is not None:
+        if trainee is not None and (trainee.spark is not None or trainee.factors):
+            # Neither kind. Nothing is bred FROM the trainee inside this
+            # design, so a spark on her is a plan input with nothing to feed:
+            # the brackets read the pinks below her, and the proc estimates
+            # roll her ancestors' sparks towards her.
             raise ValueError("the trainee slot can't carry a spark")
 
         charas = [self._chara_at(i) for i in range(NODE_SLOT_COUNT)]

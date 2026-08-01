@@ -23,6 +23,7 @@ import {
   type Veteran,
 } from "../api";
 import { FocusPanel } from "../components/FocusPanel";
+import { CopyIcon, TrashIcon } from "../components/icons";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
 import { TreeMap } from "../components/TreeMap";
 import {
@@ -105,24 +106,6 @@ const TraineeIcon = ({
     <img className="bp-icon" src={`/icons/chara/${icon}`} alt="" loading="lazy" />
   );
 };
-
-const CopyIcon = () => (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-    <path
-      fill="currentColor"
-      d="M5.5 1.5h7A1.5 1.5 0 0 1 14 3v7h-1.5V3h-7V1.5ZM3 4h6.5A1.5 1.5 0 0 1 11 5.5V13a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 13V5.5A1.5 1.5 0 0 1 3 4Zm0 1.5V13h6.5V5.5H3Z"
-    />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-    <path
-      fill="currentColor"
-      d="M6 2h4l.5 1H14v1.5H2V3h3.5L6 2Zm-2.5 4h9l-.7 8.1a1 1 0 0 1-1 .9H5.2a1 1 0 0 1-1-.9L3.5 6Zm2.8 1.6.3 6h1.2l-.3-6H6.3Zm3.4 0-.3 6h1.2l.3-6H9.7Z"
-    />
-  </svg>
-);
 
 export function DesignerPage({
   veterans,

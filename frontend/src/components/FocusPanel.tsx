@@ -18,6 +18,7 @@ import {
   type Design,
 } from "../blueprint";
 import { sparkId } from "../procs";
+import { ReplaceIcon, TrashIcon } from "./icons";
 import { AffinityPanel, NodeAffinity } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
 import { PinkSparkEditor } from "./PinkSparkEditor";
@@ -49,27 +50,79 @@ const LockNote = ({ owner }: { owner: number }) => (
   <p className="focus-note">{nodeLabel(owner)}&apos;s real pedigree.</p>
 );
 
+// Icon buttons for the node's two actions, sat at the right of its name row,
+// on the same `.bar-icon` styles the blueprint bar's own icon buttons use.
+//
+// Labelling follows that bar too: `aria-label` names the TARGET ("Clear
+// Grandparent 1-2"), because "Clear" alone is ambiguous on a panel you
+// reached by clicking one of 31 tiles; `title` is the short generic tooltip,
+// because an unfamiliar icon has to be discoverable on hover. They must not
+// be the same string — a `title` matching the accessible name becomes the
+// accessible DESCRIPTION, and screen readers then read the node twice.
+const NodeActions = ({
+  index,
+  onReplace,
+  onClear,
+}: {
+  // The node itself, not its label: every caller would otherwise pass
+  // `nodeLabel(index)` beside handlers already closed over that index, and a
+  // mismatch between the two would mislabel a destructive button silently.
+  index: number;
+  // Null where the action doesn't apply — nobody cast to replace, or nothing
+  // in the node to clear.
+  onReplace: (() => void) | null;
+  onClear: (() => void) | null;
+}) =>
+  onReplace === null && onClear === null ? null : (
+    <div className="focus-actions">
+      {onReplace !== null && (
+        <button
+          className="bar-icon"
+          title="Replace this character"
+          aria-label={`Replace ${nodeLabel(index)}`}
+          onClick={onReplace}
+        >
+          <ReplaceIcon />
+        </button>
+      )}
+      {onClear !== null && (
+        <button
+          className="bar-icon bar-icon-danger"
+          title="Clear this node"
+          aria-label={`Clear ${nodeLabel(index)}`}
+          onClick={onClear}
+        >
+          <TrashIcon />
+        </button>
+      )}
+    </div>
+  );
+
 type Tab = "details" | "procs";
 
-// Two buttons, not a `role="tablist"`. They behave like the app's other
-// segmented controls — click to switch, `aria-pressed` for state — and real
-// tab semantics promise arrow-key navigation between them that nothing here
-// implements. Announcing a contract we don't keep is worse than announcing
-// none.
+// The app's own segmented control, the same `seg-group` the picker's source
+// tabs, the star pickers and the tree-half switch use — rather than a
+// bespoke underlined tab bar that appeared nowhere else.
+//
+// Two buttons, not a `role="tablist"`: real tab semantics promise arrow-key
+// navigation between them that nothing here implements, and announcing a
+// contract we don't keep is worse than announcing none. `.focus-tab` rides
+// along as the hook that identifies them.
 const FocusTabs = ({
-  label,
+  index,
   tab,
   onPick,
 }: {
-  label: string;
+  // The node, not its label — same reason as NodeActions.
+  index: number;
   tab: Tab;
   onPick: (t: Tab) => void;
 }) => (
-  <div className="focus-tabs" role="group" aria-label={`${label} sections`}>
+  <div className="focus-tabs seg-group" role="group" aria-label={`${nodeLabel(index)} sections`}>
     {(["details", "procs"] as const).map((t) => (
       <button
         key={t}
-        className={tab === t ? "focus-tab active" : "focus-tab"}
+        className={tab === t ? "focus-tab seg active" : "focus-tab seg"}
         aria-pressed={tab === t}
         onClick={() => onPick(t)}
       >
@@ -163,26 +216,23 @@ export function FocusPanel({
         <div className="focus-who">
           <div className="focus-name">{nodeLabel(index)}</div>
           {pulledName !== null && <div className="focus-role">{pulledName}</div>}
+          {locked === null && (
+            <NodeActions
+              index={index}
+              // Nobody cast yet ⇒ nothing to replace; the dashed button below
+              // is the cast action. Nothing in the slot ⇒ nothing to undo.
+              onReplace={pulled === null ? null : () => onOpenPicker(index)}
+              onClear={spark !== null || pulled !== null ? () => onClear(index) : null}
+            />
+          )}
         </div>
         {/* Offered on an empty slot too, exactly as the named nodes are:
             casting a character before deciding their pink is a normal way to
             plan, and the document holds either half on its own. */}
-        {locked === null && (
-          <div className="focus-actions">
-            <button className="designer-secondary" onClick={() => onOpenPicker(index)}>
-              {pulled === null ? "Choose Character…" : "Replace…"}
-            </button>
-            {/* Nothing in the slot, nothing to undo — same rule as above. */}
-            {(spark !== null || pulled !== null) && (
-              <button
-                className="designer-secondary"
-                onClick={() => onClear(index)}
-                aria-label={`Clear ${nodeLabel(index)}`}
-              >
-                Clear
-              </button>
-            )}
-          </div>
+        {locked === null && pulled === null && (
+          <button className="focus-pick" onClick={() => onOpenPicker(index)}>
+            Choose Character
+          </button>
         )}
         <h4>Pink Spark</h4>
         {/* Fixed on a roster pick here for the same reason as on a parent:
@@ -223,32 +273,29 @@ export function FocusPanel({
       <div className="focus">
         <div className="focus-who">
           <div className="focus-name">{nodeLabel(index)}</div>
+          {/* A planned spark is state worth undoing, so Clear appears for it
+              too — not only once a character is cast. Any spark: a node
+              planned around the whites you're hunting is as real as one
+              planned around a pink, and the server stores either on its own.
+              No Replace: there is nobody in the node to replace. */}
+          {slot !== null && (
+            <NodeActions
+              index={index}
+              onReplace={null}
+              onClear={() => onClear(index)}
+            />
+          )}
         </div>
         <button className="focus-pick" onClick={() => onOpenPicker(index)}>
-          Choose Character…
+          Choose Character
         </button>
-        {/* A planned spark is state worth undoing, so Clear appears for it
-            too — not only once a character is cast. Any spark: a node planned
-            around the whites you're hunting is as real as one planned around
-            a pink, and the server stores either on its own. */}
-        {slot !== null && (
-          <div className="focus-actions">
-            <button
-              className="designer-secondary"
-              onClick={() => onClear(index)}
-              aria-label={`Clear ${nodeLabel(index)}`}
-            >
-              Clear
-            </button>
-          </div>
-        )}
         {index > 0 ? (
           <>
             {/* Tabbed exactly as a cast node is. Spark entry lives on Procs,
                 and a member planned by spark alone is the case that most
                 needs it — gating the tab on a cast (or on a score) would put
                 the only editor behind the thing you haven't decided yet. */}
-            <FocusTabs label={nodeLabel(index)} tab={tab} onPick={setTab} />
+            <FocusTabs index={index} tab={tab} onPick={setTab} />
             {tab === "procs" ? (
               <NodeProcs
                 design={design}
@@ -316,27 +363,20 @@ export function FocusPanel({
             {outfit !== null && outfit !== "Original" ? ` · ${outfit}` : ""}
           </div>
         </div>
+        {locked === null && (
+          <NodeActions
+            index={index}
+            onReplace={() => onOpenPicker(index)}
+            onClear={() => onClear(index)}
+          />
+        )}
       </div>
-      {locked === null && (
-        <div className="focus-actions">
-          <button className="designer-secondary" onClick={() => onOpenPicker(index)}>
-            Replace…
-          </button>
-          <button
-            className="designer-secondary"
-            onClick={() => onClear(index)}
-            aria-label={`Clear ${nodeLabel(index)}`}
-          >
-            Clear
-          </button>
-        </div>
-      )}
       {/* Always offered, never gated on a score. The chances behind it are
           this member's affinity times a spark, so before one lands they read
           "—" — but the tab is also where a member's sparks are TYPED, and
           hiding the only editor until the design happens to be scorable
           (or until the backend answers) made entered sparks vanish with it. */}
-      <FocusTabs label={nodeLabel(index)} tab={tab} onPick={setTab} />
+      <FocusTabs index={index} tab={tab} onPick={setTab} />
       {tab === "procs" ? (
         index === 0 ? (
           <TraineeProcs design={design} affinity={affinity} sparkNames={sparkNames} />
@@ -353,7 +393,11 @@ export function FocusPanel({
         )
       ) : (
         <>
-          <AptitudeTable rows={rows} />
+          {/* Affinity leads the tab. It is the node's headline number — the
+              trainee's run total, or the individual share a proc off this
+              ancestor rolls against — and the ten letters below it are detail
+              you consult, not the first thing you read. Ancestors get their
+              own, never the run's. */}
           {index === 0 ? (
             <AffinityPanel
               affinity={affinity}
@@ -362,11 +406,11 @@ export function FocusPanel({
               traineeSet
             />
           ) : (
+            <NodeAffinity affinity={affinity} index={index} />
+          )}
+          <AptitudeTable rows={rows} />
+          {index > 0 && (
             <>
-              {/* Ancestors get their own affinity, not the run's — the number
-                  a proc off them rolls against. Above the spark editor: it is
-                  what decides whether the pink below it ever lands. */}
-              <NodeAffinity affinity={affinity} index={index} />
               <h4>Pink Spark</h4>
               {pinkFixed ? (
                 <SparkReadout spark={slot.spark} />

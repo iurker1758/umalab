@@ -290,8 +290,6 @@ button.bp-row:hover { background: #1e2937; }
 .designer-autosave.failed { opacity: 1; color: #ff8f8f; }
 .bar-icon:disabled { opacity: 0.4; cursor: default; }
 .bar-icon:disabled:hover { border-color: #2a3340; background: none; color: inherit; }
-.designer-secondary { background: #1a2027; border: 1px solid #2a3340; }
-.designer-secondary:hover { border-color: #2a76c9; }
 
 /* Option C (DECISIONS.md #26): 31-node vertical map beside a docked focus
    panel. ≤860px the map collapses to a horizontal strip above the panel. */
@@ -459,8 +457,12 @@ button.bp-row:hover { background: #1e2937; }
 span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .focus-name { font-size: 1.05rem; font-weight: 600; }
 .focus-role { opacity: 0.6; font-size: 0.8rem; }
-.focus-actions { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
-.focus-actions button { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+/* The node's two actions, icon-only, pushed to the right of its name row.
+   They wear `.bar-icon`/`.bar-icon-danger` — the save bar's icon buttons —
+   rather than a private copy, so "this button destroys something" is one red
+   across the app instead of two. The gap is wider than the bar's because
+   Clear is destructive, unconfirmed and sits next to a benign control. */
+.focus-actions { display: flex; gap: 0.4rem; margin-left: auto; align-self: start; }
 .focus-pick { width: 100%; border: 1px dashed #3a4250; background: #1a2027; color: #9aa1ab; }
 .focus-pick:hover { border-color: #2a76c9; color: inherit; }
 .focus-note { margin: 0.5rem 0 0; opacity: 0.65; font-size: 0.85rem; }
@@ -490,13 +492,16 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* A grandparent's single link, named rather than tabulated. */
 .aff-caption { opacity: 0.65; font-size: 0.82rem; }
 
-/* The focus panel's tab bar. Present on every node that can hold sparks,
-   score or no score — Procs is where they are typed, not only where they are
-   read. */
-.focus-tabs { display: flex; gap: 2px; margin: 0.7rem 0 0.2rem; border-bottom: 1px solid #1f2833; }
-.focus-tab { flex: 1; padding: 0.32rem 0.5rem; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: inherit; background: none; border: 0; border-bottom: 2px solid transparent; opacity: 0.5; cursor: pointer; }
-.focus-tab:hover { opacity: 0.8; }
-.focus-tab.active { opacity: 1; border-bottom-color: #4da3ff; }
+/* The focus panel's Details/Procs switch. Present on every node that can
+   hold sparks, score or no score — Procs is where they are typed, not only
+   where they are read. The look comes from `.seg-group`/`.seg`, the app's
+   standard segmented control; local rules only stretch it to the panel's
+   full width — two halves, the way the tree-half switch splits its bar. */
+/* border-box because seg-group brings a 1px border and this stylesheet has no
+   global reset — without it the pill renders 2px past everything below it. */
+.focus-tabs { display: flex; width: 100%; box-sizing: border-box; margin: 0.7rem 0 0.5rem; }
+.focus-tab { flex: 1 1 0; padding: 0.4rem; cursor: pointer; }
+.focus-tab:hover { opacity: 1; }
 
 /* Inspiration procs. Styled to match the affinity link table so the panel
    reads the same on either tab, but on its own selectors — the affinity
@@ -507,6 +512,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-table th { padding: 0 0.3rem 0.15rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.45; white-space: nowrap; }
 .proc-table th.proc-name { text-align: left; }
 .proc-name { text-align: left; }
+/* Ancestor tables only — the trainee's roll-up carries no star level. */
 .proc-stars { font-size: 0.75rem; opacity: 0.85; }
 .proc-empty { opacity: 0.55; }
 /* The chance column carries a bar, so it needs real width — the spark names
@@ -571,7 +577,10 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */
-.apt-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+/* Set off from the affinity block above it — wider than the 0.5rem that
+   separates the table's own Track/Distance/Style groups, so it reads as a
+   section break rather than one more group. */
+.apt-table { width: 100%; margin-top: 0.9rem; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 /* Group headers read as section bands, not as another table row: the ten
    letters scan much faster when Track/Distance/Style are visibly a level up
    from the aptitude names under them. */

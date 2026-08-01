@@ -129,10 +129,14 @@ export function memberSparks(
 // One spark on the trainee's roll-up: every member carrying it, and the
 // chance she ends up with it from ANY of them.
 export type SparkOutlook = SparkRef & {
-  // The highest star level among the carriers. Two members can hold the same
-  // skill at different levels, and the spark that lands is the one that
-  // procced — so this labels the row rather than defining its chance.
-  stars: number;
+  // Deliberately NO star level. Carriers can hold the same spark at different
+  // levels, and `chance` is the union across them — so any single ★ figure
+  // beside it would answer a different question from the number it sits next
+  // to. A row reading "★★★ 40.6%" invites "40.6% chance of a 3★", when 40.6%
+  // is the chance of the spark at ANY level and the 3★ carrier alone is
+  // 32.8%. Which level lands is whichever carrier procced; the per-ancestor
+  // tabs carry that, one click away.
+  //
   // Tree indices of the members carrying it, in tree order.
   from: number[];
   chance: number | null;
@@ -152,11 +156,17 @@ export function combineOutlooks(
       const id = sparkId(s);
       const seen = byId.get(id);
       if (seen === undefined) {
-        byId.set(id, { ...s, from: [index] });
+        // Built explicitly rather than spread from `s`, so the star level it
+        // carries is dropped rather than riding along unused.
+        byId.set(
+          id,
+          s.type === "pink"
+            ? { type: "pink", aptitude: s.aptitude, from: [index], chance: s.chance }
+            : { type: s.type, key: s.key, from: [index], chance: s.chance }
+        );
         continue;
       }
       seen.from.push(index);
-      seen.stars = Math.max(seen.stars, s.stars);
       if (s.chance !== null) {
         seen.chance =
           seen.chance === null

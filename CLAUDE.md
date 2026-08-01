@@ -108,5 +108,11 @@ Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
   warnings, hints, tooltips. Don't write prose explaining a number — the
   header, tag or ordering should carry it, and the reasoning belongs in
   `DECISIONS.md`.
+- An **ellipsis means one of two things only**: work in flight ("Saving…",
+  "Scoring…", "Importing…") or a value that hasn't resolved yet (the map's
+  bare "…" for a name the catalog owes us). Buttons that open a dialog do
+  NOT take one — "Choose Character", not "Choose Character…" — so the mark
+  carries one meaning instead of four. Input placeholders keep theirs
+  ("Add a Spark…"). Always the `…` character, never three periods.
 - Every non-obvious tech/design choice gets a `DECISIONS.md` entry:
   Requirements → Choice → Alternatives rejected → What would change my mind.

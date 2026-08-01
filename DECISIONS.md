@@ -1278,6 +1278,44 @@ Keep adding entries as the build evolves. This file is the interview.
   The tiles are unsigned, because `+175` invites adding them up and this
   is the one quantity that doesn't support it.
 
+  **Affinity leads the Details tab**, above the ten-letter aptitude table
+  (moved there 2026-08-01, Jason's call). It is the node's headline
+  number — the trainee's run total, or the share a proc off this ancestor
+  rolls against — and the letters are detail you consult rather than the
+  first thing you read. The Details/Procs switch above it is the app's
+  standard `seg-group` pill, not the bespoke underlined tab bar it
+  shipped with: that bar existed nowhere else in the app, and a control
+  that looks unique implies it behaves uniquely.
+
+  **Replace and Clear are icon buttons on the name row**, not text
+  buttons on a row of their own — they cost a full row of a panel that
+  competes with the map for height. They reuse the save bar's own
+  `.bar-icon`/`.bar-icon-danger` styles and its inline-SVG icons rather
+  than a private copy: the first cut forked both, which left the app
+  showing two different reds for "this button destroys something"
+  (caught in review). `TrashIcon` is now shared between the two.
+
+  **Clear draws a trash can, not an ✕.** The ✕ is the app's close
+  mark — the modal, a spark chip — so putting it top-right of a panel
+  made an unconfirmed, un-undoable branch delete wear the shape and the
+  position of "dismiss this panel". The trash can is the app's existing
+  delete idiom, and moving to `.bar-icon`'s padding also took the target
+  from 28px to 32px, with a wider gap from Replace than the save bar
+  uses because Clear is the destructive one of an adjacent pair.
+
+  **`aria-label` names the node, `title` doesn't.** "Clear Grandparent
+  1-2" as the accessible name, because "Clear" alone is ambiguous on a
+  panel you reached by clicking one of 31 tiles; "Clear this node" as
+  the tooltip, because an unfamiliar icon is only discoverable on hover.
+  They must differ: a `title` matching the accessible name becomes the
+  accessible *description*, and screen readers then announce the node
+  twice. This is the blueprint bar's convention, arrived at there first.
+
+  Neither button renders where it doesn't apply — no Replace on a node
+  with nobody in it. The residual cost stands: Clear is destructive (on
+  a pulled veteran it takes her whole branch, autosaved) and an icon
+  states that less loudly than a word did.
+
   **Owned-link was built first, shipped on the map, and then withdrawn —
   it ranks the tree wrong.** `t-p1` and `t-p2` are the only two links in
   the system that can never carry a win bonus (the trainee hasn't raced
@@ -1510,6 +1548,18 @@ Keep adding entries as the build evolves. This file is the interview.
     the trainee comes out with, the breakdown is one click away on each
     member's own tab, and the column cost a third of the width in a
     panel where the spark names are already the tight part.
+    **No ★ level either** (cut 2026-08-01, Jason's question — it shipped
+    showing the highest level among the carriers). It was the one figure
+    on the table answering a different question from the number beside
+    it: `chance` is the union across carriers, each computed from its
+    OWN level, so a row reading "★★★ 40.6%" invites "40.6% chance of a
+    3★" when 40.6% is the chance of the spark at any level and the 3★
+    carrier alone is 32.8%. Which level lands is whichever carrier
+    procced. The honest alternative — a row per (spark, level) — splits
+    the union the table exists to show and inflates a list already
+    capped at 12. Ancestor tables keep their ★: there the level is
+    unambiguous, it is what that member's chance is computed from, and
+    the editor that sets it is directly below.
     **Capped at 12 rows, with a "Show all N" button.** Measured on a
     fully bred tree — two roster veterans in the parents, their real
     parents behind them — the uncapped table ran to **34 rows, a 1120px

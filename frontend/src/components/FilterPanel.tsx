@@ -204,7 +204,7 @@ export function FilterPanel({
                 setUmaOpen(true);
               }}
             >
-              Choose Umas…
+              Choose Umas
             </button>
             {cards
               .filter((c) => filters.cards.includes(c.card_id))
@@ -264,7 +264,7 @@ export function FilterPanel({
                 setSparkOpen(true);
               }}
             >
-              Choose Sparks…
+              Choose Sparks
             </button>
             {filters.whites.length > 0 && (
               <button

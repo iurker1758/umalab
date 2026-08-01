@@ -1750,12 +1750,12 @@ try {
     await setSpark("Sparks 3-4", "end", 1);
     const reported = await page
       .waitForFunction(
-        () => document.querySelector(".designer-autosave")?.textContent === "Not saved",
+        () => document.querySelector(".designer-autosave")?.textContent === "Not Saved",
         null,
         { timeout: 8000 }
       )
       .then(() => true, () => false);
-    check("a failing write reports 'Not saved' instead of a permanent 'Saving…'", reported);
+    check("a failing write reports 'Not Saved' instead of a permanent 'Saving…'", reported);
     await page.unroute("**/api/blueprints/**");
     const recovered = await page
       .waitForFunction(

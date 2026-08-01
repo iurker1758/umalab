@@ -826,7 +826,7 @@ export function DesignerPage({
             <input
               className="designer-name"
               type="text"
-              aria-label="Blueprint name"
+              aria-label="Blueprint Name"
               placeholder={UNTITLED}
               maxLength={80}
               value={design.name}
@@ -851,7 +851,7 @@ export function DesignerPage({
               className="bp-caret"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              aria-label="Switch blueprint"
+              aria-label="Switch Blueprint"
               disabled={busy}
               onClick={() => setMenuOpen((o) => !o)}
             >
@@ -923,7 +923,7 @@ export function DesignerPage({
           role="status"
           title={saveFail?.message}
         >
-          {saveFail !== null ? "Not saved" : autosaving || dirty ? "Saving…" : "Saved"}
+          {saveFail !== null ? "Not Saved" : autosaving || dirty ? "Saving…" : "Saved"}
         </span>
       </div>
 
@@ -932,7 +932,7 @@ export function DesignerPage({
             horizontally, which would trap a sticky child in its own
             scrollport instead of the page's. */}
         {shownSide !== null && (
-          <div className="side-toggle seg-group" role="radiogroup" aria-label="Tree half">
+          <div className="side-toggle seg-group" role="radiogroup" aria-label="Tree Half">
             {[1, 2].map((s) => {
               const slot = design.named[s];
               const name = slot?.chara_id == null ? null : charaName(slot.chara_id);

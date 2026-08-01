@@ -135,7 +135,7 @@ export function SlotPicker({
           </button>
         </header>
         {hasRoster && (
-          <div className="seg-group picker-source" role="radiogroup" aria-label="Pick from">
+          <div className="seg-group picker-source" role="radiogroup" aria-label="Pick From">
             <button
               className={showing === "catalog" ? "seg active" : "seg"}
               aria-pressed={showing === "catalog"}
@@ -160,7 +160,7 @@ export function SlotPicker({
           <input
             className="uma-search"
             type="search"
-            placeholder="Search by name…"
+            placeholder="Search by Name…"
             value={query}
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
@@ -228,7 +228,7 @@ export function SlotPicker({
             </button>
             <label className="sort-float">
               <select
-                aria-label="Sort roster by"
+                aria-label="Sort Roster By"
                 value={sort.key}
                 onChange={(e) => {
                   const key = e.target.value as SortKey;
@@ -248,7 +248,7 @@ export function SlotPicker({
                     ? "Ascending — click for descending"
                     : "Descending — click for ascending"
                 }
-                aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
+                aria-label={sort.asc ? "Sort Ascending" : "Sort Descending"}
                 onClick={() => setSort((s) => ({ ...s, asc: !s.asc }))}
               >
                 {sort.asc ? "▲" : "▼"}

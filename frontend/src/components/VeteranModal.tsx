@@ -247,8 +247,8 @@ export function VeteranModal({
               <button
                 className="modal-mark"
                 aria-expanded={markOpen}
-                aria-label={currentMark ? "Change mark" : "Set mark"}
-                title={currentMark ? "Change mark" : "Set mark"}
+                aria-label={currentMark ? "Change Mark" : "Set Mark"}
+                title={currentMark ? "Change Mark" : "Set Mark"}
                 onClick={() => setMarkOpen(!markOpen)}
               >
                 {currentMark ? (
@@ -262,10 +262,10 @@ export function VeteranModal({
               {markOpen && (
                 <MarkPicker
                   activeId={currentMark ?? null}
-                  clearTitle="No mark"
-                  tileTitle="Set mark"
-                  activeTileTitle="Remove mark"
-                  ariaLabel="Choose mark"
+                  clearTitle="No Mark"
+                  tileTitle="Set Mark"
+                  activeTileTitle="Remove Mark"
+                  ariaLabel="Choose Mark"
                   onPick={(id) => {
                     // Single-select semantics: picking the active mark (or the
                     // clear tile while marked) removes; clear while unmarked

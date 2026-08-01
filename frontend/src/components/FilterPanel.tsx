@@ -241,7 +241,7 @@ export function FilterPanel({
           <StarModeRow
             stars={filters.unique.stars}
             legacy={filters.unique.legacy}
-            ariaLabel="Unique spark star level"
+            ariaLabel="Unique Spark Star Level"
             onStars={(stars) =>
               onChange({ ...filters, unique: { ...filters.unique, stars } })
             }
@@ -300,8 +300,8 @@ export function FilterPanel({
           <div className="filter-chips">
             <button
               className={filters.marks.includes("") ? "mark-toggle active" : "mark-toggle"}
-              title="No favorite"
-              aria-label="No favorite"
+              title="No Favorite"
+              aria-label="No Favorite"
               onClick={() => onChange({ ...filters, marks: toggleIn(filters.marks, "") })}
             >
               <span className="mark-none" aria-hidden="true">
@@ -325,11 +325,11 @@ export function FilterPanel({
       {umaOpen && (
         <>
           <div className="uma-popout-backdrop" onMouseDown={() => setUmaOpen(false)} />
-          <div className="uma-popout" role="dialog" aria-label="Choose umas">
+          <div className="uma-popout" role="dialog" aria-label="Choose Umas">
             <input
               className="uma-search"
               type="search"
-              placeholder="Search by name…"
+              placeholder="Search by Name…"
               value={umaQuery}
               autoFocus
               onChange={(e) => setUmaQuery(e.target.value)}
@@ -354,11 +354,11 @@ export function FilterPanel({
       {sparkOpen && (
         <>
           <div className="uma-popout-backdrop" onMouseDown={() => setSparkOpen(false)} />
-          <div className="uma-popout" role="dialog" aria-label="Choose common sparks">
+          <div className="uma-popout" role="dialog" aria-label="Choose Common Sparks">
             <input
               className="uma-search"
               type="search"
-              placeholder="Search sparks…"
+              placeholder="Search Sparks…"
               value={sparkQuery}
               autoFocus
               onChange={(e) => setSparkQuery(e.target.value)}

@@ -24,7 +24,7 @@ export function PinkSparkEditor({
           onChange(v === "" ? null : { aptitude: v as AptitudeKey, stars: spark?.stars ?? 3 });
         }}
       >
-        <option value="">No pink spark</option>
+        <option value="">No Pink Spark</option>
         {APTITUDE_KEYS.map((k) => (
           <option key={k} value={k}>
             {APTITUDE_LABELS[k]}

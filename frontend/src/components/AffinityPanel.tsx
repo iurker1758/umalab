@@ -73,10 +73,10 @@ export function AffinityPanel({
                 {/* Abbreviated, with the full wording on hover: spelled out,
                     the two middle headers are wider than the panel can give
                     them and every link name wraps to two lines. */}
-                <th scope="col" className="aff-link-pts" title="Relation points">
+                <th scope="col" className="aff-link-pts" title="Relation Points">
                   Rel.
                 </th>
-                <th scope="col" className="aff-link-pts" title="Shared G1 wins">
+                <th scope="col" className="aff-link-pts" title="Shared G1 Wins">
                   Wins
                 </th>
                 <th scope="col" className="aff-link-sum">Total</th>

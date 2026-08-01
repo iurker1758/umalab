@@ -219,9 +219,9 @@ export function RosterPage({
                   <MarkPicker
                     activeId={bulkTarget}
                     caption="Switch the batch mark — selection is kept"
-                    clearTitle="Clear marks"
-                    tileTitle="Batch apply"
-                    activeTileTitle="Current target"
+                    clearTitle="Clear Marks"
+                    tileTitle="Batch Apply"
+                    activeTileTitle="Current Target"
                     popupClassName="mark-popup dock-popup"
                     ariaLabel="Change mark to batch apply"
                     onPick={(id) => {
@@ -288,9 +288,9 @@ export function RosterPage({
                 <MarkPicker
                   activeId={undefined}
                   caption="Pick a mark, then select veterans"
-                  clearTitle="Clear marks"
-                  tileTitle="Batch apply"
-                  activeTileTitle="Batch apply"
+                  clearTitle="Clear Marks"
+                  tileTitle="Batch Apply"
+                  activeTileTitle="Batch Apply"
                   popupClassName="mark-popup dock-popup"
                   ariaLabel="Choose mark to batch apply"
                   onPick={(id) => {
@@ -365,7 +365,7 @@ export function RosterPage({
           </button>
           <label className="sort-float">
             <select
-              aria-label="Sort by"
+              aria-label="Sort By"
               value={sort.key}
               onChange={(e) => {
                 const key = e.target.value as SortKey;
@@ -381,7 +381,7 @@ export function RosterPage({
             <button
               className="sort-dir"
               title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
-              aria-label={sort.asc ? "Sort ascending" : "Sort descending"}
+              aria-label={sort.asc ? "Sort Ascending" : "Sort Descending"}
               onClick={() => applySort({ ...sort, asc: !sort.asc })}
             >
               {sort.asc ? "▲" : "▼"}

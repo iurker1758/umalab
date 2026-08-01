@@ -9,7 +9,7 @@ export function SkillChips({ skills }: { skills: Skill[] }) {
         <span
           key={s.skill_id}
           className={s.unique ? "chip unique" : s.rarity === 2 ? "chip gold" : "chip"}
-          title={s.unique ? "Unique skill" : s.rarity === 2 ? "Gold skill" : undefined}
+          title={s.unique ? "Unique Skill" : s.rarity === 2 ? "Gold Skill" : undefined}
         >
           {s.name ?? `Skill ${s.skill_id}`}
           {s.unique && s.level > 1 ? ` Lv${s.level}` : ""}

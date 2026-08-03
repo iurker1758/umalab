@@ -621,7 +621,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-more:hover { opacity: 1; background: #1d2b3a; }
 
 /* Hand entry: one button on the panel, and a popout that browses all 432
-   factors with your favourites at the top (DECISIONS.md #35, reversing #30's
+   factors with your favorites at the top (DECISIONS.md #35, reversing #30's
    "an add-one affordance, not a browser"). The held list that used to sit
    here is gone: the sparks are in the table, with their levels (#34). */
 .spark-add { margin-top: 0.7rem; }
@@ -630,12 +630,22 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    sit beside it. */
 .spark-open { width: 100%; padding: 0.36rem; font-size: 0.82rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; cursor: pointer; opacity: 0.85; }
 .spark-open:hover { opacity: 1; background: #1d2b3a; }
-/* Sections inside the popout: Favourites, then the four kinds in the order
+/* Sections inside the popout: Favorites, then the four kinds in the order
    the spark tables group by. A heading rather than a tab strip — the list
    scrolls, so a reader passes them all, and five tabs would hide four of
    them. */
-.spark-group { margin: 0.7rem 0 0.25rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.55; }
-.spark-group:first-of-type { margin-top: 0.55rem; }
+/* NOT `.spark-group` — that is already the roster card's spark cluster
+   (VeteranCard), and naming this the same restyled every card on the roster
+   page with a heading's font and margins. */
+.spark-section-head { margin: 0.7rem 0 0.25rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.55; }
+/* The first section hugs the search band — selected as "the section directly
+   after the band", not with `:first-of-type`. That pseudo-class matches on
+   TAG, and everything here is a div: the original rule made every kind
+   heading first-of-type inside its own wrapper and Favorites never one, and
+   moving it to `.spark-section:first-of-type` only swapped that failure for
+   the band itself being the first div. An adjacent sibling can't be fooled
+   by either. */
+.spark-search-band + .spark-section .spark-section-head { margin-top: 0.55rem; }
 /* Said inside the popout, not as a page toast: the popout covers the toast,
    and both messages are only true of a control in here. */
 .spark-note { margin: 0.4rem 0 0; font-size: 0.78rem; opacity: 0.65; }
@@ -651,7 +661,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    names need. Same idiom as `.white-row` in the filter panel. */
 .spark-matches li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; padding: 0.16rem 0.2rem 0.16rem 0.3rem; background: #16202c; border-radius: 4px; }
 .spark-matches li:hover { background: #1d2b3a; }
-/* Favouriting, and it is NOT what adding does — see SparkChooser. Sized for a
+/* Favoriting, and it is NOT what adding does — see SparkChooser. Sized for a
    thumb like the add buttons beside it. */
 .spark-fav { flex: none; width: 26px; padding: 0.3rem 0; font-size: 0.85rem; line-height: 1; color: inherit; background: transparent; border: 0; opacity: 0.35; cursor: pointer; }
 .spark-fav:hover:not(:disabled) { opacity: 0.8; }
@@ -681,6 +691,11 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    phone. */
 .spark-matches .seg { padding: 0.45rem 0.5rem; font-size: 0.68rem; line-height: 1; cursor: pointer; }
 .spark-matches .seg:hover { opacity: 1; background: #1e3a5f; }
+/* Whose green a green is. A unique's factor key IS a card_id, so the spark
+   names the uma and not the other way round — dimmed and trailing, because
+   the spark is what you are picking. Only appears where the list isn't
+   already narrowed to one card. */
+.spark-owner { margin-left: 0.4rem; font-size: 0.72rem; opacity: 0.5; }
 /* A held spark answers its own search rather than vanishing from it. */
 .spark-held { flex: none; font-size: 0.7rem; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.5; }
 /* The popout is a browser, so its rows scroll under a sticky search box

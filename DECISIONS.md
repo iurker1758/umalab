@@ -2544,3 +2544,179 @@ writing.
   `groups` field already stores. Or the 432 rows measuring badly on a
   real phone — they render eagerly today, which is fine at this size and
   is the first thing to revisit if the reference grows.
+
+## 36. Greens are card-bound, and the chooser's first review
+
+Two things at once, because they land in one file: the rule that a green
+spark belongs to a card, and the ten defects an all-Opus review found
+in #35 after it merged.
+
+- **Requirements:** #35 offered all 137 greens on every node. Jason:
+  *"each uma has a specific green unique skill, so having the entire
+  unique list for an uma does not make sense"* — she can **learn**
+  another uma's unique during a run, but she can never carry the
+  **spark** for one. Measured three ways, and they agree exactly: the
+  reference has 137 uniques over 83 characters (1–3 variants each); 95
+  of the 97 released cards have a unique factor **at their own card
+  id** (the two exceptions are the `91xxxxx` NPC range); and across a
+  real roster — **196 veterans plus 1,176 lineage members, 1,372 rows**
+  — every member carries at most one green and it is *always* her own
+  `card_id`, with **zero** exceptions. `app/ingest.py` had said so all
+  along in its header: *"key is the source card_id"*. So the chooser
+  was offering 136 sparks the member cannot have, each with a proc
+  estimate waiting behind it.
+
+- **Choice: one rule, three tiers, client-side.** `card` known → her
+  card's unique, which is one row or none; `chara` known but not the
+  card → that character's 1–3 variants; neither → all 137, **each
+  named with the uma it belongs to**. Only `unique` is card-bound —
+  pink, race, white and scenario belong to anyone. The middle tier is
+  insurance: the picker always sets both ids, but the slot type allows
+  one without the other. The derivation is `deriveCharaId`, which
+  already mirrors `derive_chara_id` server-side.
+
+  **An uncast node keeps the full list** (Jason's call). #30 rules that
+  a slot may carry sparks with no pink and no character — "the parent
+  who carries these two whites" is a real plan — and a green is how you
+  express "a Special Week parent" before you have cast one. What the
+  full list needed was the owner: `Shooting Star` alone does not say
+  whose it is, and 137 anonymous greens is not a list you can navigate.
+
+  **The owner label drops `[Original]`.** 62 of the 95 greens with a
+  card are the base outfit, so printing it spends width on the word
+  that distinguishes nothing; a named outfit is kept, because WHICH
+  card decides which of an uma's uniques you get. Median label 23 → 14
+  characters. The 42 uniques whose card has not reached Global get no
+  label rather than an invented one. On a **cast** node the label is
+  suppressed entirely — the panel above already names her, and the list
+  is one row.
+
+  **The server rule is deliberately NOT here** — filed as #58. CLAUDE.md
+  makes `app/schemas.py` the authority, but `BlueprintOut` is strict and
+  one unparseable row 500s the whole blueprint list, so a document
+  already holding a mismatched green would take the list down with it.
+  That needs a survey of existing rows and probably a write-only rule,
+  which is its own change.
+
+### The review's findings
+
+`/code-review` at high, every phase on Opus, run over #35 **after** it
+merged — which is the wrong order, and the reason the order changed. 31
+agents, 25 verified findings, 10 distinct defects. Four were real bugs
+in state I had reasoned about and got wrong:
+
+- **Un-favoriting made the row vanish.** The Favorites section was
+  `watched ∩ snapshot` while the kind sections excluded `snapshot`, so
+  un-starring dropped the row out of Favorites while the frozen set
+  still hid it from its kind — the spark left the popout entirely and
+  could not be added at all until it was reopened. **Membership is now
+  what is frozen**, not the intersection: the section lists exactly the
+  sparks it opened with, the ★ and the Hunting pill stay live off
+  `watched`, and un-starring empties a star and moves nothing. That is
+  what #35 meant by the snapshot; it just wrote the other one.
+- **A snapshot taken mid-fetch froze an empty list**, so a popout opened
+  during the four parallel mount fetches showed no Favorites section at
+  all and scattered the user's stars through the kind sections — the
+  exact state the freeze exists to prevent. The popout is now
+  **remounted when the watched list settles**, which re-snapshots
+  without an effect or a ref read during render (both of which the
+  hooks lint rules refuse, correctly). It costs a query typed inside
+  that sub-second window.
+- **`watchedFailed` had one writer and no retry**, so a one-second blip
+  at page load disabled every ★ for the session. Opening the chooser
+  after a failure now re-fetches — that is the moment the list is
+  wanted. Not on every open: it is page-scoped data that rarely
+  changes.
+- **A failed write after the popout closed reported nothing.**
+  Dismissing while a `PUT` is in flight is one keystroke, and the notice
+  lived only on the surface being unmounted — the star silently
+  reverted and #27's block would quietly lack a spark the user watched
+  themselves mark. Write failures now go to the **page toast**, which is
+  `position: fixed` and drawn over the backdrops, so it is readable with
+  the popout open and survives it closing.
+
+Two were latent and became reachable:
+
+- **`setFactors` took the finished array.** The popout stays open across
+  adds, so two clicks resolved against one render each rebuilt the list
+  from the same stale base and the second replaced the first wholesale —
+  a spark the user watched themselves click never reaching the design,
+  with the autosave persisting the shorter list. It takes an **updater**
+  now, applied against the design at write time. The inline search had
+  the same shape and hid it by collapsing after every add.
+- **`.spark-group` was already taken** by the roster card's spark
+  cluster (`VeteranCard`), so #35's heading rule was restyling every
+  card on the roster page. Renamed `.spark-section-head`. The review did
+  not catch this one; it turned up while fixing the finding next to it.
+
+Two were presentation, and the second is the more interesting:
+
+- **`:first-of-type` matches on TAG, not class.** The rule meant "the
+  first section hugs the search band"; because every kind section was
+  wrapped in a `div` and Favorites was not, it tightened every kind
+  heading and never Favorites — the exact inverse. Moving it to
+  `.spark-section:first-of-type` **did not fix it**, because the search
+  band is also a `div` and therefore the first of its type; measured at
+  11.2px on all four headings after the "fix". It is now an adjacent
+  sibling — `.spark-search-band + .spark-section` — which cannot be
+  fooled by either, and every section is the same element so the
+  intent is expressible at all. Measured after: 8.8px on the first,
+  11.2px on the rest.
+- **British "Favourite" against the app's American "Favorite"**
+  (`Favorites` in the filter panel, `Batch Favorite` on the roster,
+  "Favorite-mark icons" in CLAUDE.md). One app, two spellings, for two
+  unrelated concepts. Normalized, including the identifiers.
+
+One was **measured and declined**: that 432 rows re-rendering per
+keystroke makes typing lag on a phone. At **4× CPU throttling** the
+first keystroke costs 186ms and every one after it 33–84ms, because the
+list collapses to a handful immediately (432 rows and 3,565 DOM nodes
+unqueried; 15 rows and 125 nodes at five characters). One perceptible
+hitch on the first character is not "characters lag behind the keyboard
+and the first keystrokes can be dropped". Memoising the filter would
+not touch it either — the cost is React unmounting ~420 rows, not the
+predicate. Revisit if the reference grows.
+
+Two were in the **e2e suite** and both were real: it selected favorites
+by displayed name, which the rest of the suite refuses precisely because
+the reference holds distinct factors sharing one (two whites called
+"Pressure"); and it recorded the row it created *after* a wait that can
+throw, so a timeout would leave a real row in the user's watched list
+forever. The star and the Hunting pill now carry `data-spark` like the
+add buttons, and the id is recorded **before** the click that writes it.
+
+**Also fixed, and not from the review: the scratch verification scripts
+were driving the designer against whatever blueprint was open**, and
+cleaning up only rows they created. The e2e suite has created and
+deleted its own row from the start; the scratch scripts had no such
+rule and were one habit away from destroying real work. They now take a
+throwaway blueprint from `sandbox.mjs`, which seeds the
+`umalab.designer.open` preference before first paint and deletes the row
+in `finally`.
+
+- **Alternatives rejected:** *hiding the Green section until a character
+  is cast* — the strongest reading of the rule, and it would make
+  choosing a green mean choosing a character, which the picker already
+  does; rejected because it contradicts #30 for one kind only and takes
+  the green away from the sparks-only plan that #30 explicitly allows.
+  *Leaving the full list on cast nodes and only adding the owner label*
+  — fixes the naming and leaves the wrong-spark-on-the-wrong-node case
+  reachable, which is the half that produces a false proc estimate.
+  *Landing the server validation with this* — see #58; it can make a
+  saved document unopenable. *The owner on its own line* — measured
+  worse, not better: 24 of 137 rows took three lines at 358px against 20
+  inline, because the block adds a line to every labelled row rather
+  than only to the ones that overflow. Inline with `[Original]` dropped
+  is **9 of 137**, and that is where it stands — #34's "no name takes a
+  third line" was a rule for a fixed table row in the 301px sidebar
+  where the ★ column has to align, not for a scrolling browse list
+  carrying a two-part label.
+
+- **What would change my mind:** blue sparks arriving (#36 in the issue
+  tracker) — they are stat sparks, not card-bound, so they would join
+  the "belongs to anyone" side and the rule would not move. A card
+  gaining a second unique factor at a key that is not its own id, which
+  would break the identity this rests on and turn the filter into a
+  lookup table. Or the uncast list proving to be how people actually
+  pick greens, which would argue for sorting it by uma rather than by
+  spark name.

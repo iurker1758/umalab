@@ -11,7 +11,15 @@ Raspberry Pi behind Cloudflare Tunnel, Cloudflare Access in front of both.
 Local hosting in the interim — don't add cloud-specific config until that
 work starts.
 
-Current milestone: deep-tree designer V2, over the 31-node blueprint document
+Current milestone: **multi-user** (issue #50, DECISIONS.md #32) — Cloudflare
+Access is the login, a verified `Cf-Access-Jwt-Assertion` JWT is the identity,
+and every roster/blueprint/mark row carries an `owner_id`. Shipped: the
+`users` table, owner scoping across both routers, and the backfill migration.
+Still to land inside it: the shared watched-spark list (issue #39) as a table
+rather than the `localStorage` module PR #49 closed with. The design-pass
+queue (#41 → #45+#29 → #28 → #27) resumes after this.
+
+Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation
 aptitude calculator, and roster pulls — any node but the trainee can be
 filled from your roster, which brings that veteran's real pedigree with her
@@ -39,6 +47,11 @@ Backend (from `backend/`, venv in `.venv/`):
 - Migrations: `alembic upgrade head` · new: `alembic revision --autogenerate -m "..."`
 - Test: `pytest` · Lint: `ruff check .` · Types: `pyright` (strict; run with the
   venv active so it resolves site-packages)
+- `tests/test_isolation.py` needs a **second Postgres database** (default: the
+  app's URL with the name swapped to `umalab_test`; `TEST_DATABASE_URL`
+  overrides). It drops every table, and refuses to run against the app's own
+  `DATABASE_URL`. Without one it skips — CI sets `PYTEST_REQUIRE_DB=1` so the
+  skip is a failure there (DECISIONS.md #32)
 - Reference data: `python scripts/build_reference_data.py` (uma.moe key from
   `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it);
   `--mdb-only` regenerates just the client-sourced files (relations.json,

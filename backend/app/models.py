@@ -1,9 +1,13 @@
 """Database schema.
 
-Invariants (see DECISIONS.md #3, #5):
+Invariants (see DECISIONS.md #3, #5, #32):
 
-- Imports are full-replace snapshots: every upload deletes all veterans and
-  inserts the new set in one transaction; `imports` rows are history metadata.
+- Every row belongs to a user. `owner_id` is non-nullable on all four owned
+  tables, and every query filters on it — the identity comes from a verified
+  Cloudflare Access JWT (app/auth.py), never from anything the client sends.
+- Imports are full-replace snapshots OF ONE USER'S ROSTER: every upload
+  deletes that owner's veterans and inserts the new set in one transaction;
+  `imports` rows are history metadata.
 - Hybrid shape: scalar columns for anything the roster table sorts/filters
   on; JSONB for the tree-shaped decoded factors, raw skills, and lineage.
 - `register_time` is stored as the game's raw string ("YYYY-MM-DD HH:MM:SS",
@@ -21,10 +25,37 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
 
 
+class User(Base):
+    """One row per person Cloudflare Access lets in (DECISIONS.md #32).
+
+    Keyed by the email in the verified JWT claims — the Access policy is the
+    invite list, so a row is created the first time someone who already got
+    past Access shows up. That is not open signup: the gate is at the edge.
+    No password, no session, no profile; this table exists to give the other
+    four something to point at.
+
+    320 = the maximum length of an email address (64 local + @ + 255 domain).
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+# Every owned table takes the same column. Declared once so a fifth table
+# can't quietly get a nullable one: a null owner is a row no query returns
+# and no user can delete.
+def _owner_column() -> Mapped[int]:
+    return mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+
 class Import(Base):
     __tablename__ = "imports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = _owner_column()
     imported_at: Mapped[datetime] = mapped_column(server_default=func.now())
     veteran_count: Mapped[int]
     filename: Mapped[str] = mapped_column(String(200))
@@ -32,10 +63,18 @@ class Import(Base):
 
 class Veteran(Base):
     __tablename__ = "veterans"
+    # Unique PER OWNER, not globally: trained_chara_id is the game's id for a
+    # horse in one player's save, so two players' dumps can collide on it. A
+    # global constraint would make the second importer's upload fail on
+    # someone else's row (DECISIONS.md #32).
+    __table_args__ = (
+        UniqueConstraint("owner_id", "trained_chara_id", name="uq_veteran_owner_chara"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = _owner_column()
     import_id: Mapped[int] = mapped_column(ForeignKey("imports.id"))
-    trained_chara_id: Mapped[int] = mapped_column(unique=True)
+    trained_chara_id: Mapped[int]
     card_id: Mapped[int]
     chara_id: Mapped[int]  # derived card_id // 100 (the dump's own field is null)
     name: Mapped[str] = mapped_column(String(100))
@@ -88,6 +127,7 @@ class Blueprint(Base):
     __tablename__ = "blueprints"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = _owner_column()
     name: Mapped[str] = mapped_column(String(80))
     slots: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -104,10 +144,16 @@ class VeteranTag(Base):
     mark per veteran, matching the game's single favorite mark.
     """
     __tablename__ = "veteran_tags"
+    # Keeps its name across the widening (DECISIONS.md #32) — the tag upserts
+    # name this constraint in their ON CONFLICT clause, and a rename there is
+    # a runtime error rather than a type error.
     __table_args__ = (
-        UniqueConstraint("trained_chara_id", name="uq_veteran_tag_trained_chara_id"),
+        UniqueConstraint(
+            "owner_id", "trained_chara_id", name="uq_veteran_tag_trained_chara_id"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = _owner_column()
     trained_chara_id: Mapped[int]
     tag: Mapped[str] = mapped_column(String(40))

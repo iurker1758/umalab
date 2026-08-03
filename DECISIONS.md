@@ -1920,7 +1920,20 @@ Access-identity scoping)"* — and this is that entry.
   failure there, the same way `E2E_REQUIRE_ROSTER` does for the
   Playwright suite: a security invariant that silently stops running is
   worse than one never written. The module refuses outright to run
-  against the app's own `DATABASE_URL`, because it drops every table.
+  against the app's own database, because it drops every table —
+  compared by (host, port, database) rather than by URL string, since
+  the same database has many spellings and every one of them would
+  slip past an equality check.
+
+  **That schema comes from `create_all`, so the same job also runs
+  `alembic upgrade head` and `alembic check`.** The tests assert
+  against the models; a deployment runs the migrations; nothing was
+  comparing the two, which is the CLAUDE.md invariant ("schema changes
+  go through Alembic, not `create_all`") with nothing enforcing it. The
+  e2e job already proved the chain *applies* — these prove it produces
+  the schema the models describe. Verified clean before gating on it:
+  `check` reports no operations on a freshly migrated database, so it
+  fails on real drift rather than on autogenerate's cosmetic opinions.
 
 - **Alternatives rejected:** *building auth in FastAPI* — passwords,
   sessions and resets are real attack surface for an invite-only app,

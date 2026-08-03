@@ -1,4 +1,17 @@
 import type { Factor, Veteran } from "./api";
+import { writeStore } from "./storage";
+
+// The sparks a "Legacy" search may match: the veteran's own, plus her two
+// PARENTS' — never her grandparents'. Breeding from her shifts every slot up
+// a generation: she becomes a parent, her parents become the grandparents,
+// and her grandparents fall out of the game's 6-slot tree entirely. A spark
+// sitting on one of those has no slot, no inspiration roll and no affinity
+// term, so it can never be inherited from her — shortlisting her for it is
+// shortlisting her for something she can't pass on (DECISIONS.md #31).
+export const legacyFactorsOf = (v: Veteran): Factor[] => [
+  ...v.factors,
+  ...v.lineage.filter((m) => m.relation === "parent").flatMap((m) => m.factors),
+];
 
 // ---------- filtering ----------
 // OR within a category, AND across categories: each section you touch
@@ -62,6 +75,10 @@ export const starModeLabel = (m: StarMode) =>
   m === "all" ? "All" : m === "2plus" ? "2★+" : "3★";
 
 export const FILTER_STORE = "umalab.filters";
+// The designer's slot picker persists its own filters, under its own key: the
+// two sets stay independent in both directions, so narrowing the list to find
+// one mare never touches the roster page you go back to (DECISIONS.md #31).
+export const PICKER_FILTER_STORE = "umalab.picker.filters";
 
 const isStarMode = (m: unknown): m is StarMode => STAR_MODES.includes(m as StarMode);
 // A persisted spark section must be valid in full — a missing stars/legacy
@@ -73,9 +90,9 @@ const isSparkFilter = (s: SparkFilter | undefined): s is SparkFilter =>
   isStarMode(s.stars) &&
   typeof s.legacy === "boolean";
 
-export function loadFilters(): Filters {
+export function loadFilters(store: string = FILTER_STORE): Filters {
   try {
-    const raw = localStorage.getItem(FILTER_STORE);
+    const raw = localStorage.getItem(store);
     if (raw) {
       const p = JSON.parse(raw) as Filters;
       // Shape check; anything off (incl. older formats) falls back.
@@ -111,12 +128,36 @@ export function loadFilters(): Filters {
   return defaultFilters;
 }
 
+// Paired with loadFilters so both ends of a store key sit together — a write
+// that skipped the shape the loader validates would read back as defaults.
+export function saveFilters(filters: Filters, store: string = FILTER_STORE): void {
+  writeStore(store, filters);
+}
+
 const starOk = (star: number, mode: StarMode) =>
   mode === "all" ? true : mode === "2plus" ? star >= 2 : star === 3;
 
 // The factor kinds the Common Sparks filter covers.
 export const isCommonKind = (kind: string) =>
   kind === "white" || kind === "race" || kind === "scenario";
+
+// Every common-spark (white skill / race / scenario) name a filter can
+// actually match — each veteran's own plus her parents', which is the legacy
+// pool. A name only a grandparent carries is left out on purpose: nothing can
+// match it, and offering it in the chooser is a dead option that reads as "no
+// veteran has this".
+//
+// The chooser's vocabulary and `reconcileFilters`' idea of a still-matchable
+// name have to be the SAME set — offering a name reconcile then strips would
+// clear a filter the panel had just invited you to pick — so reconcile builds
+// its set from this rather than walking the pool a second time.
+export const commonSparkNamesOf = (veterans: Veteran[]): string[] => {
+  const names = new Set<string>();
+  for (const v of veterans) {
+    for (const f of legacyFactorsOf(v)) if (isCommonKind(f.kind)) names.add(f.name);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+};
 
 export const countFilters = (f: Filters) =>
   f.blue.names.length +
@@ -127,14 +168,13 @@ export const countFilters = (f: Filters) =>
   f.cards.length;
 
 export function matchesFilters(v: Veteran, f: Filters): boolean {
-  // "Legacy" widens a spark section's pool to the whole 6-slot lineage.
-  // Built lazily at most once per veteran — every white-filter row plus the
-  // blue/pink/unique sections may all ask for it in one pass.
+  // "Legacy" widens a spark section's pool to the veteran and her parents
+  // (see legacyFactorsOf). Built lazily at most once per veteran — every
+  // white-filter row plus the blue/pink/unique sections may all ask for it in
+  // one pass.
   let legacyPool: Factor[] | null = null;
   const pool = (legacy: boolean): Factor[] =>
-    legacy
-      ? (legacyPool ??= [...v.factors, ...v.lineage.flatMap((m) => m.factors)])
-      : v.factors;
+    legacy ? (legacyPool ??= legacyFactorsOf(v)) : v.factors;
   if (
     f.blue.names.length > 0 &&
     !pool(f.blue.legacy).some(
@@ -186,14 +226,14 @@ export function matchesFilters(v: Veteran, f: Filters): boolean {
 export function reconcileFilters(f: Filters, vets: Veteran[]): Filters {
   const marks = new Set<string>([""]); // the no-favorite chip is always valid
   const cards = new Set<number>();
-  const sparks = new Set<string>();
+  // The chooser's own vocabulary, so the two can't drift: a name it offers is
+  // a name this keeps, and a name it drops is one no filter can match any
+  // more — which is what makes clearing that filter right rather than a
+  // roster hidden with nothing in the panel to explain why.
+  const sparks = new Set(commonSparkNamesOf(vets));
   for (const v of vets) {
     if (v.tags[0]) marks.add(v.tags[0]);
     cards.add(v.card_id);
-    for (const fa of v.factors) if (isCommonKind(fa.kind)) sparks.add(fa.name);
-    for (const m of v.lineage) {
-      for (const fa of m.factors) if (isCommonKind(fa.kind)) sparks.add(fa.name);
-    }
   }
   const next: Filters = {
     ...f,

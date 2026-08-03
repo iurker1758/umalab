@@ -18,6 +18,7 @@ import {
   type Veteran,
 } from "./api";
 import { apt, isLetter } from "./domain";
+import { writeStore } from "./storage";
 // One owner for the spark identity string. It lives with the model that
 // defines what a spark IS, and every dedupe in this file keys on it — five
 // hand-built copies of the same template were five places to miss.
@@ -305,6 +306,56 @@ export function withDeepCard(design: Design, i: number, cardId: number | null): 
     pink === null
       ? { card_id: cardId }
       : { aptitude: pink.aptitude, stars: pink.stars, card_id: cardId }
+  );
+}
+
+// Take the character off a node, keeping everything planned about it — the
+// pink AND the non-pink sparks. The mirror of `withSpark`/`withFactors`,
+// which keep the character while the sparks change; without it the only way
+// off a cast was Clear, which took the sparks with it. "Spark set, character
+// still open" is a legal state the document has always had (it's what typing
+// a pink into an empty node produces) and this is the way back to it.
+//
+// Prunes to null when nothing is left, exactly as those two do, so a node
+// emptied this way is indistinguishable from one never touched.
+//
+// Rebuilt as a catalog slot rather than nulled in place: a character-less
+// slot may only be a catalog one — a roster or lineage pick always knows who
+// it pulled, and both this client and the server reject the other shape. So
+// the source and the roster-only fields have to go with the face. Only a
+// hand-picked node reaches this (see `canUnselect`), where all of them are
+// already empty.
+export function withoutCharacter(design: Design, i: number): Design {
+  if (i >= NAMED_COUNT) return withDeepCard(design, i, null);
+  const slot = design.named[i];
+  if (slot === null) return design;
+  if (slot.spark === null && slot.factors.length === 0) return withNamed(design, i, null);
+  return withNamed(design, i, catalogSlot(null, null, slot.spark, slot.factors));
+}
+
+// May this node's character be taken off on its own?
+//
+// Hand-picked nodes only. What a pull placed is recorded history: those
+// sparks are the horse's own, read off her dump, so dropping just her face
+// would leave someone else's sparks hanging under nobody. Clearing the whole
+// branch stays the way out of a pull (DECISIONS.md #28). Named slots declare
+// `catalog`; a deep slot records a source only when a pull placed it, so
+// absent means hand-picked there.
+//
+// False when the node has nothing to keep, because then this IS Clear, and
+// two buttons doing one thing on a panel this size is noise. That also keeps
+// it off the trainee, who carries no sparks at all.
+export function canUnselect(design: Design, i: number): boolean {
+  if (lockedBy(design, i) !== null) return false;
+  if (i < NAMED_COUNT) {
+    const slot = design.named[i];
+    if (slot === null || slot.source !== "catalog" || slot.card_id === null) return false;
+    return slot.spark !== null || slot.factors.length > 0;
+  }
+  return (
+    sourceAt(design, i) === null &&
+    deepCardAt(design, i) !== null &&
+    sparkAt(design, i) !== null
   );
 }
 
@@ -945,13 +996,9 @@ export function readOpenId(): number | null {
   }
 }
 
+// Null forgets which row was open, which is what writeStore's null does.
 export function writeOpenId(id: number | null): void {
-  try {
-    if (id === null) localStorage.removeItem(DESIGN_STORE);
-    else localStorage.setItem(DESIGN_STORE, JSON.stringify(id));
-  } catch {
-    // storage full/blocked — the session still works, reloads just forget
-  }
+  writeStore(DESIGN_STORE, id);
 }
 
 // New blueprints are born named. The first is plain "Untitled Blueprint" —

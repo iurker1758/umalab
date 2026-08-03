@@ -142,6 +142,24 @@ const pinkOf = (factors) => {
   return best;
 };
 const memberAt = (v, position) => v.lineage.find((m) => m.position_id === position);
+// A roster chip is labeled by identity plus the pink it carries — two
+// veterans trained from the same card would otherwise read identically.
+// It is NOT unique on a real roster: five Taiki Shuttles, two of them
+// carrying 2★ Turf, are two chips with the same accessible name, and the
+// pull helper's locator then matches both and Playwright refuses to click.
+// So the cast below takes only veterans whose label nothing else shares.
+const vetChipLabel = (v) => {
+  const pink = pinkOf(v.factors);
+  return (
+    `${v.name}${v.outfit !== "Original" ? ` (${v.outfit})` : ""} · ` +
+    (pink === null ? "no pink" : `${pink.stars}★ ${LABEL[pink.aptitude]}`)
+  );
+};
+const labelCount = new Map();
+for (const v of roster) {
+  const label = vetChipLabel(v);
+  labelCount.set(label, (labelCount.get(label) ?? 0) + 1);
+}
 // The map names a node from the CATALOG, by chara — so a veteran (or a
 // lineage member) whose card the catalog doesn't serve renders as
 // "Chara 1234" and the name assertions below would be checking a fallback.
@@ -151,6 +169,7 @@ const catalogCharas = new Set(catalog.map((e) => e.chara_id));
 const pullable = (v) =>
   pinkOf(v.factors) !== null &&
   catalogCharas.has(v.chara_id) &&
+  labelCount.get(vetChipLabel(v)) === 1 &&
   [10, 20, 11, 12, 21, 22].every((p) => {
     const m = memberAt(v, p);
     return m !== undefined && pinkOf(m.factors) !== null && catalogCharas.has(m.chara_id);
@@ -167,6 +186,31 @@ const RV2 = candidates.find(
     v.chara_id !== RV1.chara_id &&
     memberAt(v, 10).chara_id !== memberAt(RV1, 10).chara_id
 );
+// A common spark (white / race / scenario) that ONLY grandparents carry.
+// Legacy Sparks stops at the veteran's PARENTS (DECISIONS.md #31): breeding
+// from her pushes her grandparents out of the 6-slot tree, so a spark sitting
+// on one can never be inherited from her, and the chooser must not offer it.
+// Derived from the live roster — which names qualify depends on your dump, so
+// the check below skips itself when none do.
+const COMMON_KINDS = new Set(["white", "race", "scenario"]);
+const commonNames = (factors) =>
+  (factors ?? []).filter((f) => COMMON_KINDS.has(f.kind)).map((f) => f.name);
+const reachableSparks = new Set(
+  roster.flatMap((v) => [
+    ...commonNames(v.factors),
+    ...v.lineage
+      .filter((m) => m.relation === "parent")
+      .flatMap((m) => commonNames(m.factors)),
+  ])
+);
+const gpOnlySpark = roster
+  .flatMap((v) => v.lineage.filter((m) => m.relation === "grandparent"))
+  .flatMap((m) => commonNames(m.factors))
+  .find((n) => !reachableSparks.has(n));
+// The control: a name that IS reachable has to be offered, or "not found"
+// below would pass just as well against a broken search box.
+const reachableSpark = [...reachableSparks][0];
+
 // A catalog card to hand-place where a later pull will land, so the confirm
 // has something hand-authored to warn about. It sits at Grandparent 2-2 and
 // is then swallowed by a pull into Parent 2, so it must clash with neither
@@ -307,15 +351,6 @@ const pickInto = async (who) => {
   await page.locator(".uma-search").fill(who.entry.name);
   await page.locator(`.designer-picker .card-chip[aria-label="${chipLabel(who)}"]`).click();
   await page.waitForSelector(".designer-picker", { state: "detached" });
-};
-// A roster chip is labeled by identity plus the pink it carries — two
-// veterans trained from the same card would otherwise read identically.
-const vetChipLabel = (v) => {
-  const pink = pinkOf(v.factors);
-  return (
-    `${v.name}${v.outfit !== "Original" ? ` (${v.outfit})` : ""} · ` +
-    (pink === null ? "no pink" : `${pink.stars}★ ${LABEL[pink.aptitude]}`)
-  );
 };
 // Pull a roster veteran into the selected node. Returns the confirm message
 // the app raised, or null if it went through without asking.
@@ -1280,6 +1315,49 @@ try {
     (await mapChip("Sparks 3-1").getAttribute("aria-label")) === "Sparks 3-1 — empty" &&
     (await mapChip("Parent 1").getAttribute("aria-label")).includes(P1.entry.name));
 
+  // ---------- No Character: the face comes off, the sparks stay ----------
+  // The first chip in the picker Replace opens, because taking her off is an
+  // answer to the question it asks. Clear can't give you that state — it
+  // empties the node, so the pink you were hunting goes with a character you
+  // only meant to take out of the plan.
+  const openReplace = async () => {
+    await page.locator('.focus-actions button[aria-label^="Replace "]').click();
+    await page.waitForSelector(".designer-picker");
+  };
+  const pickNoCharacter = async () => {
+    await openReplace();
+    await page.locator(".picker-unselect").click();
+    await page.waitForSelector(".designer-picker", { state: "detached" });
+  };
+  await selectNode("Trainee");
+  await openReplace();
+  check("not offered where the node has nothing to keep — that is just Clear",
+    (await page.locator(".picker-unselect").count()) === 0);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".designer-picker", { state: "detached" });
+  await selectNode("Parent 1");
+  await pickNoCharacter();
+  check("No Character drops the character and keeps the pink",
+    (await mapChip("Parent 1").getAttribute("aria-label")) === "Parent 1 — 2★ Turf");
+  check("leaving the node castable again",
+    (await page.locator(".focus-pick").count()) === 1);
+  check("with the spark still in its editor",
+    (await page.locator('select[aria-label="Parent 1 pink spark"]').inputValue()) === "turf");
+  // A deep slot has the same two halves and the same rule.
+  await selectNode("Sparks 3-1");
+  await setSpark("Sparks 3-1", "long", 1);
+  await pickInto(T);
+  check("a deep slot takes a face on top of its pink", await hasFace("Sparks 3-1"));
+  await pickNoCharacter();
+  check("and No Character takes it off, keeping the pink",
+    (await mapChip("Sparks 3-1").getAttribute("aria-label")) === "Sparks 3-1 — 1★ Long" &&
+    !(await hasFace("Sparks 3-1")));
+  // Put P1 back: the sections below still expect her in the node.
+  await selectNode("Parent 1");
+  await pickInto(P1);
+  check("re-casting keeps the spark that was left behind",
+    (await page.locator('select[aria-label="Parent 1 pink spark"]').inputValue()) === "turf");
+
   // ---------- responsive ----------
   await page.setViewportSize({ width: 800, height: 900 });
   const columns = await page.evaluate(() =>
@@ -1389,6 +1467,86 @@ try {
       JSON.stringify(
         await page.locator(".designer-picker .picker-source .seg.active").allTextContents()
       ) === JSON.stringify(["Catalog"]));
+
+    // ---------- the picker keeps its filters, under its own key ----------
+    // Filling 31 nodes against one criterion is the most repeated work in the
+    // designer, and the picker used to reset to the defaults on every open.
+    const filterBadge = () => page.locator(".picker-dock .filter-float .filter-count");
+    const openPickerFilters = async () => {
+      await page.locator(".picker-dock .filter-float").click();
+      await page.waitForSelector(".picker-filters .filter-panel");
+    };
+    // Escape inside the filter panel closes IT, not the picker underneath.
+    const closePickerFilters = async () => {
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".picker-filters", { state: "detached" });
+    };
+    const toRosterTab = async () => {
+      await page.locator(".picker-source .seg", { hasText: "My Roster" }).click();
+      await page.waitForSelector(".picker-dock");
+    };
+    const pickerSort = () => page.locator('.picker-dock select[aria-label="Sort Roster By"]');
+    await toRosterTab();
+    check("the picker opens on the roster's own default sort",
+      (await pickerSort().inputValue()) === "register_time");
+    await pickerSort().selectOption("blue_spark");
+    await openPickerFilters();
+    // A pink chip, not a roster-derived one: the ten are static, so this
+    // doesn't depend on what your dump happens to hold.
+    await page.locator(".picker-filters .fchip.pink", { hasText: "Turf" }).first().click();
+    await closePickerFilters();
+    check("the picker badges the filters it has applied",
+      (await filterBadge().textContent()) === "1");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".designer-picker", { state: "detached" });
+    await page.locator(".focus-pick").click();
+    await page.waitForSelector(".designer-picker");
+    await toRosterTab();
+    check("and still has them on the next open",
+      (await filterBadge().textContent()) === "1");
+    check("along with the sort it was left on",
+      (await pickerSort().inputValue()) === "blue_spark");
+    // The half of the original rule that still holds: the two filter sets are
+    // independent in both directions, so narrowing the picker must not reach
+    // the roster page you go back to.
+    check("without touching the roster page's own filters",
+      await page.evaluate(() => {
+        const raw = localStorage.getItem("umalab.filters");
+        return raw === null || !JSON.parse(raw).pink.names.includes("Turf");
+      }));
+
+    // ---------- Legacy Sparks stops at the parents ----------
+    if (gpOnlySpark === undefined || reachableSpark === undefined) {
+      console.log("  skip: legacy-pool check (no grandparent-only spark in this roster)");
+    } else {
+      await openPickerFilters();
+      await page.locator(".picker-filters .fchip", { hasText: "Choose Sparks" }).click();
+      const popout = page.locator('.picker-filters .uma-popout[aria-label="Choose Common Sparks"]');
+      await popout.waitFor();
+      await popout.locator(".uma-search").fill(reachableSpark);
+      check("the spark chooser offers a name the veteran or her parents carry",
+        (await popout.locator(`.fchip:text-is(${JSON.stringify(reachableSpark)})`).count()) === 1,
+        reachableSpark);
+      await popout.locator(".uma-search").fill(gpOnlySpark);
+      // By exact chip text, not "the list is empty": the query is a substring
+      // match, so a longer name containing this one would leave a row behind
+      // and the emptiness check would fail for the wrong reason.
+      check("but never one only a grandparent carries — it can't be inherited from her",
+        (await popout.locator(`.fchip:text-is(${JSON.stringify(gpOnlySpark)})`).count()) === 0,
+        gpOnlySpark);
+      await page.keyboard.press("Escape");
+      await popout.waitFor({ state: "detached" });
+      await closePickerFilters();
+    }
+
+    // Put the picker back the way the rest of the section expects it. Nothing
+    // leaks past the run — the context is fresh each time, so this storage is
+    // the suite's own — but the pulls below pick from this list.
+    await openPickerFilters();
+    await page.locator(".picker-filters .filter-clear").click();
+    await closePickerFilters();
+    check("and Reset Filters clears them again", (await filterBadge().count()) === 0);
+    await pickerSort().selectOption("register_time");
     await page.keyboard.press("Escape");
     await page.waitForSelector(".designer-picker", { state: "detached" });
 
@@ -1489,6 +1647,14 @@ try {
     await selectNode("Parent 1");
     check("the veteran herself keeps Replace and Clear",
       (await page.locator(".focus-actions button").count()) === 2);
+    // Her sparks are her own, read off the dump, so taking just her face off
+    // would leave someone else's sparks under nobody. Clearing the branch is
+    // the way out of a pull.
+    await openReplace();
+    check("but her picker offers no No Character chip",
+      (await page.locator(".picker-unselect").count()) === 0);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".designer-picker", { state: "detached" });
     check("but not her spark editor",
       (await page.locator('select[aria-label="Parent 1 pink spark"]').count()) === 0);
 

@@ -31,6 +31,7 @@ import {
   UNTITLED,
   applyPull,
   canPullInto,
+  canUnselect,
   catalogSlot,
   clearNodes,
   copyName,
@@ -53,6 +54,7 @@ import {
   withNamed,
   withFactors,
   withSpark,
+  withoutCharacter,
   writeOpenId,
   type Design,
 } from "../blueprint";
@@ -623,6 +625,19 @@ export function DesignerPage({
     );
   };
 
+  // Take the character off, keep the sparks — the way back to "spark set,
+  // character still open", which Clear can't give you because it empties the
+  // node outright. Closes the picker, like any other pick — No Character IS
+  // a pick.
+  // Re-checked against the design in the updater rather than trusting the
+  // caller, exactly as clearSlot is: it's a rule about the design, not about
+  // what happens to be on screen.
+  const unselectSlot = (target: number) => {
+    setPickerFor(null);
+    setDesign((d) => (canUnselect(d, target) ? withoutCharacter(d, target) : d));
+    select(target);
+  };
+
   const setSpark = (target: number, spark: PinkSpark | null) => {
     setDesign((d) => (sparkLocked(d, target) ? d : withSpark(d, target, spark)));
   };
@@ -983,6 +998,7 @@ export function DesignerPage({
             slotConflicts(design, pickerFor, charaId, kind === "roster")
           }
           onPick={applyPick}
+          onUnselect={canUnselect(design, pickerFor) ? () => unselectSlot(pickerFor) : null}
           onClose={() => setPickerFor(null)}
         />
       )}

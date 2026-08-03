@@ -44,7 +44,7 @@ function StarModeRow({
       </span>
       <button
         className={legacy ? "legacy-toggle active" : "legacy-toggle"}
-        title="Also match sparks carried by parents and grandparents"
+        title="Also match her two parents' sparks"
         aria-pressed={legacy}
         onClick={onLegacy}
       >

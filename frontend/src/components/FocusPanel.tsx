@@ -69,7 +69,9 @@ const NodeActions = ({
   // mismatch between the two would mislabel a destructive button silently.
   index: number;
   // Null where the action doesn't apply — nobody cast to replace, or nothing
-  // in the node to clear.
+  // in the node to clear. Taking the character off while keeping the sparks
+  // is the picker's No Character chip, not a third button here
+  // (DECISIONS.md #31).
   onReplace: (() => void) | null;
   onClear: (() => void) | null;
 }) =>

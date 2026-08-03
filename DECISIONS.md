@@ -2216,6 +2216,23 @@ reorder anything.
   the exact misreading the fold has to prevent. It is a clip, never a
   scroll region — #30 ruled that out and the reasoning stands.
 
+  **`overflow: clip`, not `hidden`, and the known cost of that.** `hidden`
+  makes a scroll container, and find-in-page will scroll a match into
+  view inside one: measured at 187px, which pushed the header and the
+  top rows out of a box offering no way to scroll back, leaving the panel
+  decapitated until something re-rendered it. `clip` cannot scroll, so
+  that can't happen. The price is the other half of the same fact —
+  **a find-in-page match below the fold can be reported and not
+  reached**, because the rows are in the DOM (which is what makes the
+  fold a presentation choice rather than a selection) and nothing can
+  bring them into view but the button. Every fold that keeps its rows
+  has one failure or the other; this is the less destructive one, since
+  it withholds a row rather than hiding the table's own header. The
+  button carries `aria-expanded` so the state is announced. What would
+  remove it is `hidden="until-found"`, which auto-reveals on match — but
+  it hides per element, so it would mean going back to hiding rows
+  individually, which is the row cap this entry replaced.
+
   Whether to fold is **measured, not counted**: a `ResizeObserver` on
   the table compares its height to the clip, so the button appears only
   when something is actually hidden and re-decides when a name rewraps

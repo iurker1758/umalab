@@ -1,5 +1,11 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { AffinityResult, FactorRef, SlotFactor, SlotFactorKind } from "../api";
+import type {
+  AffinityResult,
+  FactorRef,
+  SlotFactor,
+  SlotFactorKind,
+  WatchedSpark,
+} from "../api";
 import { APTITUDE_LABELS } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -17,7 +23,7 @@ import {
   type SparkRef,
   type SparkSort,
 } from "../procs";
-import { SparkEditor } from "./SparkEditor";
+import { SparkChooser } from "./SparkChooser";
 
 // The Sparks tab. Every spark in the tree is here as a chance the TRAINEE
 // comes out with it — which is what an inspiration proc off an ancestor is.
@@ -199,16 +205,24 @@ export function NodeProcs({
   index,
   sparkNames,
   factorRefs,
+  watched,
+  watchedFailed,
   locked,
   sort,
   onSort,
   onSetFactors,
+  onWatched,
 }: {
   design: Design;
   affinity: AffinityResult | null;
   index: number;
   sparkNames: Map<string, string>;
   factorRefs: FactorRef[];
+  // The sparks this user has favourited (#33). Read by the chooser only —
+  // nothing on the table below reads it yet; #27's watched block is what
+  // brings it into the table.
+  watched: WatchedSpark[];
+  watchedFailed: boolean;
   // Inside a pulled branch: these sparks are the horse's own, read off her
   // dump, so they are shown rather than edited — the same rule her pink
   // follows. This path renders the plain two-column readout unchanged.
@@ -216,6 +230,7 @@ export function NodeProcs({
   sort: SparkSort;
   onSort: (s: SparkSort) => void;
   onSetFactors: (i: number, factors: SlotFactor[]) => void;
+  onWatched: (next: WatchedSpark[]) => void;
 }) {
   const id = affinitySlotOf(index);
   const share = id === null || affinity === null ? null : affinity[`${id}_affinity`];
@@ -263,19 +278,24 @@ export function NodeProcs({
       </table>
       {/* The pink is edited on the Details tab, beside the letters it bumps
           at career start; these feed nothing but these numbers, so they are
-          entered here. Adding is the editor's only remaining job — the level
-          and the removal moved into the row above. */}
+          entered here. Adding is the chooser's only remaining job — the level
+          and the removal moved into the row above. A locked node offers no
+          entry at all (#28's roster-pull rule), which is why this is the only
+          place it is rendered. */}
       {!locked && (
-        <SparkEditor
-          // Remounted per node: the search box is component state, and the
-          // panel keeps its position in the tree when you click another
-          // ancestor — so an abandoned query would follow you there and its
-          // stale matches would add to the wrong member.
+        <SparkChooser
+          // Remounted per node: the open state and the query are component
+          // state, and the panel keeps its position in the tree when you click
+          // another ancestor — so an abandoned query would follow you there
+          // and its stale matches would add to the wrong member.
           key={index}
           label={NAMED_SHORT[index]}
           factors={factors}
           refs={factorRefs}
+          watched={watched}
+          watchedFailed={watchedFailed}
           onChange={(next) => onSetFactors(index, next)}
+          onWatched={onWatched}
         />
       )}
     </>

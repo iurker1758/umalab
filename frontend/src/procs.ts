@@ -200,7 +200,10 @@ export type SparkSort = "chance" | "kind";
 // never move), but when they are added they group ABOVE the pink. Adding
 // `blue` to SPARK_BASE won't compile until it is placed here, which is the
 // point.
-const TYPE_ORDER: Record<SparkType, number> = {
+// Exported because the chooser's browse sections use it too (#35): the order
+// you pick sparks in and the order the tables group them in are the same
+// order, held once.
+export const SPARK_TYPE_ORDER: Record<SparkType, number> = {
   pink: 1,
   unique: 2,
   race: 3,
@@ -221,7 +224,10 @@ export function sortSparks<T extends SparkRef & { chance: number | null }>(
   const byId = (a: T, b: T) => sparkId(a).localeCompare(sparkId(b));
   return [...rows].sort(
     sort === "kind"
-      ? (a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || byChance(a, b) || byId(a, b)
+      ? (a, b) =>
+          SPARK_TYPE_ORDER[a.type] - SPARK_TYPE_ORDER[b.type] ||
+          byChance(a, b) ||
+          byId(a, b)
       : (a, b) => byChance(a, b) || byId(a, b)
   );
 }

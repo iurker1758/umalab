@@ -14,10 +14,12 @@ work starts.
 Current milestone: **multi-user** (issue #50, DECISIONS.md #32) — Cloudflare
 Access is the login, a verified `Cf-Access-Jwt-Assertion` JWT is the identity,
 and every roster/blueprint/mark row carries an `owner_id`. Shipped: the
-`users` table, owner scoping across both routers, and the backfill migration.
-Still to land inside it: the shared watched-spark list (issue #39) as a table
-rather than the `localStorage` module PR #49 closed with. The design-pass
-queue (#41 → #45+#29 → #28 → #27) resumes after this.
+`users` table, owner scoping across both routers, the backfill migration, and
+the shared watched-spark list (issue #39) — a `watched_sparks` table plus
+`GET`/`PUT`/`DELETE` under `/api/watched-sparks` and an async client module,
+with no UI of its own (DECISIONS.md #33). That closes #50. The design-pass
+queue (#41 → #45+#29 → #28 → #27) resumes next; #28 and #27 are the two
+features that consume the watched list.
 
 Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation

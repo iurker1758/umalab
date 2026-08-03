@@ -7,11 +7,13 @@ skip/PYTEST_REQUIRE_DB rules apply identically.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
 
 from app.models import User
+from app.routers import sparks as sparks_router
 
 WATCHED = "/api/watched-sparks"
 
@@ -170,6 +172,70 @@ async def test_too_many_distinct_groups_are_still_refused(
     a, _ = users
     groups = [f"build {n}" for n in range(21)]
     assert (await put(client, a, "white", 1, groups=groups)).status_code == 422
+
+
+# ---------- the upsert race ----------
+
+async def test_concurrent_puts_for_one_spark_settle_on_a_single_row(
+    client: Any, users: list[User]
+):
+    """A double-clicked watch control, or a chooser click and a hunting
+    toggle in the same tick. The route reads then inserts, so two requests
+    can both find nothing and both try to insert.
+
+    This asserts the OUTCOME, and it is not the guard — measured against a
+    version with the conflict handling removed, it still passed, because the
+    interleaving is up to the scheduler and did not happen to collide. The
+    test below forces the collision; keep both.
+    """
+    a, _ = users
+    async with client(a) as http:
+        responses = await asyncio.gather(
+            *(
+                http.put(
+                    f"{WATCHED}/white/2010", json={"hunting": True, "groups": []}
+                )
+                for _ in range(5)
+            )
+        )
+    assert [r.status_code for r in responses] == [200] * 5
+    assert len(await listing(client, a)) == 1
+
+
+async def test_the_upsert_recovers_when_it_loses_the_insert_race(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
+):
+    """The recovery path itself, deterministically.
+
+    Concurrency alone can't guarantee the interleaving, so this forces it:
+    the row exists, but the route's first lookup reports it doesn't — which
+    is exactly what the losing request sees. The insert then violates
+    uq_watched_spark_owner_kind_key, and what follows is the code under
+    test. Without the rollback-and-retry this is a 500.
+    """
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=True, groups=["Front Runner"])
+
+    real_row = sparks_router._row  # pyright: ignore[reportPrivateUsage]
+    lookups = 0
+
+    async def blind_once(*args: Any, **kwargs: Any) -> Any:
+        nonlocal lookups
+        lookups += 1
+        if lookups == 1:
+            return None
+        return await real_row(*args, **kwargs)
+
+    monkeypatch.setattr(sparks_router, "_row", blind_once)
+
+    response = await put(client, a, "white", 2010, hunting=False, groups=["Medium"])
+
+    assert response.status_code == 200, response.text
+    assert lookups >= 2, "the retry never re-read the row"
+    # One row, carrying what the losing request asked for.
+    assert [without_id(row) for row in await listing(client, a)] == [
+        {"kind": "white", "key": 2010, "hunting": False, "groups": ["Medium"]}
+    ]
 
 
 # ---------- delete ----------

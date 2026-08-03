@@ -1841,6 +1841,20 @@ Access-identity scoping)"* — and this is that entry.
   header is only trustworthy if you already trust the network path,
   which is the assumption a tunnel is supposed to remove.
 
+  **The `CF_Authorization` cookie is not read either, and that is a
+  security decision rather than an omission.** Access sets it on the
+  browser, so reading it as a fallback would work — and would make
+  every write endpoint forgeable from any other site, because a cookie
+  is an ambient credential. `POST /api/imports` is multipart, which is
+  a CORS-simple request needing no preflight, so a hidden
+  auto-submitting form on an unrelated page would run a logged-in
+  user's **full-replace import** and destroy their roster; the attacker
+  never reads the response and does not need to. The header cannot be
+  set cross-site, so header-only auth is immune without a CSRF token or
+  an Origin allow-list to maintain. The cost is that a request reaching
+  the origin without Access in front of it does not authenticate, which
+  is the correct outcome anyway.
+
   **One setting decides the mode.** `ACCESS_AUD` set means every
   request must verify; empty means the app runs as `DEV_USER_EMAIL`.
   There is deliberately no third state and no fallback *within* the
@@ -1873,6 +1887,18 @@ Access-identity scoping)"* — and this is that entry.
   `DEV_USER_EMAIL` to that address before upgrading. The migration
   adds `owner_id` nullable, backfills, then sets NOT NULL, so the
   column is never briefly non-nullable against rows with no value.
+
+  **The migration reads that setting through `app.config`, not
+  `os.environ`.** The first cut read the environment directly, to keep
+  a migration from inheriting every future setting's validation — and
+  that was wrong in a way that only showed up under review: the
+  documented place to set it is `backend/.env`, which pydantic-settings
+  loads into `Settings` and never into the process environment, so a
+  configured address would have been silently ignored and every
+  existing row backed onto the default while the app ran as the other
+  one. A roster stranded on an owner nobody can log in as, with no
+  error anywhere. `alembic/env.py` already imports `app.config`, so
+  the coupling I was avoiding was already there.
 
   **Three routes stay identity-free** — `/api/catalog`, `/api/factors`
   and `/api/affinity` own no rows and are the same for everybody

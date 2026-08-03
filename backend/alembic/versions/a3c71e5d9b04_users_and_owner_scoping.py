@@ -20,11 +20,10 @@ Revises: 0d9cf4e216a4
 Create Date: 2026-08-03 00:00:00.000000
 
 """
-import os
-
 import sqlalchemy as sa
 
 from alembic import op
+from app.config import settings
 
 # revision identifiers, used by Alembic.
 revision = 'a3c71e5d9b04'
@@ -36,13 +35,24 @@ OWNED_TABLES = ("imports", "veterans", "blueprints", "veteran_tags")
 
 
 def _initial_owner_email() -> str:
-    """Read straight from the environment rather than importing app.config.
+    """The same source the app reads, which must be the same VALUE.
 
-    A migration that imports the settings object inherits every future
-    setting's validation, and a required-but-unset one would then fail the
-    upgrade for a reason that has nothing to do with the schema.
+    Read through app settings rather than os.environ: DEV_USER_EMAIL is
+    documented in .env.example as a backend/.env key, and pydantic-settings
+    loads that file into Settings without ever putting it in the process
+    environment. os.environ.get() would silently miss it and back every
+    existing row onto the default while the app ran as the configured
+    address — a roster stranded on an owner nobody can log in as, with no
+    error anywhere. alembic/env.py already imports app.config, so this adds
+    no new coupling.
     """
-    return (os.environ.get("DEV_USER_EMAIL") or "dev@localhost").strip().lower()
+    email = settings.dev_user_email.strip().lower()
+    if not email:
+        raise ValueError(
+            "DEV_USER_EMAIL is empty — the backfill needs an owner for the "
+            "existing rows. Set it in backend/.env or the environment."
+        )
+    return email
 
 
 def upgrade() -> None:

@@ -10,6 +10,7 @@ covered in test_isolation.py, which needs Postgres.
 from __future__ import annotations
 
 import datetime as dt
+import time
 from typing import Any
 
 import jwt
@@ -47,10 +48,12 @@ def primed_cache(signing_key: rsa.RSAPrivateKey):
     )
     jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
     auth._jwks._keys = {KID: jwt.PyJWK(jwk)}  # pyright: ignore[reportPrivateUsage]
-    auth._jwks._fetched_at = __import__("time").monotonic()  # pyright: ignore[reportPrivateUsage]
+    auth._jwks._fetched_at = time.monotonic()  # pyright: ignore[reportPrivateUsage]
+    auth._jwks._attempted_at = time.monotonic()  # pyright: ignore[reportPrivateUsage]
     yield
     auth._jwks._keys = {}  # pyright: ignore[reportPrivateUsage]
     auth._jwks._fetched_at = None  # pyright: ignore[reportPrivateUsage]
+    auth._jwks._attempted_at = None  # pyright: ignore[reportPrivateUsage]
 
 
 def token(
@@ -79,7 +82,9 @@ def request_with(token: str | None = None, cookie: str | None = None) -> Request
     if token is not None:
         headers.append((auth.JWT_HEADER.lower().encode(), token.encode()))
     if cookie is not None:
-        headers.append((b"cookie", f"{auth.JWT_COOKIE}={cookie}".encode()))
+        # Named here rather than imported from auth: the app deliberately has
+        # no such constant any more, and this is the attacker's spelling.
+        headers.append((b"cookie", f"CF_Authorization={cookie}".encode()))
     return Request({"type": "http", "headers": headers, "method": "GET", "path": "/"})
 
 
@@ -112,6 +117,15 @@ async def test_audience_configured_never_falls_back_to_the_dev_user():
     assert e.value.status_code == 403
 
 
+async def test_a_blank_dev_user_email_is_refused():
+    """It would otherwise create a user whose email is "" — a second,
+    orphaned owner, and the symptom is "my data disappeared"."""
+    config = Settings(dev_user_email="   ")  # pyright: ignore[reportCallIssue]
+    with pytest.raises(HTTPException) as e:
+        await auth.verified_email(request_with(), config)
+    assert e.value.status_code == 500
+
+
 async def test_audience_without_a_team_domain_is_a_server_error():
     config = Settings(access_aud=AUD)  # pyright: ignore[reportCallIssue]
     with pytest.raises(HTTPException) as e:
@@ -126,11 +140,18 @@ async def test_a_valid_token_yields_its_email(signing_key: rsa.RSAPrivateKey):
     assert await auth.verified_email(request, access_settings()) == "jason@example.com"
 
 
-async def test_the_cookie_is_accepted_when_the_header_is_absent(
+async def test_the_cf_authorization_cookie_is_not_a_credential(
     signing_key: rsa.RSAPrivateKey,
 ):
+    """A perfectly valid token in the cookie Access also sets must NOT
+    authenticate. A cookie is ambient — the browser attaches it to a
+    cross-site form post, and POST /api/imports is multipart (no preflight),
+    so accepting it would let any page destroy a logged-in user's roster.
+    """
     request = request_with(cookie=token(signing_key))
-    assert await auth.verified_email(request, access_settings()) == "someone@example.com"
+    with pytest.raises(HTTPException) as e:
+        await auth.verified_email(request, access_settings())
+    assert e.value.status_code == 403
 
 
 @pytest.mark.parametrize(
@@ -191,6 +212,42 @@ async def test_an_unknown_key_id_is_refused(signing_key: rsa.RSAPrivateKey):
     with pytest.raises(HTTPException) as e:
         await auth.verified_email(request, access_settings())
     assert e.value.status_code == 403
+
+
+# ---------- the key cache ----------
+
+# An unsupported scheme fails inside httpx before any I/O, so this exercises
+# the failure path deterministically and offline.
+UNREACHABLE = "ftp://certs.invalid/cdn-cgi/access/certs"
+
+
+async def test_a_failed_fetch_still_starts_the_throttle_window():
+    """The bound exists so an attacker sending unknown `kid` values can't
+    drive unbounded outbound requests. Throttling on the last SUCCESS would
+    mean a failing endpoint is never throttled at all: every request would
+    retry behind the cache lock and a cert outage would read as the app
+    hanging rather than as one slow request.
+    """
+    cache = auth._JwksCache()  # pyright: ignore[reportPrivateUsage]
+    cache._keys = {KID: object()}  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
+    assert cache._may_refetch() is True  # pyright: ignore[reportPrivateUsage]
+
+    await cache._fetch(UNREACHABLE)  # pyright: ignore[reportPrivateUsage]
+
+    assert cache._attempted_at is not None  # pyright: ignore[reportPrivateUsage]
+    assert cache._may_refetch() is False  # pyright: ignore[reportPrivateUsage]
+    # The keys it already had survive — one that verified a minute ago still
+    # verifies, and a blip should not log everybody out.
+    assert cache._fetched_at is None  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_a_failed_fetch_with_nothing_cached_is_a_503():
+    """No keys and no way to get them is an outage, not a bad token — a 403
+    would send the browser back through Access to be told the same thing."""
+    cache = auth._JwksCache()  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(HTTPException) as e:
+        await cache._fetch(UNREACHABLE)  # pyright: ignore[reportPrivateUsage]
+    assert e.value.status_code == 503
 
 
 # ---------- claims ----------

@@ -9,10 +9,12 @@ covered in test_isolation.py, which needs Postgres.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import time
 from typing import Any
 
+import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -239,6 +241,46 @@ async def test_a_failed_fetch_still_starts_the_throttle_window():
     # The keys it already had survive — one that verified a minute ago still
     # verifies, and a blip should not log everybody out.
     assert cache._fetched_at is None  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_concurrent_lookups_make_one_attempt_while_the_endpoint_is_down(
+    monkeypatch: pytest.MonkeyPatch, signing_key: rsa.RSAPrivateKey
+):
+    """The failure mode the two clocks exist to prevent, driven concurrently.
+
+    Cached keys, TTL expired, certs endpoint unreachable: every request finds
+    the cache stale, so they all queue on the lock. Exactly one of them may
+    reach the network — the rest must see the throttle and return the key
+    already held. Throttling on the last SUCCESS instead of the last ATTEMPT
+    makes this eight fetches, each serialized behind the lock at a 5-second
+    timeout, and the app reads as down while holding keys that verify fine.
+    """
+    cache = auth._JwksCache()  # pyright: ignore[reportPrivateUsage]
+    jwk: dict[str, Any] = dict(
+        RSAAlgorithm.to_jwk(signing_key.public_key(), as_dict=True)
+    )
+    jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
+    key = jwt.PyJWK(jwk)
+    cache._keys = {KID: key}  # pyright: ignore[reportPrivateUsage]
+    # Fetched long enough ago to be stale, and never re-attempted since.
+    cache._fetched_at = time.monotonic() - auth.JWKS_TTL_SECONDS - 1  # pyright: ignore[reportPrivateUsage]
+    cache._attempted_at = None  # pyright: ignore[reportPrivateUsage]
+
+    attempts: list[str] = []
+
+    async def refuse(self: httpx.AsyncClient, url: str, **kwargs: Any) -> httpx.Response:
+        attempts.append(url)
+        raise httpx.ConnectError("certs endpoint is down")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", refuse)
+
+    found = await asyncio.gather(
+        *(cache.key_for(KID, "https://team.example/certs") for _ in range(8))
+    )
+
+    assert len(attempts) == 1, f"{len(attempts)} fetches for 8 concurrent lookups"
+    # And every caller still got the key, rather than a 403 or a 503.
+    assert all(k is key for k in found)
 
 
 async def test_a_failed_fetch_with_nothing_cached_is_a_503():

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import current_user
@@ -80,7 +81,23 @@ async def watch(
         session.add(row)
     row.hunting = body.hunting
     row.groups = body.groups
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Read-then-insert: two requests for the same (kind, key) — a
+        # double-clicked control, or a chooser click and a hunting toggle in
+        # the same tick — can both find nothing and both insert, and the
+        # loser hits uq_watched_spark_owner_kind_key. The row it wanted now
+        # exists, so apply to that one rather than 500ing.
+        # `auth.user_for_email` handles the same race the same way.
+        await session.rollback()
+        existing = await _row(session, user, kind, key)
+        if existing is None:
+            raise
+        existing.hunting = body.hunting
+        existing.groups = body.groups
+        await session.commit()
+        row = existing
     await session.refresh(row)
     return row
 

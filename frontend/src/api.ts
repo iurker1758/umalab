@@ -249,6 +249,10 @@ export interface WatchedSparkEdit {
 }
 
 export interface WatchedSpark extends WatchedSparkEdit {
+  // The row id, and therefore its place in the list — the server orders by
+  // it. Carried so a client whose copy predates a row can place the row a
+  // PUT hands back instead of appending it.
+  id: number;
   kind: SlotFactorKind;
   key: number;
 }

@@ -30,28 +30,42 @@ async def listing(as_user: Any, user: User) -> list[dict[str, Any]]:
     return response.json()
 
 
+def without_id(row: dict[str, Any]) -> dict[str, Any]:
+    """`id` is a real part of the payload — it carries the list position —
+    but it is a database sequence, so the value-shaped assertions drop it."""
+    return {k: v for k, v in row.items() if k != "id"}
+
+
 # ---------- the row ----------
 
 async def test_a_watched_spark_round_trips(client: Any, users: list[User]):
     a, _ = users
     response = await put(client, a, "white", 2010, groups=["Front Runner"])
     assert response.status_code == 200
-    assert response.json() == {
+    assert without_id(response.json()) == {
         "kind": "white",
         "key": 2010,
         "hunting": True,
         "groups": ["Front Runner"],
     }
+    assert response.json()["id"] > 0
     assert await listing(client, a) == [response.json()]
 
 
-async def test_hunting_defaults_true(client: Any, users: list[User]):
-    """The default #39 settled: adding is a deliberate pick, so it counts as
-    'I want this outcome' until the user says otherwise."""
+@pytest.mark.parametrize(
+    "body", [{}, {"hunting": False}, {"groups": ["Front Runner"]}]
+)
+async def test_a_partial_body_is_refused(
+    client: Any, users: list[User], body: dict[str, Any]
+):
+    """The PUT is a full replace, so a default on either field would be a
+    silent delete — {"hunting": false} would erase every build label on the
+    row with no error. Adding a spark supplies both; the "new sparks are
+    hunted" default lives in the client, which is the thing doing the adding.
+    """
     a, _ = users
     async with client(a) as http:
-        response = await http.put(f"{WATCHED}/race/40", json={})
-    assert response.json()["hunting"] is True
+        assert (await http.put(f"{WATCHED}/race/40", json=body)).status_code == 422
 
 
 async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
@@ -75,7 +89,7 @@ async def test_re_putting_replaces_rather_than_duplicating(client: Any, users: l
     a, _ = users
     await put(client, a, "white", 2010, hunting=True, groups=["Front Runner"])
     await put(client, a, "white", 2010, hunting=False, groups=["Medium"])
-    assert await listing(client, a) == [
+    assert [without_id(row) for row in await listing(client, a)] == [
         {"kind": "white", "key": 2010, "hunting": False, "groups": ["Medium"]}
     ]
 
@@ -100,8 +114,11 @@ async def test_a_re_put_keeps_its_place_in_the_list(client: Any, users: list[Use
     a, _ = users
     for key in (1, 2, 3):
         await put(client, a, "white", key)
-    await put(client, a, "white", 1, hunting=False)
+    first = (await listing(client, a))[0]["id"]
+    again = await put(client, a, "white", 1, hunting=False)
     assert [s["key"] for s in await listing(client, a)] == [1, 2, 3]
+    # Same row, not a delete-and-recreate: the id is what the client sorts by.
+    assert again.json()["id"] == first
 
 
 async def test_insertion_order_is_preserved(client: Any, users: list[User]):
@@ -134,6 +151,24 @@ async def test_unusable_group_names_are_refused(
     client: Any, users: list[User], groups: list[str]
 ):
     a, _ = users
+    assert (await put(client, a, "white", 1, groups=groups)).status_code == 422
+
+
+async def test_the_group_cap_applies_after_dedupe(client: Any, users: list[User]):
+    """A `max_length` on the field would run BEFORE the dedupe validator, so
+    a payload repeating one name 30 times would 422 on its raw length even
+    though it collapses to one group."""
+    a, _ = users
+    response = await put(client, a, "white", 1, groups=["Front Runner"] * 30)
+    assert response.status_code == 200
+    assert response.json()["groups"] == ["Front Runner"]
+
+
+async def test_too_many_distinct_groups_are_still_refused(
+    client: Any, users: list[User]
+):
+    a, _ = users
+    groups = [f"build {n}" for n in range(21)]
     assert (await put(client, a, "white", 1, groups=groups)).status_code == 422
 
 
@@ -171,7 +206,7 @@ async def test_two_users_may_watch_the_same_spark_differently(
     await put(client, a, "white", 2010, hunting=True, groups=["Front Runner"])
     await put(client, b, "white", 2010, hunting=False)
     assert (await listing(client, a))[0]["groups"] == ["Front Runner"]
-    assert (await listing(client, b))[0] == {
+    assert without_id((await listing(client, b))[0]) == {
         "kind": "white",
         "key": 2010,
         "hunting": False,

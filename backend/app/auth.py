@@ -37,15 +37,20 @@ from .models import User
 ALGORITHMS = ["RS256"]
 
 JWT_HEADER = "Cf-Access-Jwt-Assertion"
-# Access sets this cookie on the browser as well as the header on the proxied
-# request. Read as a fallback so a direct hit on the tunnel hostname (no
-# header rewriting) still authenticates.
-JWT_COOKIE = "CF_Authorization"
+
+# Access also sets a CF_Authorization cookie on the browser, and reading it as
+# a fallback is DELIBERATELY not done. A cookie is an ambient credential: the
+# browser attaches it to a cross-site form post, and `POST /api/imports` is
+# multipart — a CORS-simple request that needs no preflight — so a hidden
+# auto-submitting form on any other page would run the victim's full-replace
+# import and destroy their roster. The header cannot be set cross-site, which
+# makes header-only auth immune without a CSRF token. Access injects it on
+# every proxied request, so nothing legitimate is lost.
 
 # Keys are cached for this long, and a token naming a key we don't have
-# triggers at most one refetch per this many seconds. Both bounds exist for
-# the same reason: an attacker who can send arbitrary `kid` values must not
-# be able to turn that into unbounded outbound requests.
+# triggers at most one refetch ATTEMPT per this many seconds. Both bounds
+# exist for the same reason: an attacker who can send arbitrary `kid` values
+# must not be able to turn that into unbounded outbound requests.
 JWKS_TTL_SECONDS = 15 * 60
 JWKS_MIN_REFETCH_SECONDS = 60
 
@@ -62,7 +67,13 @@ class _JwksCache:
 
     def __init__(self) -> None:
         self._keys: dict[str, jwt.PyJWK] = {}
+        # Last SUCCESSFUL fetch, which is what "these keys are stale" means.
         self._fetched_at: float | None = None
+        # Last ATTEMPT, successful or not. Separate on purpose: throttling on
+        # the success time would mean a failing endpoint is never throttled at
+        # all — every request would retry, serialized behind the lock, and a
+        # cert-endpoint outage would read as the whole app hanging.
+        self._attempted_at: float | None = None
         self._lock = asyncio.Lock()
 
     async def key_for(self, kid: str, jwks_url: str) -> jwt.PyJWK:
@@ -89,11 +100,14 @@ class _JwksCache:
 
     def _may_refetch(self) -> bool:
         return (
-            self._fetched_at is None
-            or time.monotonic() - self._fetched_at > JWKS_MIN_REFETCH_SECONDS
+            self._attempted_at is None
+            or time.monotonic() - self._attempted_at > JWKS_MIN_REFETCH_SECONDS
         )
 
     async def _fetch(self, jwks_url: str) -> None:
+        # Stamped before the request, so a failure — including a timeout —
+        # still starts the throttle window.
+        self._attempted_at = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(jwks_url)
@@ -116,7 +130,8 @@ _jwks = _JwksCache()
 
 
 def token_from(request: Request) -> str | None:
-    return request.headers.get(JWT_HEADER) or request.cookies.get(JWT_COOKIE)
+    """The header only — see JWT_HEADER above for why the cookie is ignored."""
+    return request.headers.get(JWT_HEADER)
 
 
 def email_from_claims(claims: dict[str, Any]) -> str:
@@ -141,7 +156,15 @@ async def verified_email(request: Request, config: Settings) -> str:
     identity is if `access_aud` is empty, which a deployment must not do.
     """
     if not config.access_aud:
-        return config.dev_user_email.strip().lower()
+        dev_email = config.dev_user_email.strip().lower()
+        if not dev_email:
+            # An empty setting would otherwise create and use a user whose
+            # email is "" — a second, orphaned owner that reads as "my data
+            # disappeared" with nothing in the logs. Refuse instead.
+            raise HTTPException(
+                500, "DEV_USER_EMAIL is empty and no ACCESS_AUD is configured"
+            )
+        return dev_email
     if not config.access_team_domain:
         # Misconfiguration, not a client error: an audience with nowhere to
         # fetch keys from can never verify anything, and silently refusing

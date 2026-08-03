@@ -19,6 +19,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth import current_user
@@ -40,13 +41,26 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or make_url(
 ).set(database="umalab_test").render_as_string(hide_password=False)
 REQUIRE_DB = os.environ.get("PYTEST_REQUIRE_DB") == "1"
 
-# These tests drop and recreate every table. Pointing them at the URL the app
-# itself uses would destroy a real roster, so that is refused outright rather
-# than guarded by a naming convention.
-if settings.database_url == TEST_DATABASE_URL:
+# These tests drop and recreate every table. Pointing them at the database the
+# app itself uses would destroy a real roster, so that is refused outright.
+#
+# Compared by (host, port, database) rather than by string: the same database
+# has many spellings — 127.0.0.1 vs localhost, a ?sslmode= suffix, a different
+# driver — and every one of them would slip past an equality check on the
+# rendered URL and drop the live schema.
+def _same_database(a: str, b: str) -> bool:
+    left, right = make_url(a), make_url(b)
+    return (
+        (left.host or "localhost") == (right.host or "localhost")
+        and (left.port or 5432) == (right.port or 5432)
+        and left.database == right.database
+    )
+
+
+if _same_database(settings.database_url, TEST_DATABASE_URL):
     raise RuntimeError(
-        "TEST_DATABASE_URL is the app's own DATABASE_URL — these tests drop "
-        "every table. Point them at a separate database."
+        "TEST_DATABASE_URL points at the app's own database — these tests "
+        "drop every table. Point them at a separate one."
     )
 
 
@@ -63,15 +77,27 @@ async def sessions() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     engine = create_async_engine(TEST_DATABASE_URL)
     try:
         async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.drop_all)
+            # Whole schema, not Base.metadata.drop_all: a table this branch
+            # doesn't know about — left behind by another branch, or by a
+            # migration since reverted — still holds foreign keys into the
+            # ones it does, and drop_all then fails on the dependency rather
+            # than on anything wrong with the code under test.
+            await connection.exec_driver_sql("DROP SCHEMA public CASCADE")
+            await connection.exec_driver_sql("CREATE SCHEMA public")
             await connection.run_sync(Base.metadata.create_all)
-    # Broad on purpose: any connect, auth or permission failure means "no
-    # test database here", and which one it was doesn't change the outcome.
-    except Exception as e:
+    # Only "the database isn't there" is a skip. A broad `except Exception`
+    # would also swallow DDL failures — a bad server_default, a colliding
+    # constraint name — and report a genuinely broken model as an environment
+    # problem, green locally and red only in CI with a message blaming
+    # Postgres. Those propagate.
+    except (OperationalError, InterfaceError, OSError) as e:
         await engine.dispose()
         if REQUIRE_DB:
             raise
         pytest.skip(f"no test database at {TEST_DATABASE_URL}: {e}")
+    except Exception:
+        await engine.dispose()
+        raise
     yield async_sessionmaker(engine, expire_on_commit=False)
     await engine.dispose()
 

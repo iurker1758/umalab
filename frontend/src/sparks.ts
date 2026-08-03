@@ -80,10 +80,18 @@ const replacing = (
   saved: WatchedSpark
 ): WatchedSpark[] => {
   const index = watched.findIndex((spark) => same(spark, saved.kind, saved.key));
-  if (index < 0) return [...watched, saved];
-  const next = [...watched];
-  next[index] = saved;
-  return next;
+  if (index >= 0) {
+    const next = [...watched];
+    next[index] = saved;
+    return next;
+  }
+  // Not in this copy of the list — it may predate the row (another tab, another
+  // device). Insert by id rather than appending: id IS the insertion order the
+  // server sorts by, so appending would show an old spark last.
+  const at = watched.findIndex((spark) => spark.id > saved.id);
+  return at < 0
+    ? [...watched, saved]
+    : [...watched.slice(0, at), saved, ...watched.slice(at)];
 };
 
 export const loadWatched = (): Promise<WatchedSpark[]> => api.watchedSparks();
@@ -105,6 +113,24 @@ export async function toggle(
   return [...watched, saved];
 }
 
+// The PUT is a full replace, so every mutator has to send the fields it is
+// NOT changing — and must not guess them. A row can exist server-side and be
+// missing from this list (another tab, another device, a list fetched before
+// it was added), and guessing there silently rewrites the user's own choice:
+// `setGroups` assuming `hunting: true` would re-hunt a spark they had
+// deliberately marked as filler. So on a miss, re-read before writing, and
+// only fall back to the defaults if it really is new.
+async function currentOrFresh(
+  watched: WatchedSpark[],
+  kind: SlotFactorKind,
+  key: number
+): Promise<{ row: WatchedSpark | undefined; list: WatchedSpark[] }> {
+  const row = find(watched, kind, key);
+  if (row !== undefined) return { row, list: watched };
+  const fresh = await loadWatched();
+  return { row: find(fresh, kind, key), list: fresh };
+}
+
 /**
  * Set the hunting bit. A spark that isn't watched yet is ADDED by this — the
  * server route is an upsert, and "hunt this" is a reason to want the row.
@@ -116,11 +142,12 @@ export async function setHunting(
   key: number,
   hunting: boolean
 ): Promise<WatchedSpark[]> {
+  const { row, list } = await currentOrFresh(watched, kind, key);
   const saved = await api.watchSpark(kind, key, {
     hunting,
-    groups: groupsOf(watched, kind, key),
+    groups: row?.groups ?? [],
   });
-  return replacing(watched, saved);
+  return replacing(list, saved);
 }
 
 /**
@@ -134,10 +161,10 @@ export async function setGroups(
   key: number,
   groups: string[]
 ): Promise<WatchedSpark[]> {
-  const current = find(watched, kind, key);
+  const { row, list } = await currentOrFresh(watched, kind, key);
   const saved = await api.watchSpark(kind, key, {
-    hunting: current?.hunting ?? DEFAULT_HUNTING,
+    hunting: row?.hunting ?? DEFAULT_HUNTING,
     groups,
   });
-  return replacing(watched, saved);
+  return replacing(list, saved);
 }

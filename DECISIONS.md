@@ -1282,7 +1282,7 @@ Keep adding entries as the build evolves. This file is the interview.
   (moved there 2026-08-01, Jason's call). It is the node's headline
   number — the trainee's run total, or the share a proc off this ancestor
   rolls against — and the letters are detail you consult rather than the
-  first thing you read. The Details/Procs switch above it is the app's
+  first thing you read. The Details/Sparks switch above it is the app's
   standard `seg-group` pill, not the bespoke underlined tab bar it
   shipped with: that bar existed nowhere else in the app, and a control
   that looks unique implies it behaves uniquely.
@@ -1482,7 +1482,7 @@ Keep adding entries as the build evolves. This file is the interview.
   plain-text export truncates before it) and finding base rates that
   disagree with the three records that now agree.
 
-## 30. Inspiration procs: a Procs tab, and whites in the document
+## 30. Inspiration procs: a Sparks tab, and whites in the document
 
 - **Requirements:** designer V2's last piece (#26's deferred list). A
   spark inherits twice over: `aptitude.ts` applies a pink's bracket at
@@ -1530,8 +1530,10 @@ Keep adding entries as the build evolves. This file is the interview.
   telling you anything. Adding one is a line in `SlotFactorKind` and a
   row in `SPARK_BASE`.
 
-  **A Procs tab on each of the seven named panels**, holding what each
-  one is for:
+  **A Sparks tab on each of the seven named panels** (labelled "Procs"
+  until #34 renamed it; the tab id, `procs.ts` and the `.proc-*` styles
+  keep the word, because the estimate it carries is still an inspiration
+  proc), holding what each one is for:
   - **an ancestor's** lists her own sparks, each at the chance she is
     the reason the trainee has it, at her individual affinity —
     **ranked by that chance**, like the trainee's and for the same
@@ -1572,6 +1574,12 @@ Keep adding entries as the build evolves. This file is the interview.
     "Show more" wouldn't. Ancestor tables are never capped — a member
     holds a handful, and hiding rows on the tab where you EDIT them
     would hide what you just typed.
+    **Superseded by #34:** the row cap is now a 24rem height clip. Once
+    the table can be sorted, no row selection stays honest — capping by
+    chance and then grouping makes the button promise an append and
+    deliver an interleave — so the fold stopped selecting rows at all.
+    Every row renders, in the sort's order, and the panel shows the top
+    of it.
 
   **The kind is carried by colour, not by a word.** The spark's name
   takes its kind's colour and the bar beside it is filled to match, so a
@@ -1595,7 +1603,7 @@ Keep adding entries as the build evolves. This file is the interview.
   roll it against — attribution stops at the grandparents. Every named
   node has one. The tab choice **persists across node selection**,
   because comparing one view between two ancestors is the common move.
-  The non-pink sparks are edited on the Procs tab (they feed nothing
+  The non-pink sparks are edited on the Sparks tab (they feed nothing
   else); the pink stays on Details, beside the letters it bumps at
   career start. Map chips stay out, as V1 ruled: the 31 nodes have no
   room.
@@ -2083,3 +2091,258 @@ its three routes, and a client module — no UI of its own.
   the whole app scoped to it, an "active group" belongs in the store
   rather than in each caller's argument. Or `hunting: true` by default
   filling #27's block with filler in practice.
+
+## 34. The spark tables sort, and the level moves to the add
+
+Issues #29 and #45, built together, on the premise that each removes the
+other's main objection: folding a ★ control into a chance-ranked row
+means the row climbs out from under the cursor as you raise the level,
+and grouping by kind — which #29 wants as the ancestor default on its
+own evidence — was supposed to stop that.
+
+**The premise was half right, and measuring it is what produced the
+shape below.** Grouping stops the row crossing into another kind; it
+does not stop it moving, because chance still orders rows inside a kind
+group. So the level left the row entirely and moved onto the search's
+match rows, where choosing it is one click and nothing in the table can
+reorder anything.
+
+- **Requirements:** (a) on an editable ancestor's tab, every non-pink
+  spark rendered **twice** ~30px apart — once as a ranked, kind-coloured
+  row with ★ glyphs, once as an insertion-ordered white row with a
+  segmented control. Nine rows for five sparks, and the two halves
+  disagreed about both identity and order, so matching a row to its
+  control was a scan rather than a glance. (b) Both tables sorted by
+  chance only, and on an ancestor's table that ranking is degenerate:
+  the affinity is a single constant there, so
+  `min(base × (1 + affinity/100), 100)` makes the chance a pure function
+  of `(kind, ★)`. Measured on a real pulled parent: **eight consecutive
+  rows at 19.4%**, the order inside the tie arbitrary. (c) "Procs" named
+  the smaller half of a tab that is more than half entry — and on a
+  pulled ancestor it named a readout consulted after every decision is
+  already made.
+- **Choice:** **one row per spark, and the level is chosen when the
+  spark is added.** The held list is deleted. The row shows the level as
+  ★ glyphs in its own shrink-to-fit column and carries the ✕ that drops
+  the spark; the three-button level control lives on the **match rows**
+  of the search instead, so `Add a Spark…` adds at 1★, 2★ or 3★ in one
+  click. `Add a Spark…` remains the single add affordance — #28 replaces
+  the chooser later and inherits this ★ picker with it.
+
+  **This reverses #45's own headline argument, knowingly.** That issue
+  wanted the level set where its consequence is displayed, so changing
+  1★→3★ moves a number the eye is already on. It was built that way
+  first, and the objection #45 itself raised turned out to be worse than
+  either issue thought: **grouping does not stop the row moving.**
+  Measured with three whites on one ancestor — the ordinary case, since
+  chance descends inside each kind group — raising the last to 3★ moved
+  it from index 2 to index 0 of its group and left a different spark
+  under the pointer. Ranked it was index 4 to 0. The second click, which
+  is the natural "I meant 2★" or the ✕ beside it, then hits the wrong
+  spark, and the ✕ deletes it and autosaves. The pairing premise — that
+  #29's grouping removes #45's objection — holds only for movement
+  *across* kinds.
+
+  Choosing the level on the match makes the table incapable of changing
+  a chance, which closes the failure at its root rather than bounding
+  it. It is also **fewer clicks**: a 3★ was pick-then-correct, and is
+  now one click, chosen at the moment you are choosing the spark, which
+  is when you know it. #30's 1★ default — "the honest default for one
+  you're planning to hunt" — was the best a single-click add could do,
+  and is retired rather than overridden. The cost is that changing a
+  level means dropping the spark and re-adding it; that is the trade,
+  taken on Jason's call, and it is the right one only while entry
+  dominates adjustment.
+
+  **The pink row differs by lacking a ✕, not by lacking a control.**
+  Its editor is on Details, beside the letters it bumps at career start
+  (#26/#30), and that stays. Every row in the column now shows the same
+  ★ glyphs, so the pink is simply the row that can't be dropped from
+  here.
+
+  **The column headers are the sort control.** A segmented pill under
+  the Details/Sparks pill read as a second row of tabs, and cost a row
+  of height on the tab #29 already says competes with the map. The two
+  orders land on the two columns that carry them — kind is what the
+  Spark column's colour says, chance is the Est. Per Run column itself
+  — so clicking a header sorts by it, which needs no new label and no
+  new row. The active header brightens and takes a caret drawn as a CSS
+  `::after`, so the DOM text stays exactly "Spark" and "Est. Per Run";
+  `aria-sort` announces the state (`other` for the kind grouping, which
+  is a fixed five-way order rather than a direction, and `descending`
+  for chance). Real `<button>`s inside the `th`, so the sort is
+  reachable by keyboard. A pulled ancestor's table sorts too — hers is
+  the table the eight-rows-at-19.4% measurement came off — and gains no
+  editing control, which is what #28 makes read-only.
+
+  **Both tables sort, with different defaults**: ancestor
+  tables **by kind**, the trainee's roll-up **by chance**. The
+  asymmetry is the point. Ancestor chances are a pure function of
+  `(kind, ★)` at one affinity, so grouping is the only ordering there
+  that carries information — and it is the tab where you EDIT, so a
+  stable order is what makes a spark findable after you add it. The
+  trainee's chance is a union across carriers at differing affinities,
+  where ties are rare, the ranking is real, and #30's cap rationale
+  depends on it. Type order **Pink → Green → Race → White → Scenario**
+  (Jason's call), the game's own grouping, chance descending inside each
+  group — not alphabetical and not the reference's `(kind, name)`, which
+  buries whites behind races (the bias #30 caught in the search's cap).
+  `TYPE_ORDER` numbers from 1, leaving 0 for **blue above pink**: stat
+  sparks are not a kind the document holds today (#30), and when they
+  are added that is where they group. Adding `blue` to `SPARK_BASE`
+  won't compile until it is placed, which is deliberate.
+
+  **The trainee's fold becomes a height, not a row count** (Jason's
+  call, and it replaced two rounds of my own answers). #30 capped at 12
+  rows and justified it by the ranking: what's hidden is always the
+  least likely. A sort toggle breaks that, and every fix that keeps a
+  row cap is a patch on the same crack — cap-then-sort keeps the
+  selection honest but leaves the button revealing rows that scatter
+  upward into groups the reader has already passed, so its position
+  lies about where they will land.
+
+  Folding by **height** dissolves it: `max-height: 24rem` with
+  `overflow: hidden`, every row rendered in whatever order the sort put
+  them. Nothing is selected, so there is no selection to keep honest,
+  and `Show All 17` means exactly "stop clipping" under either sort. The
+  24rem holds #30's measured target — 0.6× of a 900px viewport, so
+  switching to Details doesn't reflow the page — while letting the
+  visible row count float with how many names wrapped, which is what the
+  constraint was ever about.
+
+  The last visible row is **cut through and faded**, via a
+  `linear-gradient` mask over the final 2.5rem, rather than snapped to a
+  row edge: a block ending cleanly reads as a finished list, which is
+  the exact misreading the fold has to prevent. It is a clip, never a
+  scroll region — #30 ruled that out and the reasoning stands.
+
+  **`overflow: clip`, not `hidden`, and the known cost of that.** `hidden`
+  makes a scroll container, and find-in-page will scroll a match into
+  view inside one: measured at 187px, which pushed the header and the
+  top rows out of a box offering no way to scroll back, leaving the panel
+  decapitated until something re-rendered it. `clip` cannot scroll, so
+  that can't happen. The price is the other half of the same fact —
+  **a find-in-page match below the fold can be reported and not
+  reached**, because the rows are in the DOM (which is what makes the
+  fold a presentation choice rather than a selection) and nothing can
+  bring them into view but the button. Every fold that keeps its rows
+  has one failure or the other; this is the less destructive one, since
+  it withholds a row rather than hiding the table's own header. The
+  button carries `aria-expanded` so the state is announced. What would
+  remove it is `hidden="until-found"`, which auto-reveals on match — but
+  it hides per element, so it would mean going back to hiding rows
+  individually, which is the row cap this entry replaced.
+
+  Whether to fold is **measured, not counted**: a `ResizeObserver` on
+  the table compares its height to the clip, so the button appears only
+  when something is actually hidden and re-decides when a name rewraps
+  or the viewport changes.
+
+  Both sorts **persist beside `tab`** in `FocusPanel`, for the reason
+  #30 gives for the tab itself — comparing one view between two
+  ancestors is the common move — and they hide nothing, being a sort you
+  set and see (#31's argument for the picker's sort). Two states rather
+  than one, because one would have to pick a default and lose the other.
+  No gating on row count: the headers are there whatever the table
+  holds, so there is nothing to show or hide.
+
+  **What the row costs, measured.** The level column is 61px — ★ glyphs
+  and a ✕ — so the names keep nearly everything. The chance bar still
+  drops from 36% to 28% **on editable tables only**, leaving name 177px
+  / level 61px / chance 93px at 390px, and name 122px in the **desktop
+  sidebar**, which at 301px is the tighter of the two. Against all 432
+  factor names measured in the cell's own font (median 99px, p90 148px,
+  max 223px): **96.1% fit one line at 177px, 71.1% at 122px, and none
+  needs a third line at either.** The three-button control cost 64px of
+  that: while it was in the row, the sidebar had 94px of name, 46.8% on
+  one line and 13 names taking three lines.
+
+  21px of the column is a **held-empty ✕ slot on the pink's row**
+  (Jason caught it on screen). She carries no ✕, so without the slot her
+  ★ run to the cell edge while every other row's stop short of one, and
+  a column of stars that doesn't line up reads as a rendering fault
+  rather than as one row being read-only — the same reason an empty card
+  keeps its letter cells and a scoreless chip keeps its affinity tile.
+  It costs the sidebar 144px of name down to 122px, 88.0% one-line down
+  to 71.1%, and no name gains a third line. An e2e check compares the
+  right edges of every `.proc-stars` in the table, because it is a claim
+  about where things are drawn.
+
+  Nothing overflows the panel or the page at either width, and the match
+  rows fit too — 237px of name beside 76px of buttons at 390px,
+  unclipped. Names are **not** ellipsised: #30 gave them the width for a
+  reason, and the ○ suffix that distinguishes a skill's two grades is
+  the last thing on the line.
+
+  **The locked path gains no editing, and does gain the sort.** A pulled
+  ancestor stays read-only (#28) — no level column, no ✕, no search, the
+  same two-column readout with ★ glyphs in the name cell that shipped in
+  #30. What changed for her is the header row: it sorts, like every other
+  spark table, and hers opens grouped by kind. That is deliberate rather
+  than an oversight — the eight-rows-at-19.4% measurement that made
+  grouping the ancestor default was taken off a pulled parent, so hers is
+  the table it helps most, and a sort adds no way to change her document.
+
+  **The tab is renamed Procs → Sparks.** Label only: the tab id,
+  `procs.ts`, the `.proc-*` styles and #30's model keep the word,
+  because what the tab estimates is still an inspiration proc. Two tabs
+  now say "spark" — Details keeps its PINK SPARK section — and that
+  collision is accepted knowingly rather than tidied away.
+
+  **Kind stays carried by colour.** #41 argued the opposite and was
+  closed: the palette is the game's own, and under dichromacy simulation
+  the closest CIEDE2000 distance across all ten pairs is 7.11 against a
+  2.3 JND. Grouping by kind is legible today, with no dependency to wait
+  on.
+- **Alternatives rejected:** *one sort default for both tables* (#29's
+  own instinct — "two tables sorting differently is worse than one
+  sorting redundantly") — they answer different questions and only one
+  has a cap; a single default either flattens the trainee's real
+  ranking or leaves ancestor tables ordering eight identical numbers
+  arbitrarily. *A row cap, kept* — three versions were built or drafted
+  before the height clip replaced all of them. *Cap by chance, then
+  sort* (built, and it passed): honest about WHICH rows are hidden,
+  silent about where they reappear. *A second `<tbody>` for the tail*
+  under a `Less Likely` caption, so the button's position stays true —
+  it works, but it duplicates kind groups either side of the line and
+  adds a table idiom to answer a folding problem. *Relabelling the
+  button* — `Show 5 Less Likely` (drops the total #30 wanted),
+  `Show 5 Below 6.8%` (a threshold that churns on every edit), or a
+  sort-dependent label (a control whose text changes when you press a
+  different control). Each describes the mismatch; the height clip
+  removes it. *A segmented pill for the sort* (built first, replaced on
+  Jason's call): two rounded pills stacked read as two rows of tabs, and
+  the second bought nothing the column headers weren't already there to
+  say. *That pill beside the tabs on one line* — it fits the 390px panel
+  at ~310px of content but not the 301px desktop sidebar, and shrinking
+  the tab pill off full width would undo #26/#29's "two halves" split.
+  *Keeping the held list* and freezing the table's sort while a control has
+  focus — that keeps the duplication the whole issue is about, and
+  buys a frozen sort that reorders the moment you look away.
+  *Three ways to keep a ★ control in the row*, all rejected once the
+  movement was measured: **snapshotting the order** (re-sort only on
+  sort/node/membership change) fixes both sorts but leaves a header
+  reading `Est. Per Run ▾` over rows that aren't in that order, which is
+  its own dishonesty; **a level-independent sort key** (kind, then name)
+  is stateless and makes grouping provably stable, but does nothing for
+  the ranked sort, which stays live and still moves rows; **that key
+  plus removing `By Chance` from editable tables** closes it completely
+  but narrows the toggle to tables you only read, and makes an editable
+  and a locked ancestor table behave differently. Moving the level onto
+  the match rows beats all three: no state, no restricted sort, no
+  asymmetry, and it hands 64px back to the names. *Spelling
+  the level out as a "Stars" header* — three ★ buttons under it say it
+  already. *Renaming `procs.ts` and the CSS with the tab* — the module
+  models proc chances and would then be named after a UI label.
+- **What would change my mind:** ancestor affinities ceasing to be a
+  single constant per member (a per-spark modifier would make ranking
+  informative there and collapse the asymmetry); the trainee's table
+  growing a ★ column, which would give it ties to group around; a
+  the desktop sidebar getting narrower, or the name corpus getting
+  longer — 94px is already the width at which 13 names take three
+  lines, and past that the control belongs on a second line rather than
+  in the row. For the fold: anything focusable landing in the trainee's
+  table, since clipped rows stay in the DOM and a hidden control is
+  worse than a hidden row (the table is a readout today, which is what
+  makes the clip safe); or browser find jumping to text inside the clip
+  proving to be a real nuisance rather than a theoretical one.

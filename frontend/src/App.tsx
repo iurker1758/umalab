@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
 import { api, type ImportInfo, type Veteran } from "./api";
 import { emptyDesign, type Design } from "./blueprint";
-import { FILTER_STORE, loadFilters, reconcileFilters, type Filters } from "./filters";
+import { loadFilters, reconcileFilters, saveFilters, type Filters } from "./filters";
 import { DesignerPage } from "./pages/DesignerPage";
 import { RosterPage } from "./pages/RosterPage";
 
@@ -55,11 +55,7 @@ export default function App() {
   // Persisted as an effect so every write path — panel edits AND the
   // refresh-time reconciliation — lands in storage.
   useEffect(() => {
-    try {
-      localStorage.setItem(FILTER_STORE, JSON.stringify(filters));
-    } catch {
-      // storage full/blocked — the choice still applies for this session
-    }
+    saveFilters(filters);
   }, [filters]);
 
   useEffect(() => {

@@ -613,6 +613,10 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 
 .picker-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
 .picker-head .filter-title { margin-right: auto; }
+/* "No Character", the first chip in the picker's list: a dashed ✕ where a
+   portrait would be, matching the filter panel's No Favorite chip. */
+.picker-unselect .chip-none { display: inline-flex; align-items: center; justify-content: center;
+  width: 60px; height: 60px; border: 1px dashed #4a5462; border-radius: 6px; color: #9aa1ab; }
 /* Catalog / roster source. Full width so the two halves are equal targets —
    the roster is the shortcut, not a lesser option. box-sizing because the
    seg-group carries a border and .uma-popout scrolls on Y: without it the

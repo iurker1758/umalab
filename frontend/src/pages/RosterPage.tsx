@@ -8,16 +8,15 @@ import { VeteranModal } from "../components/VeteranModal";
 import {
   DEFAULT_ASC,
   SORTS,
-  SORT_STORE,
-  commonSparkNamesOf,
   loadSortPref,
   markLabel,
   rosterCardsOf,
+  saveSortPref,
   sortVeterans,
   type SortKey,
   type SortPref,
 } from "../domain";
-import { countFilters, matchesFilters, type Filters } from "../filters";
+import { commonSparkNamesOf, countFilters, matchesFilters, type Filters } from "../filters";
 
 export function RosterPage({
   veterans,
@@ -73,12 +72,7 @@ export function RosterPage({
 
   const applySort = (next: SortPref) => {
     setSort(next);
-    try {
-      localStorage.setItem(SORT_STORE, JSON.stringify(next));
-    } catch {
-      // storage full/blocked — the choice still applies while the roster
-      // stays mounted (navigating away discards page state)
-    }
+    saveSortPref(next);
   };
 
   // Shared with the designer's picker, which renders the same roster behind

@@ -10,6 +10,10 @@ node_modules/
 dist/
 dev-dist/
 *.tsbuildinfo
+# local dev launchers — machine-specific, not part of the project
+dev.ps1
+dev.cmd
+
 # env & editors
 .env
 .DS_Store

@@ -1687,3 +1687,131 @@ Keep adding entries as the build evolves. This file is the interview.
   need the ranking to survive five rows that never move; anyone reading
   "est." as a formality, which would mean the hedge needs to be louder
   than one word after all.
+
+## 31. Three corrections to the designer and its filters
+
+Issues #33, #32 and #31, shipped together: one filter bug and two edits
+the designer could not express. Grouped because each is a paragraph, not
+a milestone, and splitting them across three entries would file three
+titles over one afternoon's work.
+
+- **Requirements:** (a) **Legacy Sparks** widened a spark search to the
+  veteran plus all six lineage slots, grandparents included. (b) The
+  slot picker reset its filters to the defaults on every open, and
+  filling 31 nodes against one criterion means rebuilding them by hand
+  each time. (c) Once a catalog node had a character, the only way off
+  her was Clear, which nulls the slot — so the pink and every non-pink
+  spark typed into it went with her, and "spark set, character still
+  open" was reachable by other routes but not returnable to.
+
+- **Choice (a): the legacy pool is the veteran and her two PARENTS.**
+  This is a correctness fix, not a preference. Breeding from her shifts
+  every slot up a generation: she becomes a parent, her parents become
+  the grandparents, and her own grandparents leave the game's 6-slot
+  tree entirely — no slot, no inspiration roll, no affinity term. A
+  match sourced from one is a spark that can never be inherited from
+  her, so the filter was shortlisting on unreachable sparks. The rest of
+  the codebase already draws the line here (`app/affinity.py` scores
+  `t/p1/p2/g11/g12/g21/g22` and nothing deeper), and `relation` is
+  already on the wire, so this is a filter on the existing flatMap.
+  `legacyFactorsOf` in `filters.ts` is the one owner of the rule.
+
+  **The suggestion vocabulary narrows to match** (`commonSparkNamesOf`,
+  and `reconcileFilters`' own harvest, now the same helper). A name only
+  a grandparent carries can no longer be matched by anything, and
+  reconcile's existing rule is that an unmatchable filter is cleared
+  rather than masked. Leaving it in the chooser would offer a row that
+  always reports zero veterans. `reconcileFilters` builds its set from
+  `commonSparkNamesOf` rather than walking the pool again, so the
+  chooser cannot offer a name reconcile would strip.
+
+  **Two costs on the first load after this ships, both accepted.**
+  Persisted `legacy: true` filters match fewer veterans — the point of
+  the fix. And a saved Common Sparks row naming a grandparent-only
+  spark is **deleted, not narrowed**: reconcile drops it, the shell's
+  effect persists that immediately, and the chooser no longer offers
+  the name to re-add. Accepted because the row was selecting on
+  something unreachable, which is the bug; the app is unreleased, so
+  the population affected is one roster. A one-time notice would be the
+  fix if that stops being true.
+
+- **Choice (b): the picker persists its filters AND its sort, under its
+  own keys** (`umalab.picker.filters`, `umalab.picker.sort`), never the
+  roster page's. The original comment gave two reasons for resetting,
+  and only one survives: the sets must stay independent in both
+  directions, so narrowing the picker never touches the roster page you
+  go back to. "Start from nothing every open" was the half that cost
+  more than it saved. Loaded through the same shape validation as the
+  roster's, and the filters are reconciled at mount the way the shell
+  reconciles on every roster load — a card or mark filter whose target
+  left in a full-replace import would otherwise open the picker on an
+  empty list with no visible cause. Two conditions on that, both from
+  the review: the reconcile runs **only against a roster that has
+  arrived** (`veterans` starts empty and stays empty on a failed fetch,
+  and the designer renders either way, so reconciling against nothing
+  would strip every filter the moment the picker opened on a slow
+  load), and its result is **written back**, since a filter that is
+  masked rather than cleared reactivates silently on the import that
+  brings its target back.
+
+  Sort was first shipped unpersisted, on the argument that newest-first
+  is the right default on every open. Jason's objection stands: the
+  filters argument applies unchanged — you are filling 31 nodes in one
+  sitting, and re-picking Sparks order per node is the same repetition
+  — and a sort you set and see is not a state that can hide anything,
+  which is the only thing that made filters worth thinking twice about.
+  A default being good is an argument for what an unset key falls back
+  to, not for discarding a choice.
+
+- **Choice (c): a No Character chip — the face comes off, the sparks
+  stay.** It is the **first chip in the picker's character list**, a
+  dashed ✕ in the shape the filter panel's No Favorite chip already
+  uses (Jason's call, across two rounds: not a third icon on the
+  panel's name row, and not a text button in the picker's header).
+  Taking the face off a node is an ANSWER to the question the picker
+  asks, so it sits among the other answers and picking it closes the
+  picker like any other pick. The name row keeps the two buttons it
+  had. `withoutCharacter` is the mirror of
+  `withSpark`/`withFactors`, and prunes to null when nothing is left,
+  as those two do. It rebuilds the slot through `catalogSlot` rather
+  than nulling the ids in place: a character-less slot may only be a
+  catalog one — both this client and `app/schemas.py` reject the other
+  shape — so the source and the roster-only fields have to go with the
+  face.
+
+  **Hand-picked nodes only** (`canUnselect`). What a pull placed is
+  recorded history: those sparks are the horse's own, read off her dump,
+  so dropping just her face would leave someone else's sparks under
+  nobody. Clearing the branch stays the way out of a pull (#28). Named
+  slots declare `catalog`; a deep slot records a source only when a pull
+  placed it, so absent means hand-picked there. The button is also
+  hidden when the node has **nothing to keep** — then it is exactly
+  Clear, and two buttons doing one thing on this panel is noise. That
+  keeps it off the trainee for free: she carries no sparks at all.
+  Picking it closes the picker and returns to the node, exactly as
+  picking a character does.
+
+- **Alternatives rejected:** *(a) keeping the vocabulary wide* so a
+  saved filter is never cleared out from under you — defensible, but it
+  trades a silently-cleared filter for a permanently-dead menu entry,
+  and the panel already explains a cleared filter by showing its own
+  count. *Renaming the toggle* to name its generations — the tooltip
+  now says it ("her two parents"), and "Legacy Sparks" is the term the
+  rest of the app and the e2e suite use. *(b) persisting the filters
+  but not the sort* — see above. *Sharing `FILTER_STORE`/`SORT_STORE`*
+  — the reason the picker got its own state in the first place. *(c) a
+  third icon button on the name row* — the first cut; three
+  destructive-adjacent icons on a small panel, and it separated "remove
+  her" from "replace her" when they are the same decision. *Offering it
+  on a pulled node as a synonym for Clear* — two controls with one
+  meaning, and it would suggest the sparks might survive.
+
+- **What would change my mind:** (a) a filter that names WHICH slot a
+  legacy match came from, or counts occurrences across self + parents —
+  the toggle stays binary here and that is a bigger feature (noted on
+  #33); (b) the picker's filters proving stickier than wanted, which
+  would argue for a Reset in the dock rather than a reset on open (the
+  sort has no such failure mode — it hides nothing);
+  (c) Remove Character proving hard to find inside the picker, which
+  would argue for the panel affordance after all — the objection to it
+  was crowding, not discoverability.

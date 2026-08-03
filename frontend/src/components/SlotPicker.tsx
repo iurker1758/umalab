@@ -4,14 +4,25 @@ import { APTITUDE_LABELS } from "../aptitude";
 import { pinkOf } from "../blueprint";
 import {
   DEFAULT_ASC,
+  PICKER_SORT_STORE,
   SORTS,
-  commonSparkNamesOf,
+  loadSortPref,
   rosterCardsOf,
+  saveSortPref,
   sortVeterans,
   type SortKey,
   type SortPref,
 } from "../domain";
-import { countFilters, defaultFilters, matchesFilters, type Filters } from "../filters";
+import {
+  PICKER_FILTER_STORE,
+  commonSparkNamesOf,
+  countFilters,
+  loadFilters,
+  matchesFilters,
+  reconcileFilters,
+  saveFilters,
+  type Filters,
+} from "../filters";
 import { FilterPanel } from "./FilterPanel";
 import { UmaCardChip } from "./UmaCardChip";
 import { VeteranCard } from "./VeteranCard";
@@ -44,6 +55,7 @@ export function SlotPicker({
   iconIndex,
   conflict,
   onPick,
+  onUnselect,
   onClose,
 }: {
   title: string;
@@ -59,6 +71,10 @@ export function SlotPicker({
   // and the tree rules that bite differ accordingly.
   conflict: (charaId: number, kind: Source) => string | null;
   onPick: (pick: SlotPick) => void;
+  // Take the node's character off and keep its sparks — the No Character
+  // chip. Null where that isn't offered: an empty node, a pulled one, or one
+  // with nothing to keep (DECISIONS.md #31).
+  onUnselect: (() => void) | null;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -66,16 +82,41 @@ export function SlotPicker({
   // sparks you're hunting has to work against an empty roster — pulling a
   // veteran you already own is the shortcut, not the entry point.
   const [source, setSource] = useState<Source>("catalog");
-  // Sort and filters are the picker's own and deliberately NOT persisted:
-  // narrowing the list to find one mare shouldn't silently reorder or filter
-  // the roster page you go back to. It opens on the same default the roster
-  // page does — newest first — because the veteran you want to breed from is
-  // usually one you just finished, not your best-ever.
-  const [sort, setSort] = useState<SortPref>({
-    key: "register_time",
-    asc: DEFAULT_ASC.register_time,
+  // Sort and filters both persist, under the picker's OWN keys — never the
+  // roster page's. Independence in both directions was the real reason these
+  // started as unpersisted state; "reset on every open" was the half that
+  // cost more than it saved, since filling 31 nodes against one criterion is
+  // the most repeated work in the designer (DECISIONS.md #31).
+  const [sort, setSortState] = useState<SortPref>(() => loadSortPref(PICKER_SORT_STORE));
+  const setSort = (next: SortPref) => {
+    setSortState(next);
+    saveSortPref(next, PICKER_SORT_STORE);
+  };
+  // Reconciled at mount as the shell does on every roster load — a card or
+  // mark filter whose target left in a full-replace import would otherwise
+  // open the picker on nothing, with no visible cause.
+  const [filters, setFiltersState] = useState<Filters>(() => {
+    const saved = loadFilters(PICKER_FILTER_STORE);
+    // Only against a roster that has actually arrived. `veterans` starts
+    // empty and stays empty if the fetch fails, and the designer renders
+    // either way — reconciling against nothing would strip every card, mark
+    // and spark filter the moment the picker opened on a slow load, and the
+    // next chip you touched would persist the stripped set. The shell guards
+    // the same way, by reconciling only inside its fetch's success branch.
+    if (veterans.length === 0) return saved;
+    const next = reconcileFilters(saved, veterans);
+    // Written back, not just applied: reconcileFilters' rule is that a filter
+    // whose target left is CLEARED, not masked, and leaving the stale entry
+    // in storage would let it reactivate silently the next time an import
+    // brings that veteran back. Identity is the signal — reconcileFilters
+    // returns its input untouched when nothing changed.
+    if (next !== saved) saveFilters(next, PICKER_FILTER_STORE);
+    return next;
   });
-  const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const setFilters = (next: Filters) => {
+    setFiltersState(next);
+    saveFilters(next, PICKER_FILTER_STORE);
+  };
   const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
@@ -170,6 +211,23 @@ export function SlotPicker({
             page's tiles and want its grid, so rank badges and score lines
             align across rows instead of stair-stepping. */}
         <div className={showing === "roster" ? "picker-grid" : "filter-chips"}>
+          {/* "Nobody, for now" — first in the character list, in the shape the
+              filter panel's No Favorite chip already uses. Taking the face off
+              a node is an answer to the question the picker asks, not a
+              separate control beside it. Null unless the node has a
+              hand-picked character and something to keep. */}
+          {showing === "catalog" && onUnselect !== null && (
+            <button
+              className="card-chip picker-unselect"
+              title="No Character"
+              aria-label="No Character"
+              onClick={onUnselect}
+            >
+              <span className="chip-none" aria-hidden="true">
+                ✕
+              </span>
+            </button>
+          )}
           {showing === "catalog"
             ? queriedCards.map(({ entry, card }) => (
                 <UmaCardChip
@@ -249,7 +307,7 @@ export function SlotPicker({
                     : "Descending — click for ascending"
                 }
                 aria-label={sort.asc ? "Sort Ascending" : "Sort Descending"}
-                onClick={() => setSort((s) => ({ ...s, asc: !s.asc }))}
+                onClick={() => setSort({ ...sort, asc: !sort.asc })}
               >
                 {sort.asc ? "▲" : "▼"}
               </button>

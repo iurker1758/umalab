@@ -1,5 +1,5 @@
 import type { Veteran } from "./api";
-import { isCommonKind } from "./filters";
+import { writeStore } from "./storage";
 
 // Aptitude ints 1..8 map to letters G..S (verified: pink sparks gate on >= 7 = A).
 const APT = "-GFEDCBAS";
@@ -189,27 +189,17 @@ export const SPARK_ABBR: Record<string, string> = {
 export const sparkAbbr = (name: string) =>
   SPARK_ABBR[name] ?? name.slice(0, 5).toUpperCase();
 
-// The three roster derivations the roster page and the designer's picker
-// both need. Shared so the picker can't silently order or group veterans
-// differently from the page it's meant to mirror.
+// The roster derivations the roster page and the designer's picker both
+// need. Shared so the picker can't silently order or group veterans
+// differently from the page it's meant to mirror. The third — the filter's
+// spark vocabulary — lives in filters.ts as `commonSparkNamesOf`, beside the
+// pool rule that decides what belongs in it.
 
 // One entry per distinct card, for the Umas filter section.
 export const rosterCardsOf = (veterans: Veteran[]): Veteran[] => {
   const seen = new Map<number, Veteran>();
   for (const v of veterans) if (!seen.has(v.card_id)) seen.set(v.card_id, v);
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.card_id - b.card_id);
-};
-
-// Every common-spark (white skill / race / scenario) name anywhere in the
-// roster, own + lineage — the searchable vocabulary for the filter.
-export const commonSparkNamesOf = (veterans: Veteran[]): string[] => {
-  const names = new Set<string>();
-  for (const v of veterans) {
-    for (const f of v.factors) if (isCommonKind(f.kind)) names.add(f.name);
-    for (const m of v.lineage)
-      for (const f of m.factors) if (isCommonKind(f.kind)) names.add(f.name);
-  }
-  return [...names].sort((a, b) => a.localeCompare(b));
 };
 
 // Sorted copy, never in place.
@@ -229,11 +219,14 @@ export const sortVeterans = (veterans: Veteran[], sort: SortPref): Veteran[] => 
 
 export type SortPref = { key: SortKey; asc: boolean };
 export const SORT_STORE = "umalab.sort";
+// The designer's slot picker sorts under its own key, as it filters under its
+// own (DECISIONS.md #31) — the two stay independent in both directions.
+export const PICKER_SORT_STORE = "umalab.picker.sort";
 const defaultSort: SortPref = { key: "register_time", asc: false };
 
-export function loadSortPref(): SortPref {
+export function loadSortPref(store: string = SORT_STORE): SortPref {
   try {
-    const raw = localStorage.getItem(SORT_STORE);
+    const raw = localStorage.getItem(store);
     if (raw) {
       const p = JSON.parse(raw) as Partial<SortPref>;
       if (SORTS.some(([, k]) => k === p.key) && typeof p.asc === "boolean") {
@@ -244,6 +237,10 @@ export function loadSortPref(): SortPref {
     // unreadable storage or garbage value — fall through to the default
   }
   return defaultSort;
+}
+
+export function saveSortPref(sort: SortPref, store: string = SORT_STORE): void {
+  writeStore(store, sort);
 }
 
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.

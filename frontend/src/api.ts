@@ -236,6 +236,27 @@ export interface Blueprint extends BlueprintIn {
   updated_at: string;
 }
 
+// ---------- watched sparks ----------
+
+// The mutable half of a watched spark — (kind, key) is the identity and
+// travels in the path, so it never appears in a request body.
+export interface WatchedSparkEdit {
+  // "keep this handy to type" (false) vs "I want this outcome" (true).
+  hunting: boolean;
+  // The user's own build names ("Front Runner", "Medium"). Empty means
+  // ungrouped, which is every row until something writes a group.
+  groups: string[];
+}
+
+export interface WatchedSpark extends WatchedSparkEdit {
+  // The row id, and therefore its place in the list — the server orders by
+  // it. Carried so a client whose copy predates a row can place the row a
+  // PUT hands back instead of appending it.
+  id: number;
+  kind: SlotFactorKind;
+  key: number;
+}
+
 // Carries the status so a caller can tell "this row is gone" (404) from
 // "the backend is down" — the designer's autosave recovers from the first
 // by re-creating the row and only retries on the second.
@@ -328,5 +349,19 @@ export const api = {
     fetch(`/api/blueprints/${id}`, { method: "DELETE" }).then((r) => {
       // Already gone is the outcome the caller wanted.
       if (!r.ok && r.status !== 404) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
+    }),
+  watchedSparks: () =>
+    fetch("/api/watched-sparks").then((r) => json<WatchedSpark[]>(r)),
+  // Upsert: adds the spark, or replaces the bit and the groups on the row
+  // already there. An existing row keeps its position in the list.
+  watchSpark: (kind: SlotFactorKind, key: number, body: WatchedSparkEdit) =>
+    fetch(`/api/watched-sparks/${kind}/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => json<WatchedSpark>(r)),
+  unwatchSpark: (kind: SlotFactorKind, key: number) =>
+    fetch(`/api/watched-sparks/${kind}/${key}`, { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
     }),
 };

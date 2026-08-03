@@ -1957,3 +1957,129 @@ Access-identity scoping)"* — and this is that entry.
   or a third app on the platform, which is when the JWT verifier
   moves out of this repo into a shared package instead of being
   copied a second time.
+
+## 33. Watched sparks: one list, a hunting bit, and user-named groups
+
+Issue #39, built ahead of the two features that consume it. A table,
+its three routes, and a client module — no UI of its own.
+
+- **Requirements:** three features ask the same question — *which
+  sparks does this user care about*. #28's chooser wants the ones you
+  type often, so they can rise to the top of a 432-entry reference.
+  #27's watched block wants the ones you are breeding FOR, uncapped
+  and including the ones no ancestor carries. Hunted-skill scoring
+  wants that second set again. Those two sets genuinely differ: a
+  filler white you put on every node is worth saving to type and worth
+  nothing to highlight. And someone hunting a Front Runner build this
+  week and a Medium build next needs both around without one polluting
+  the other's reading. It has to span devices.
+
+- **Choice: one table, `watched_sparks`, holding `(kind, key,
+  hunting, groups)` per owner, in insertion order.** `kind`/`key` is
+  the identity — never a name, which is a localized string resolved at
+  render (#30) — one row per pair, matching the uniqueness rule the
+  blueprint `factors` document already uses. Both distinctions the
+  requirements name ride on the row rather than splitting the list:
+  `hunting` separates "keep this handy to type" from "I want this
+  outcome", and `groups` holds the user's own build names. A spark
+  that belongs to two builds is **one row in two groups**, which
+  separate lists can only express by duplicating it — and a duplicate
+  is a row you can edit in one place and not the other. The group
+  vocabulary is derived from the rows, so a group exists exactly as
+  long as a spark is in it and there is no registry to keep in sync.
+
+  **New rows default to `hunting: true`, and that default lives in the
+  CLIENT.** Adding is a deliberate two-step pick — the spark, then its
+  ★ level (#28's chooser) — which reads as "I want this outcome". The
+  alternative leaves #27's block empty on first use, which reads as
+  broken, and the bit that fills it is one the user has not seen.
+  Filler is one click off at the moment you add it.
+
+  The request model has **no defaults at all**: on a full-replace PUT a
+  default is not a convenience, it is a silent delete — `{"hunting":
+  false}` would erase every build label on the row with no error and no
+  way to tell it happened. The default belongs to whoever is *adding* a
+  spark, which is the client, and living in exactly one place there
+  means flipping it really is one constant.
+
+  **Server-side, not `localStorage`.** It spans devices and it belongs
+  to a user, so it is a row. This shipped briefly as a client store
+  and was reversed before merging: the deciding argument was the
+  API's shape rather than the storage. A server-backed store cannot
+  answer `isWatched()` synchronously, so #28's chooser and #27's
+  block would have been built against a shape that had to change, and
+  built twice. The four view-state stores stay local for the reasons
+  in #32.
+
+  **Three routes, no partial updates.** `GET` lists; `PUT
+  /api/watched-sparks/{kind}/{key}` upserts the row's whole mutable
+  half; `DELETE` removes it and never 404s, because already gone is
+  the outcome the caller wanted. The client's three operations (add,
+  set the bit, set the groups) are all "this is the row I want", so an
+  add that 409'd on an existing row would only make every caller look
+  first. An upsert keeps the existing `id`, so re-hunting an old spark
+  does not move it to the end of the chooser.
+
+  **The row `id` is part of the payload**, because it IS the position:
+  the list orders by it, so a client whose copy predates a row can
+  place the row a PUT hands back instead of appending it and showing an
+  old spark last. And because the upsert is a read-then-insert, two
+  requests for the same `(kind, key)` — a double-clicked control — can
+  both find nothing and both insert; the loser catches the unique
+  violation and applies to the row that now exists, the same way
+  `auth.user_for_email` handles first-sight creation.
+
+  **A full-replace PUT means no mutator may guess the fields it isn't
+  changing.** A row can exist server-side and be missing from the
+  caller's list (another tab, another device, a list fetched before it
+  was added), and guessing there rewrites the user's own choice —
+  `setGroups` assuming `hunting: true` would re-hunt a spark they had
+  deliberately marked as filler. On a miss the client re-reads before
+  writing, and only falls back to the default if the spark really is
+  new.
+
+  **No reconcile pass**, unlike `reconcileFilters`, and `key` is not
+  validated against the factor reference. A watched spark missing from
+  `app/data` is still a legitimate thing to want — the reference is
+  regenerated by hand and can run behind a dump, and #30 already rules
+  that unknown keys are accepted rather than rejected. The asymmetry
+  is deliberate: a filter naming a spark no veteran carries hides the
+  roster with nothing on screen to explain why, and a watched spark
+  nobody carries is *the most useful row on #27's block*. `kind` IS
+  closed, because it decides the proc base rate.
+
+  **Its own router and its own client module** (`app/routers/sparks.py`,
+  `frontend/src/sparks.ts`). Three features read this and only one of
+  them is the designer's blueprint CRUD; on the client, both existing
+  store pairs hold roster-page state and this is read by designer
+  surfaces. Putting it in `filters.ts` would also invite a reconcile
+  pass by proximity.
+
+  **The roster-mark idiom does not fit**, and it is worth writing down
+  so it is not re-asked. Marks are a **fixed vocabulary of server-known
+  ids applied to veterans** — `tag_icons.json`, `MARK_IDS`, keyed by
+  `trained_chara_id`, and the set only changes when the game adds one.
+  Watched sparks are an **open, user-authored set over a 432-entry
+  reference**, keyed by `(kind, key)`. They share the word "favourite"
+  and nothing else; reusing the mark machinery would mean a migration
+  every time a user invents a group name.
+
+- **Alternatives rejected:** *three list-shaped stores split by intent*
+  (favourites / hunting / scoring) — "which of my lists is this in?"
+  becomes a question the user holds in their head, it cannot express a
+  spark in two builds without duplicating it, and the number of builds
+  anyone cares about is not fixed at three. *One undifferentiated
+  list* — rejected for the opposite reason: it collapses "quick to
+  type" into "hunting this", sending every filler white into #27's
+  uncapped block and drowning the rows that block exists for. *A
+  `stars` field on the row* — the list records which sparks you care
+  about, not what level you last typed; the chooser carries the level
+  into the slot document, which is where a level means something. *A
+  `PATCH` beside the `PUT`* — two endpoints and an "absent means
+  unchanged" rule for a two-field object the client already holds.
+
+- **What would change my mind:** groups proving to be the primary axis
+  rather than a filter — if users live in one build at a time and want
+  the whole app scoped to it, an "active group" belongs in the store
+  rather than in each caller's argument. Or `hunting: true` by default
+  filling #27's block with filler in practice.

@@ -1815,3 +1815,145 @@ titles over one afternoon's work.
   (c) Remove Character proving hard to find inside the picker, which
   would argue for the panel affordance after all — the objection to it
   was crowding, not discoverability.
+
+## 32. Multi-user: Access identity and owner-scoped rows
+
+Issue #50. The app was single-user by construction; it now has to hold
+more than one. #16 named this trigger in advance — *"the platform
+gaining a second user (blueprints then need an owner column and
+Access-identity scoping)"* — and this is that entry.
+
+- **Requirements:** several people use the app, each seeing only their
+  own roster, blueprints and marks. Nobody writes a login screen. The
+  existing single roster must survive the change. Local `uvicorn
+  --reload`, `pytest` and the Playwright suite have no proxy in front
+  of them and must keep working unchanged.
+
+- **Choice: Cloudflare Access is the login, a verified JWT is the
+  identity, and every owned row carries an `owner_id`.** Access already
+  sits in front of both tiers on the platform plan, so the app writes
+  no passwords, sessions or resets — it reads who the request is from.
+  The `Cf-Access-Jwt-Assertion` JWT is the security boundary: verified
+  against the team's published keys, the configured audience and the
+  team issuer, with RS256 pinned rather than read from the token's own
+  header. **The bare `Cf-Access-Authenticated-User-Email` header is
+  never read** — anything that reaches the origin can set it, and the
+  header is only trustworthy if you already trust the network path,
+  which is the assumption a tunnel is supposed to remove.
+
+  **The `CF_Authorization` cookie is not read either, and that is a
+  security decision rather than an omission.** Access sets it on the
+  browser, so reading it as a fallback would work — and would make
+  every write endpoint forgeable from any other site, because a cookie
+  is an ambient credential. `POST /api/imports` is multipart, which is
+  a CORS-simple request needing no preflight, so a hidden
+  auto-submitting form on an unrelated page would run a logged-in
+  user's **full-replace import** and destroy their roster; the attacker
+  never reads the response and does not need to. The header cannot be
+  set cross-site, so header-only auth is immune without a CSRF token or
+  an Origin allow-list to maintain. The cost is that a request reaching
+  the origin without Access in front of it does not authenticate, which
+  is the correct outcome anyway.
+
+  **One setting decides the mode.** `ACCESS_AUD` set means every
+  request must verify; empty means the app runs as `DEV_USER_EMAIL`.
+  There is deliberately no third state and no fallback *within* the
+  first: a deployment that has an audience refuses a request it can't
+  verify rather than serving somebody's rows. A dev escape hatch that
+  stays reachable in production is not a convenience, it is the
+  bypass.
+
+  **`users` is keyed by email and rows are created on first sight.**
+  That is not open signup — the Access policy is the invite list, and
+  everyone reaching that line already passed it. Service tokens are
+  refused explicitly: they verify perfectly and carry `common_name`
+  instead of `email`, so without the check every machine credential
+  would share one blank-addressed user.
+
+  **Both global uniqueness rules widen to per-owner.**
+  `veterans.trained_chara_id` is the game's id for a horse in one
+  player's save, so two players can legitimately hold the same one;
+  under the old constraint the second importer's upload collided with
+  the first's rows. `veteran_tags` keeps its constraint *name* while
+  gaining the column, because the tag upserts name it in `ON CONFLICT`.
+
+  **Another user's row is a 404, not a 403.** A 403 confirms the id
+  exists, which is a row count the caller didn't have.
+
+  **The existing rows are backfilled onto `DEV_USER_EMAIL`** rather
+  than dropped: they are one person's, that person is the same one the
+  app runs as locally, and a local database therefore keeps working
+  with no further step. A deployment whose Access email differs sets
+  `DEV_USER_EMAIL` to that address before upgrading. The migration
+  adds `owner_id` nullable, backfills, then sets NOT NULL, so the
+  column is never briefly non-nullable against rows with no value.
+
+  **The migration reads that setting through `app.config`, not
+  `os.environ`.** The first cut read the environment directly, to keep
+  a migration from inheriting every future setting's validation — and
+  that was wrong in a way that only showed up under review: the
+  documented place to set it is `backend/.env`, which pydantic-settings
+  loads into `Settings` and never into the process environment, so a
+  configured address would have been silently ignored and every
+  existing row backed onto the default while the app ran as the other
+  one. A roster stranded on an owner nobody can log in as, with no
+  error anywhere. `alembic/env.py` already imports `app.config`, so
+  the coupling I was avoiding was already there.
+
+  **Three routes stay identity-free** — `/api/catalog`, `/api/factors`
+  and `/api/affinity` own no rows and are the same for everybody
+  (#17). A structural test asserts every *other* route declares the
+  dependency, because a new route that forgets it reads across all
+  users and nothing else in the suite would notice.
+
+- **The suite grows a database-backed module, `tests/test_isolation.py`,
+  and that is a real exception to how this repo tests.** Everything
+  else is pure-module (#26, #30) because the routers pass models
+  through and the interesting logic is elsewhere. Here the interesting
+  behaviour *is* the database: a missing owner filter and a global
+  constraint are both invisible at every other layer, and the failure
+  they produce is one user's roster disappearing when another imports.
+  It needs Postgres rather than the aiosqlite path the rest could have
+  used — the models are JSONB and the tag upserts are `ON CONFLICT` —
+  so the backend CI job gains a service container and a second
+  database. `PYTEST_REQUIRE_DB=1` turns "no database, skip" into a
+  failure there, the same way `E2E_REQUIRE_ROSTER` does for the
+  Playwright suite: a security invariant that silently stops running is
+  worse than one never written. The module refuses outright to run
+  against the app's own database, because it drops every table —
+  compared by (host, port, database) rather than by URL string, since
+  the same database has many spellings and every one of them would
+  slip past an equality check.
+
+  **That schema comes from `create_all`, so the same job also runs
+  `alembic upgrade head` and `alembic check`.** The tests assert
+  against the models; a deployment runs the migrations; nothing was
+  comparing the two, which is the CLAUDE.md invariant ("schema changes
+  go through Alembic, not `create_all`") with nothing enforcing it. The
+  e2e job already proved the chain *applies* — these prove it produces
+  the schema the models describe. Verified clean before gating on it:
+  `check` reports no operations on a freshly migrated database, so it
+  fails on real drift rather than on autogenerate's cosmetic opinions.
+
+- **Alternatives rejected:** *building auth in FastAPI* — passwords,
+  sessions and resets are real attack surface for an invite-only app,
+  and Cloudflare already does it (platform DECISIONS #10 settled this;
+  this repo is the first to implement the verifier, and per that
+  repo's rule of three the shared helper waits for a third app).
+  *Trusting the email header* — see above. *Scoping only the designer
+  and leaving the roster shared* — leaves the destructive import in
+  place, which is the actual blocker rather than a nicety. *Deleting
+  the existing rows instead of backfilling* — there is exactly one
+  real roster and it is the reason the app exists. *Syncing the four
+  view-state stores* (`umalab.sort`, `umalab.filters`, the picker's
+  pair, `umalab.designer.open`) — those stay in `localStorage`: a
+  filter set on a phone is arguably wrong on a desktop, and "which
+  blueprint was open" definitely is. #12 floated a settings table
+  subsuming them; still not paying rent.
+
+- **What would change my mind:** public signup, which turns
+  first-sight creation into a real registration flow with everything
+  that implies; a native client that can't ride a browser SSO flow;
+  or a third app on the platform, which is when the JWT verifier
+  moves out of this repo into a shared package instead of being
+  copied a second time.

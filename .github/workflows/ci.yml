@@ -11,6 +11,28 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # The suite is pure-module apart from tests/test_isolation.py, which
+    # asserts that one user's rows are unreachable from another's session.
+    # That needs real Postgres — the models use JSONB and the tag upserts use
+    # ON CONFLICT, so there is no aiosqlite path (DECISIONS.md #32).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: umalab
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ["5432:5432"]
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost/umalab
+      # Turns test_isolation.py's "no database, skip" into a failure. A
+      # security invariant that silently stops running is worse than one
+      # that was never written.
+      PYTEST_REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,6 +41,24 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
       - run: pip install -e ".[dev]"
+      # Separate from the app's database, and the tests refuse to run if the
+      # two URLs ever match — they drop every table.
+      - name: Create the test database
+        run: psql "postgresql://postgres:postgres@localhost/postgres" -c 'CREATE DATABASE umalab_test'
+
+      # The suite builds its schema with Base.metadata.create_all, so it
+      # asserts against the MODELS. These two assert against the MIGRATIONS,
+      # which is what a deployment actually runs: `upgrade head` proves the
+      # chain applies, and `check` fails if autogenerate would still have
+      # something to say — i.e. if models.py and the migrations have drifted.
+      # Without it the CLAUDE.md invariant ("schema changes go through
+      # Alembic, not create_all") has nothing enforcing it, and a divergence
+      # reaches a deployed Pi as a 500 rather than a red run.
+      - name: Migrations match the models
+        run: |
+          alembic upgrade head
+          alembic check
+
       - run: ruff check .
       - run: pyright
       - run: pytest

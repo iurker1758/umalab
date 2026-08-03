@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import affinity, reference
+from ..auth import current_user
 from ..database import get_session
-from ..models import Blueprint
+from ..models import Blueprint, User
 from ..schemas import (
     AffinityIn,
     AffinityOut,
@@ -132,12 +133,33 @@ async def score_affinity(body: AffinityIn):
 
 
 # ---------- blueprints ----------
+# The three routes above own no rows and take no identity: the catalog, the
+# factor list and the affinity formula are the same for everybody, and Access
+# still gates them at the edge. Everything below is per-user (DECISIONS.md
+# #32), and `_owned` is the single place a blueprint id is resolved — a route
+# that used session.get() directly would fetch someone else's row and then
+# have to remember not to touch it.
+
+async def _owned(session: AsyncSession, blueprint_id: int, user: User) -> Blueprint:
+    """This user's blueprint, or 404. Never 403: telling a caller that an id
+    exists but belongs to someone else is a row count they didn't have.
+    """
+    blueprint = await session.get(Blueprint, blueprint_id)
+    if blueprint is None or blueprint.owner_id != user.id:
+        raise HTTPException(404, "no blueprint with that id")
+    return blueprint
+
 
 @router.get("/blueprints", response_model=list[BlueprintOut])
-async def list_blueprints(session: AsyncSession = Depends(get_session)):
+async def list_blueprints(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+):
     return (
         await session.scalars(
-            select(Blueprint).order_by(Blueprint.updated_at.desc(), Blueprint.id.desc())
+            select(Blueprint)
+            .where(Blueprint.owner_id == user.id)
+            .order_by(Blueprint.updated_at.desc(), Blueprint.id.desc())
         )
     ).all()
 
@@ -146,8 +168,10 @@ async def list_blueprints(session: AsyncSession = Depends(get_session)):
 async def create_blueprint(
     body: BlueprintIn,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ):
     blueprint = Blueprint(
+        owner_id=user.id,
         name=body.name,
         slots=body.slots.model_dump(),
     )
@@ -162,11 +186,10 @@ async def update_blueprint(
     blueprint_id: int,
     body: BlueprintIn,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ):
     """Full-document replace — the designer always saves its whole state."""
-    blueprint = await session.get(Blueprint, blueprint_id)
-    if blueprint is None:
-        raise HTTPException(404, "no blueprint with that id")
+    blueprint = await _owned(session, blueprint_id, user)
     blueprint.name = body.name
     blueprint.slots = body.slots.model_dump()
     # Explicit: onupdate only fires when a column changed, but the saved-list
@@ -181,9 +204,8 @@ async def update_blueprint(
 async def delete_blueprint(
     blueprint_id: int,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ):
-    blueprint = await session.get(Blueprint, blueprint_id)
-    if blueprint is None:
-        raise HTTPException(404, "no blueprint with that id")
+    blueprint = await _owned(session, blueprint_id, user)
     await session.delete(blueprint)
     await session.commit()

@@ -18,8 +18,11 @@ and every roster/blueprint/mark row carries an `owner_id`. Shipped: the
 the shared watched-spark list (issue #39) — a `watched_sparks` table plus
 `GET`/`PUT`/`DELETE` under `/api/watched-sparks` and an async client module,
 with no UI of its own (DECISIONS.md #33). That closes #50. The design-pass
-queue (#41 → #45+#29 → #28 → #27) resumes next; #28 and #27 are the two
-features that consume the watched list.
+queue (#41 → #45+#29 → #28 → #27) has since delivered #28 — spark entry is a
+popout browser with your favourites on top, replacing the inline search and
+reversing #30's "an add-one affordance, not a browser" in writing
+(DECISIONS.md #35). It is the watched list's first consumer; **#27 is next**
+and is the second.
 
 Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation

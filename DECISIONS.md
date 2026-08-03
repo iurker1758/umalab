@@ -1589,6 +1589,13 @@ Keep adding entries as the build evolves. This file is the interview.
   choosing BETWEEN kinds rather than reading your own, and where race
   and scenario sparks share wording with skills.
 
+  **Superseded by #35:** the search is now a popout that browses all 432,
+  favourites first. This entry's "an add-one affordance, not a browser"
+  is reversed there, deliberately and in writing — it was the right
+  reading of an undifferentiated list under every panel, and the wrong
+  one once the list is behind a button and headed by the sparks you use.
+  The ranking below survives the move unchanged.
+
   That search shows 8 matches, **ranked by where the query lands in the
   name** and then alphabetically — deliberately not in the order the
   reference arrives. `GET /api/factors` serves them sorted by (kind,
@@ -1689,8 +1696,11 @@ Keep adding entries as the build evolves. This file is the interview.
   composition rule these ARE constants, so a retune would invalidate the
   numbers without touching the shape); hand entry proving too tedious to
   bother with, which would push toward pulling a member's sparks from
-  the roster by character rather than typing them (the search is
-  deliberately minimal — it is an "add one" affordance, not a browser);
+  the roster by character rather than typing them — **this is what
+  happened**, and #35 answered it with a browser rather than a roster
+  pull, the parenthetical that stood here ("the search is deliberately
+  minimal — an 'add one' affordance, not a browser") being exactly what
+  that entry reverses;
   blue sparks turning out to be worth showing after all, which would
   need the ranking to survive five rows that never move; anyone reading
   "est." as a formality, which would mean the hedge needs to be louder
@@ -2346,3 +2356,191 @@ reorder anything.
   worse than a hidden row (the table is a readout today, which is what
   makes the clip safe); or browser find jumping to text inside the clip
   proving to be a real nuisance rather than a theoretical one.
+
+## 35. Spark entry is a popout browser, with favourites on top
+
+Issue #28, the first consumer of the watched-spark store #33 shipped
+with no UI. It replaces the inline search, and it reverses #30 in
+writing.
+
+- **Requirements:** hand entry was search-only — type into "Add a
+  Spark…" on an ancestor's Sparks tab and pick from up to eight ranked
+  matches. That control works perfectly if you already know a name and
+  not at all if you are browsing: typing `s` returned **8 of 309**
+  matches and a line reading "301 more — keep typing to narrow", which
+  is the app honestly admitting it cannot answer the question. The
+  432-entry reference holds four kinds, several of which share wording
+  with skills, and nothing on screen let you see what existed. Entry
+  also has to carry the ★ level now (#34), so the chooser is picking two
+  things, not one. And whatever it does with favourites must not make
+  #27's uncapped watched block fill with filler.
+
+- **Choice: one full-width `Add a Spark` button on the panel, opening a
+  popout that lists all 432 with your favourites first.** The popout is
+  the filter panel's own `Choose Umas` / `Choose Sparks` idiom —
+  `.uma-popout`, `role="dialog"`, backdrop dismissed on `mousedown`,
+  Escape to close — rather than a fourth way of showing a list.
+
+  **It REPLACES the inline search rather than sitting beside it.** The
+  popout carries a search box of its own, so keeping both would not be
+  "browse or type", it would be the same search, the same ★ picker and
+  the same `Added` marker rendered in two places, drifting. What
+  removing the inline box actually costs is one click to open, paid once
+  per node rather than once per spark — the popout stays open across
+  adds — and the proc table being behind the overlay while you type.
+  That second cost is real and is accepted: #34 already ruled an
+  ancestor's table a readout consulted after the decision, and the level
+  no longer lives in it, so there is nothing there you steer by while
+  adding.
+
+  **This reverses #30's "an add-one affordance, not a browser",
+  knowingly**, and #30 now says so at both places it made the claim.
+  That objection was to 432 undifferentiated rows under every ancestor
+  panel, and it was correct about that. Two things defeat it: the list
+  is behind a button, so it costs no panel height at all; and
+  favourites mean the handful you actually use is at the top, with the
+  long tail only needing to be reachable. #30's own "what would change
+  my mind" named this outcome — hand entry proving too tedious — and
+  guessed the answer would be a roster pull. It was a browser.
+
+  **Favouriting and adding are different acts, and neither writes the
+  other.** Each row carries a ☆ toggle AND three add buttons.
+  Auto-favouriting on add would send every filler white typed onto a
+  grandparent into #27's uncapped block, which is verbatim the failure
+  #33 lists under what would change its mind. It would also move the
+  row out from under the pointer that just clicked it, as favourites
+  sort to the top — the failure #34 spent an entry closing, arriving by
+  another route. And a node edit is local, owned by the autosave, while
+  a favourite is a round-trip: coupled, a spark add fails because a
+  `PUT` did. So favouriting writes `{hunting: true, groups: []}` and
+  touches no blueprint; adding writes `{kind, key, stars}` to the slot
+  and touches no watched row, existing or otherwise.
+
+  **The hunting bit is in the chooser**, on its own line, on watched
+  rows only. #33 puts filler "one click off at the moment you add it",
+  and this is that moment — without it, a favourite created here could
+  not be marked filler from anywhere until #27 ships. Its own line
+  because the row already carries a star, a kind tag, a name and three
+  buttons, and a fifth control on one line takes the width the names
+  need at 358px. **Groups are deliberately not here**: nothing writes
+  them yet, the vocabulary is derived from the rows (#33), so deferring
+  costs nothing and a group editor is a bigger control than this row.
+
+  **Which sparks sit in the Favourites section is snapshotted when the
+  popout opens.** The live list still drives every ★ and every Hunting
+  pill; only the ordering is frozen. Without it, favouriting a row lifts
+  it out of its kind section and the add buttons you were reaching for
+  are somewhere else. The popout remounts on every open, so a favourite
+  leads the list the next time you look — which is soon.
+
+  **A favourite appears in the Favourites section and nowhere else.**
+  Rendering it in its kind section too is the same spark twice on one
+  surface, which is the duplication #45 deleted the held list to remove;
+  here it would read as "which of these two rows did I already star".
+  The snapshot is what decides, so nothing vanishes from under the
+  pointer either.
+
+  **The kind tag stays**, against #30 cutting it from the proc tables.
+  There, colour carried it and the word said the same thing a third
+  time. Here you are picking BETWEEN kinds, and race and scenario sparks
+  share wording with skills — the tag is part of the identity, not a
+  repetition of it.
+
+  **A failed watched fetch costs an ordering and nothing else.** The
+  reference is committed and works offline; the favourites are server
+  state behind Access, and a chooser that could not be browsed because a
+  list of favourites did not load would be the failure doing the most
+  damage. On a rejection the Favourites section is absent, all four
+  kinds are still browsable, every add button still works, and the ☆
+  toggles are **disabled rather than hidden** — a control that vanishes
+  leaves nothing to explain itself. The reason is said inside the
+  popout, not as a page toast: the popout covers the toast, and a
+  load-time toast about favourites would fire for everyone whose list is
+  simply empty. Writes are non-optimistic — `sparks.ts` returns the list
+  the server ended up with, so the star only moves once the row exists —
+  and a failed write says so in the same place. `watchedFailed` is a
+  flag beside the list rather than inferred from an empty one, because a
+  user with no favourites and a user whose fetch failed hold the same
+  array.
+
+  **Search behaviour, one rule for every section:** the query filters,
+  the sections and their order never change, sections with no hits
+  disappear, and hits rank by where the query lands in the name then
+  alphabetically — a no-op with no query, the reference arriving sorted
+  by `(kind, name)`. That is #30's ranking, kept: capping the served
+  order directly is what returned eight race sparks and buried every
+  white match. Nothing is capped here, so the ranking only decides what
+  you read first — and the "N more" line is gone with the cap that
+  produced it. The box is **sticky**, so a query stays reachable while
+  you scroll past 432 rows; that is the difference between a browser and
+  a list you have to leave to re-query.
+
+  **Browse sections in `SPARK_TYPE_ORDER`** — Green, Race, White,
+  Scenario — the same order the spark tables group by, now exported from
+  `procs.ts` so the order you pick in and the order you read in are one
+  constant. Not whites-first despite whites being 256 of the 432: the
+  sections are headed and nothing is hidden, so the reader scrolls
+  rather than losing rows off a cap, which is the bias #30 caught and it
+  does not apply to an uncapped list.
+
+  **A watched spark the reference cannot name is still offered**, as
+  `Unknown (key)` — the same degradation the tables use. #33 accepts
+  keys `app/data` does not know, because the reference is regenerated by
+  hand and can run behind a dump, and its kind is what decides the base
+  rate.
+
+  **Locked and pulled nodes offer no entry at all**, unchanged from
+  #28's roster-pull rule: the button renders only where the old search
+  did.
+
+  **Measured, at both widths.** The trigger is 267px in the 301px
+  desktop sidebar with no overflow. The popout is fixed and centred, so
+  the sidebar's width does not constrain it: **520px on desktop, 358px
+  at a 390px viewport**, neither producing a horizontal page scroll nor
+  a row past the popout edge. Names **wrap and are never ellipsised**
+  (#34's rule for the table's names, and the `○` distinguishing a
+  skill's two grades is the last thing on the line): all 432 fit one
+  line at 520px; at 358px **89.1% fit one line, 47 take two, none takes
+  three, and none is clipped**. Add buttons measure 31×25px and the ☆
+  26×23px, both at the thumb size #34 set. The Hunting pill's line break
+  is on a wrapper, not the button — a flex basis of 100% IS the button's
+  width, so it stretched across the row and then past it by its own
+  indent, which is what the screenshot caught.
+
+- **Alternatives rejected:** *an inline list rather than a popout* —
+  this is #30's objection restated, and it still stands: 432 rows under
+  every ancestor panel is panel height spent on a list nobody reads,
+  favourites or not, and it would push the map off a 390px screen
+  entirely. The popout costs zero height when closed. *Keeping the
+  inline search beside it* — see above; the popout has a search box, so
+  this buys a second copy of one surface rather than a second mode.
+  *Favourites as a separate store from the watched list* — #33 settled
+  this: one row with a `hunting` bit expresses "quick to type" and
+  "breeding for this" without asking the user which list a spark is in,
+  and this issue is the consumer that would have had to answer that
+  question on every row. *Reusing the roster-mark idiom*
+  (`tag_icons.json`, `MARK_IDS`), which #28 asks about directly — it
+  does not fit, for the reason #33 already wrote down: marks are a fixed
+  vocabulary of server-known ids applied to veterans by
+  `trained_chara_id`, changing only when the game adds one; watched
+  sparks are an open, user-authored set over a 432-entry reference keyed
+  by `(kind, key)`. They share the word "favourite" and nothing else,
+  and reusing the mark machinery would mean a migration every time a
+  user invents a group name. *Adding a spark also favouriting it* — see
+  above; it is the shortest path to #27's block being useless. *A
+  `stars` field on the watched row* — #33's rejection, and this entry is
+  why it was right: the list records which sparks you care about, and
+  the chooser carries the level into the slot document, which is where a
+  level means something. *Collapsible kind sections* — five disclosure
+  controls to solve a scroll, on a list whose sections are already
+  headed and whose search reaches everything.
+
+- **What would change my mind:** the popout's modality proving to cost
+  more than the inline search did — if entering a member's sparks turns
+  out to mean opening, adding, closing and checking the table on a loop,
+  the table wants to be visible and the chooser wants to be a panel
+  rather than an overlay. Favourites growing past what one scroll can
+  hold, which would make the Favourites section want the grouping #33's
+  `groups` field already stores. Or the 432 rows measuring badly on a
+  real phone — they render eagerly today, which is fine at this size and
+  is the first thing to revisit if the reference grows.

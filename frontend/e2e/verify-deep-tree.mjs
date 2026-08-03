@@ -82,6 +82,14 @@ const postJson = async (path, body) => {
 
 const catalog = await getJson("/api/catalog");
 const baselineIds = new Set((await getJson("/api/blueprints")).map((b) => b.id));
+// The watched sparks this run favourites, tracked at creation rather than
+// diffed at the end — a `(kind, key)` this run touched may also be one you
+// already had, and a diff can't tell "I added this" from "it was already
+// there and I flipped its bit". Anything already watched is left alone.
+const baselineWatched = new Set(
+  (await getJson("/api/watched-sparks")).map((w) => `${w.kind}:${w.key}`)
+);
+const watchedOwned = new Set();
 // Optional: the roster is the pull's source, and an empty one is a legitimate
 // state (nobody has imported a dump). CI seeds tests/fixtures/roster.json so
 // the roster section always runs there; locally it runs against whatever you
@@ -789,11 +797,30 @@ try {
   // data alone.
   // The level is chosen on the match itself, so an add names both the spark
   // and its ★ — there is no "lands at 1★, then correct it" step to drive.
+  //
+  // Entry is a POPOUT as of #35, not an inline search: the panel carries one
+  // "Add a Spark" button and the box, the browse sections and the ★ picker
+  // live behind it. The box keeps the aria-label the inline one had, so only
+  // the open and the dismiss are new here.
+  const openChooser = async (label) => {
+    if ((await page.locator(".spark-popout").count()) === 0) {
+      await page.locator(".focus .spark-open").click();
+      await page.waitForSelector(`.spark-popout input[aria-label="${label} spark search"]`);
+    }
+  };
+  const closeChooser = async () => {
+    if ((await page.locator(".spark-popout").count()) > 0) {
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".spark-popout", { state: "detached" });
+    }
+  };
   const addSpark = async (label, ref, stars = 1) => {
-    await page.locator(`input[aria-label="${label} spark search"]`).fill(ref.name);
+    await openChooser(label);
+    await page.locator(`.spark-popout input[aria-label="${label} spark search"]`).fill(ref.name);
     await page
       .locator(`.spark-matches button[data-spark="${ref.kind}:${ref.key}"][data-stars="${stars}"]`)
       .click();
+    await closeChooser();
   };
   const added = [];
   for (const kind of ["white", "unique", "race", "scenario"]) {
@@ -960,12 +987,60 @@ try {
     ));
   // A held spark answers its own search instead of vanishing from it —
   // typing a correct name and getting an empty box reads as "no such spark".
-  await page.locator('input[aria-label="G1-1 spark search"]').fill(spare.name);
+  await openChooser("G1-1");
+  await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(spare.name);
   check("searching a spark you already hold says so, rather than nothing",
-    (await until(async () => (await page.locator(".focus .spark-held").count()) === 1)) &&
-    (await page.locator(".focus .spark-matches li", { hasText: spare.name })
+    (await until(async () => (await page.locator(".spark-held").count()) === 1)) &&
+    (await page.locator(".spark-matches li", { hasText: spare.name })
       .locator(".seg").count()) === 0);
-  await page.locator('input[aria-label="G1-1 spark search"]').fill("");
+  // Favouriting is a separate control from adding, and adding never writes
+  // one: a filler white typed onto every node must not reach #27's uncapped
+  // watched block (DECISIONS.md #35).
+  check("and adding a spark did not favourite it",
+    (await page.locator(`.spark-fav[aria-label="Favourite ${spare.name}"]`)
+      .getAttribute("aria-pressed")) === "false");
+
+  // ---------- favourites ----------
+  // Server state behind Access, unlike everything else this tab writes — so
+  // it is read back from the API, and the row is tracked for cleanup at
+  // creation rather than diffed at the end.
+  //
+  // Deliberately NOT a spark you already watch: the control is a toggle, so
+  // running this against an existing favourite would delete one of yours and
+  // then assert on the wrong direction. 432 factors, so there is always one.
+  const favTarget = factorRef.find(
+    (f) => !baselineWatched.has(`${f.kind}:${f.key}`)
+  );
+  await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(favTarget.name);
+  await page.locator(`.spark-fav[aria-label="Favourite ${favTarget.name}"]`).first().click();
+  await page.waitForSelector(`.spark-hunt[aria-label="Hunting ${favTarget.name}"]`);
+  watchedOwned.add(`${favTarget.kind}:${favTarget.key}`);
+  const watchedRow = async () =>
+    (await getJson("/api/watched-sparks")).find(
+      (w) => w.kind === favTarget.kind && w.key === favTarget.key
+    );
+  // #33 defaults a new row to hunting, and the default lives in the CLIENT —
+  // so this is a check on the chooser, not on the route.
+  check("favouriting writes a watched row, hunted by default",
+    (await watchedRow())?.hunting === true);
+  // "Filler you keep handy to type" is the case the bit exists for, and #33
+  // puts it "one click off at the moment you add it" — which is here.
+  await page.locator(`.spark-hunt[aria-label="Hunting ${favTarget.name}"]`).click();
+  check("and one click marks it filler rather than removing it",
+    await until(async () => {
+      const row = await watchedRow();
+      return row !== undefined && row.hunting === false;
+    }));
+  await closeChooser();
+  // Favourites lift to their own section on the next open — and appear there
+  // ONLY, never also in their kind's section: the same spark twice on one
+  // surface is the duplication #45 deleted the held list to remove.
+  await openChooser("G1-1");
+  check("a favourite leads the chooser on the next open, and only once",
+    (await page.locator(".spark-popout .spark-group").first().textContent()) === "Favourites" &&
+    (await page.locator(`.spark-popout .spark-fav[aria-label="Favourite ${favTarget.name}"]`)
+      .count()) === 1);
+  await closeChooser();
   // Guarded: clicking unconditionally after a failed `until` aborts the run
   // and skips every assertion below it.
   if (withSpare) {
@@ -1101,15 +1176,20 @@ try {
   // thing you hadn't decided yet.
   await selectNode("Grandparent 1-2");
   await openTab("Sparks");
-  await page.locator('input[aria-label="G1-2 spark search"]').fill(pickOf("white").name);
+  await openChooser("G1-2");
+  await page.locator('.spark-popout input[aria-label="G1-2 spark search"]').fill(pickOf("white").name);
+  await closeChooser();
   await selectNode("Grandparent 2-1");
   check("an uncast ancestor still offers spark entry",
-    (await page.locator('input[aria-label="G2-1 spark search"]').count()) === 1);
-  // The box is per node: an abandoned query must not follow you, or its
-  // leftover matches would add the spark to the wrong member.
+    (await page.locator(".focus .spark-open").count()) === 1);
+  // The chooser is per node, and remounts on every open: an abandoned query
+  // must not follow you, or its leftover matches would add the spark to the
+  // wrong member.
+  await openChooser("G2-1");
   check("and an abandoned search doesn't follow you there",
-    (await page.locator('input[aria-label="G2-1 spark search"]').inputValue()) === "" &&
-    (await page.locator(".focus .spark-matches").count()) === 0);
+    (await page.locator('.spark-popout input[aria-label="G2-1 spark search"]').inputValue()) === "" &&
+    (await page.locator(".spark-popout .spark-group").count()) > 0);
+  await closeChooser();
   await selectNode("Trainee");
 
   // ---------- the trainee's table folds by height ----------
@@ -2211,6 +2291,18 @@ try {
     }
   } catch (e) {
     console.log(`  cleanup: FAILED to restore (${e}) — check for leftover "${bpName}" rows`);
+  }
+  // The favourites this run created, by the ids it tracked at creation —
+  // never "everything watched that wasn't there before", which would delete a
+  // spark you starred in another tab mid-run.
+  try {
+    for (const id of watchedOwned) {
+      const [kind, key] = id.split(":");
+      await fetch(`${BASE}/api/watched-sparks/${kind}/${key}`, { method: "DELETE" });
+      console.log(`  cleanup: unwatched ${id}`);
+    }
+  } catch (e) {
+    console.log(`  cleanup: FAILED to unwatch (${e}) — check /api/watched-sparks`);
   }
 }
 console.log(`\n${pass} passed, ${fail} failed`);

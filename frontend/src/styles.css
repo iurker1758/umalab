@@ -620,23 +620,60 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-more { width: 100%; margin-top: 0.45rem; padding: 0.32rem; font-size: 0.78rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #223040; border-radius: 5px; opacity: 0.8; cursor: pointer; }
 .proc-more:hover { opacity: 1; background: #1d2b3a; }
 
-/* Hand entry: a search that only lists matches once you type — 400-odd
-   factors under every panel is not a browser. The held list that used to sit
-   above it is gone: the sparks are in the table, with their levels
-   (DECISIONS.md #34). */
+/* Hand entry: one button on the panel, and a popout that browses all 432
+   factors with your favourites at the top (DECISIONS.md #35, reversing #30's
+   "an add-one affordance, not a browser"). The held list that used to sit
+   here is gone: the sparks are in the table, with their levels (#34). */
 .spark-add { margin-top: 0.7rem; }
-.spark-search { width: 100%; padding: 0.3rem 0.45rem; font-size: 0.82rem; color: inherit; background: #121820; border: 1px solid #253040; border-radius: 5px; }
+/* Full width, so it reads as the panel's own action rather than a chip in a
+   row — it is the only way to add a spark, and at 301px there is nothing to
+   sit beside it. */
+.spark-open { width: 100%; padding: 0.36rem; font-size: 0.82rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; cursor: pointer; opacity: 0.85; }
+.spark-open:hover { opacity: 1; background: #1d2b3a; }
+/* Sections inside the popout: Favourites, then the four kinds in the order
+   the spark tables group by. A heading rather than a tab strip — the list
+   scrolls, so a reader passes them all, and five tabs would hide four of
+   them. */
+.spark-group { margin: 0.7rem 0 0.25rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.55; }
+.spark-group:first-of-type { margin-top: 0.55rem; }
+/* Said inside the popout, not as a page toast: the popout covers the toast,
+   and both messages are only true of a control in here. */
+.spark-note { margin: 0.4rem 0 0; font-size: 0.78rem; opacity: 0.65; }
+.spark-note-bad { color: #ff9f9f; opacity: 0.9; }
 /* A match is a name and three add buttons, one per level: you choose the ★ at
    the moment you choose the spark, which is when you know it, and a 3★ takes
    one click instead of pick-then-correct. The row's own level control went
    away with it, so nothing in the table can move a row (DECISIONS.md #34). */
-.spark-matches { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-/* The card look is scoped away from `.spark-more`: that line is a hint, not
-   an addable row, and giving it the same background and hover made it read as
-   one more thing to click. */
-.spark-matches li:not(.spark-more) { display: flex; align-items: center; gap: 0.4rem; padding: 0.16rem 0.2rem 0.16rem 0.45rem; background: #16202c; border-radius: 4px; }
-.spark-matches li:not(.spark-more):hover { background: #1d2b3a; }
-.spark-hit { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; }
+.spark-matches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+/* `wrap` is what puts the Hunting pill on its own line: the row already
+   carries a star, a kind tag, a name and three buttons, and at 358px — the
+   popout on a 390px phone — a fifth control on the line takes the width the
+   names need. Same idiom as `.white-row` in the filter panel. */
+.spark-matches li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; padding: 0.16rem 0.2rem 0.16rem 0.3rem; background: #16202c; border-radius: 4px; }
+.spark-matches li:hover { background: #1d2b3a; }
+/* Favouriting, and it is NOT what adding does — see SparkChooser. Sized for a
+   thumb like the add buttons beside it. */
+.spark-fav { flex: none; width: 26px; padding: 0.3rem 0; font-size: 0.85rem; line-height: 1; color: inherit; background: transparent; border: 0; opacity: 0.35; cursor: pointer; }
+.spark-fav:hover:not(:disabled) { opacity: 0.8; }
+.spark-fav.active { color: #ffd257; opacity: 1; }
+.spark-fav:disabled { opacity: 0.15; cursor: default; }
+/* "I want this outcome" vs "keep this handy to type" (#33). Only on a watched
+   row, and always on its own line: the wrapper takes `flex-basis: 100%` and
+   the button sits inside it at its own width. The break can't go on the
+   button itself — a flex basis of 100% IS its width, so it stretched to the
+   row and then past it, by the width of its own indent. Indented to the
+   name's edge so it reads as belonging to the row above rather than as a
+   heading for the next one. */
+.spark-hunt-line { flex-basis: 100%; padding: 0 0 0.16rem 26px; }
+.spark-hunt { background: #1a2027; border: 1px dashed #3a4250; border-radius: 999px; color: inherit; font-size: 0.68rem; padding: 0.2rem 0.55rem; opacity: 0.6; cursor: pointer; }
+.spark-hunt.active { border-style: solid; border-color: #b58a2a; background: #3a3122; opacity: 1; }
+.spark-hunt:disabled { cursor: default; }
+/* WRAPS, never ellipsised. The inline search this replaced could clip a name
+   because it only ever showed eight you had already half-typed; a browser
+   cannot, and the character that would go first is the ○ distinguishing a
+   skill's two grades — it is the last thing on the line (#34 rules the same
+   for the table's own names). */
+.spark-hit { flex: 1; min-width: 0; font-size: 0.82rem; }
 .spark-matches .seg-group { flex: none; }
 /* Sized for a thumb, not for the row: these three are the only way to add a
    spark now that the name is not itself a button, and at 0.1rem of padding
@@ -646,9 +683,16 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .spark-matches .seg:hover { opacity: 1; background: #1e3a5f; }
 /* A held spark answers its own search rather than vanishing from it. */
 .spark-held { flex: none; font-size: 0.7rem; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.5; }
-/* Says the list was cut. Not a button — narrowing the query is the action,
-   and a "show more" would rebuild the browser the cap exists to avoid. */
-.spark-more { padding: 0.28rem 0.45rem; font-size: 0.76rem; opacity: 0.5; }
+/* The popout is a browser, so its rows scroll under a sticky search box
+   rather than being capped — the "N more — keep typing to narrow" line the
+   inline search needed is gone with the cap that produced it. */
+.spark-popout { padding-top: 0; }
+/* The box stays reachable while you scroll 432 rows past it, which is the
+   difference between a browser and a list you have to leave to re-query. The
+   band is a wrapper rather than the input itself: full-bleeding the input
+   would stretch its own border and radius across the popout. */
+.spark-search-band { position: sticky; top: 0; z-index: 1; margin: 0 -0.9rem; padding: 0.9rem 0.9rem 0.2rem; background: #141a21; }
+.spark-search-band .uma-search { margin-bottom: 0; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */

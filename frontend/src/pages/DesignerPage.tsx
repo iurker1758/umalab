@@ -21,7 +21,9 @@ import {
   type PinkSpark,
   type SlotFactor,
   type Veteran,
+  type WatchedSpark,
 } from "../api";
+import { loadWatched } from "../sparks";
 import { FocusPanel } from "../components/FocusPanel";
 import { CopyIcon, TrashIcon } from "../components/icons";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
@@ -148,6 +150,16 @@ export function DesignerPage({
   // stored sparks as "Unknown (key)", but every proc estimate reads the
   // design and keeps working.
   const [factorRefs, setFactorRefs] = useState<FactorRef[]>([]);
+  // The sparks this user has favourited (#33). Fetched beside the reference
+  // and the saved list, and allowed to fail on its own: the reference is
+  // committed and works offline, the favourites are server state behind
+  // Access, so a chooser that couldn't be browsed because a list of
+  // favourites didn't load would be the failure doing the most damage.
+  const [watched, setWatched] = useState<WatchedSpark[]>([]);
+  // Whether that fetch REJECTED, which an empty list can't say — a user with
+  // no favourites yet and a user whose fetch failed hold the same array, and
+  // only one of them has a reason to see the controls disabled.
+  const [watchedFailed, setWatchedFailed] = useState(false);
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
@@ -381,14 +393,21 @@ export function DesignerPage({
     // out of it.
     let cancelled = false;
     void (async () => {
-      const [cat, bps, factors] = await Promise.allSettled([
+      const [cat, bps, factors, watch] = await Promise.allSettled([
         api.catalog(),
         api.blueprints(),
         api.factors(),
+        loadWatched(),
       ]);
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
       if (factors.status === "fulfilled") setFactorRefs(factors.value);
+      if (watch.status === "fulfilled") setWatched(watch.value);
+      // No toast for this one, unlike the reference below: the chooser is the
+      // only thing that reads it, and it says so itself at the moment you open
+      // it. A page-load toast about favourites would fire for everyone whose
+      // list is simply empty of consequence.
+      else setWatchedFailed(true);
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
@@ -979,10 +998,13 @@ export function DesignerPage({
             affinityFailed={shownScoreFailed}
             affinityPending={affinityPending}
             factorRefs={factorRefs}
+            watched={watched}
+            watchedFailed={watchedFailed}
             onOpenPicker={setPickerFor}
             onClear={clearSlot}
             onSetSpark={setSpark}
             onSetFactors={setFactors}
+            onWatched={setWatched}
           />
         </div>
       </div>

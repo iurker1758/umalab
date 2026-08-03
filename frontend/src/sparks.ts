@@ -73,7 +73,8 @@ export function loadWatched(store: string = WATCHED_SPARK_STORE): WatchedSpark[]
 }
 
 // Paired with loadWatched so both ends of the key sit together. writeStore
-// owns the quota/private-window judgement for every persisted preference.
+// owns the quota/private-window judgement for all five preference stores
+// that came before this one.
 export function saveWatched(
   watched: WatchedSpark[],
   store: string = WATCHED_SPARK_STORE

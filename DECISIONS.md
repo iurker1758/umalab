@@ -1856,10 +1856,13 @@ be built against the same list instead of each inventing one.
 
   **Client-side, through the same shape validation `loadFilters` and
   `loadSortPref` use, and written through `writeStore`** — which
-  already owns the quota/private-window judgement for the app's four
-  preference stores; a fifth copy is a fifth place to get it wrong.
-  This is a preference, not a document: nothing about it needs to
-  outlive the browser more than the four already there do.
+  already owns the quota/private-window judgement for the five
+  preference stores that came before it (`umalab.sort`,
+  `umalab.filters`, the picker's pair, and `umalab.designer.open`; #39
+  counts four, missing the last). A sixth copy of that judgement is a
+  sixth place to get it wrong. This is a preference, not a document:
+  nothing about it needs to outlive the browser more than the five
+  already there do.
 
   **No reconcile pass**, unlike `reconcileFilters`. A watched spark
   missing from `app/data` is still a legitimate thing to want — the

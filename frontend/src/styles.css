@@ -492,8 +492,8 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* A grandparent's single link, named rather than tabulated. */
 .aff-caption { opacity: 0.65; font-size: 0.82rem; }
 
-/* The focus panel's Details/Procs switch. Present on every node that can
-   hold sparks, score or no score — Procs is where they are typed, not only
+/* The focus panel's Details/Sparks switch. Present on every node that can
+   hold sparks, score or no score — Sparks is where they are typed, not only
    where they are read. The look comes from `.seg-group`/`.seg`, the app's
    standard segmented control; local rules only stretch it to the panel's
    full width — two halves, the way the tree-half switch splits its bar. */
@@ -515,10 +515,41 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* Ancestor tables only — the trainee's roll-up carries no star level. */
 .proc-stars { font-size: 0.75rem; opacity: 0.85; }
 .proc-empty { opacity: 0.55; }
+/* The column headers ARE the sort control (DECISIONS.md #34). A segmented
+   pill under the Details/Sparks pill read as a second row of tabs; this costs
+   no height, adds no label, and puts each order on the column that carries it
+   — kind is what the Spark column's colour says, chance is the number itself.
+   The dimming moves from the cell to the button, because a `th` at 45%
+   opacity caps everything inside it and the active header has to be able to
+   come back up. */
+.proc-table th.proc-th-sort { opacity: 1; }
+.proc-h { width: 100%; padding: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: inherit; color: inherit; background: none; border: 0; opacity: 0.45; cursor: pointer; }
+.proc-h:hover { opacity: 0.8; }
+.proc-th-sort:not([aria-sort="none"]) .proc-h { opacity: 0.85; }
+/* Drawn, not written: the label in the DOM stays exactly "Spark" and
+   "Est. Per Run", and `aria-sort` is what announces the state. */
+.proc-th-sort:not([aria-sort="none"]) .proc-h::after { content: " ▾"; }
+/* The level column, on editable ancestor tables only: the ★ glyphs every row
+   shows, and the ✕ every row but the pink's carries. Shrink-to-fit, so the
+   names keep every pixel it doesn't need — which is most of them, the level
+   being a readout here rather than the three-button control it briefly was
+   (DECISIONS.md #34). */
+.proc-level { width: 1%; white-space: nowrap; text-align: right; }
+/* Both sized the same and both always present, so the ★ end at one x down
+   the column whether or not the row can be dropped. */
+.proc-drop, .proc-drop-blank { display: inline-block; width: 1.05rem; margin-left: 0.3rem; vertical-align: middle; }
+.proc-drop { padding: 0; font-size: 0.9rem; line-height: 1; color: inherit; background: none; border: 0; opacity: 0.45; cursor: pointer; }
+.proc-drop:hover { opacity: 1; color: #ff8a80; }
 /* The chance column carries a bar, so it needs real width — the spark names
    ellipsize, the numbers don't. */
 .proc-table th.proc-chance { text-align: right; }
 .proc-chance { width: 36%; }
+/* Where the row also carries the ★ control, the bar gives up 8% so the names
+   keep a second line instead of a third — measured at 390px: 36% left the
+   longest name (36 chars) on three lines and three more on two, 28% puts the
+   table back at the wrap profile it had before the control moved in. The bar
+   still runs 93px, which holds a full "100.0%" with room to read the fill. */
+.proc-table-edit .proc-chance { width: 28%; }
 /* Bar, filled 0–100 absolutely (see ChanceBar), with the number riding on the
    track rather than on the fill — at these rates most fills are too short to
    hold a label, and a number that jumps between inside and outside its bar as
@@ -554,23 +585,67 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-kind-race { background: #3a3122; color: #ffd257; }
 .proc-kind-scenario { background: #2a2440; color: #b9a0ff; }
 
-/* Reveals the ranked tail of the trainee's table. Full width so it reads as
-   the end of the list rather than an action on the last row. */
+/* The trainee's table is folded by HEIGHT, not by row count (DECISIONS.md
+   #34): every row is rendered in whatever order the sort put them, and this
+   shows the top 24rem of it. A row cap had to select its twelve by chance and
+   could then be re-sorted, so the button promised an append and delivered an
+   interleave; a clip selects nothing.
+
+   The last visible row is cut THROUGH rather than snapped to its edge, and
+   the mask fades it out — a block ending on a clean row reads as a finished
+   list, which is the misreading the fold has to avoid. No scroll region: #30
+   ruled that out (a nested scroller inside a scrolling page traps touch and
+   defeats skimming), so the content is clipped or whole, never scrolled. */
+/* `clip`, not `hidden`, and on BOTH states. `hidden` makes a scroll
+   container: find-in-page will happily scroll a match into view inside it,
+   which pushes the header and the top rows permanently out of a box that
+   offers the user no way to scroll back (measured — 187px, header 177px above
+   the box). `clip` cannot scroll at all. Applying it in both states also
+   keeps margin collapsing identical either side of the fold: with the clip
+   only on `.proc-clipped`, the table's 0.6rem top margin collapsed with the
+   tab bar's when open and not when folded, so toggling moved the first row
+   8px (measured). */
+/* The one place the fold's height is written. TraineeProcs reads it back off
+   this custom property to decide whether anything is hidden, so the clip and
+   the button can't disagree. */
+.proc-clip { --proc-clip: 24rem; overflow: clip; }
+.proc-clipped {
+  max-height: var(--proc-clip);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+}
+
+/* Lifts the clip off the trainee's table. Full width so it reads as the end
+   of the list rather than an action on the last row. */
 .proc-more { width: 100%; margin-top: 0.45rem; padding: 0.32rem; font-size: 0.78rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #223040; border-radius: 5px; opacity: 0.8; cursor: pointer; }
 .proc-more:hover { opacity: 1; background: #1d2b3a; }
 
-/* Hand entry: a held list, then a search that only lists matches once you
-   type — 400-odd factors under every panel is not a browser. */
+/* Hand entry: a search that only lists matches once you type — 400-odd
+   factors under every panel is not a browser. The held list that used to sit
+   above it is gone: the sparks are in the table, with their levels
+   (DECISIONS.md #34). */
 .spark-add { margin-top: 0.7rem; }
-.spark-list { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
-.spark-list li { display: flex; align-items: center; gap: 0.35rem; }
-.spark-add-name { flex: 1; font-size: 0.82rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spark-drop { padding: 0 0.3rem; font-size: 0.95rem; line-height: 1; color: inherit; background: none; border: 0; opacity: 0.45; cursor: pointer; }
-.spark-drop:hover { opacity: 1; color: #ff8a80; }
 .spark-search { width: 100%; padding: 0.3rem 0.45rem; font-size: 0.82rem; color: inherit; background: #121820; border: 1px solid #253040; border-radius: 5px; }
+/* A match is a name and three add buttons, one per level: you choose the ★ at
+   the moment you choose the spark, which is when you know it, and a 3★ takes
+   one click instead of pick-then-correct. The row's own level control went
+   away with it, so nothing in the table can move a row (DECISIONS.md #34). */
 .spark-matches { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.spark-matches button { width: 100%; padding: 0.28rem 0.45rem; text-align: left; font-size: 0.82rem; color: inherit; background: #16202c; border: 0; border-radius: 4px; cursor: pointer; }
-.spark-matches button:hover { background: #1d2b3a; }
+/* The card look is scoped away from `.spark-more`: that line is a hint, not
+   an addable row, and giving it the same background and hover made it read as
+   one more thing to click. */
+.spark-matches li:not(.spark-more) { display: flex; align-items: center; gap: 0.4rem; padding: 0.16rem 0.2rem 0.16rem 0.45rem; background: #16202c; border-radius: 4px; }
+.spark-matches li:not(.spark-more):hover { background: #1d2b3a; }
+.spark-hit { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; }
+.spark-matches .seg-group { flex: none; }
+/* Sized for a thumb, not for the row: these three are the only way to add a
+   spark now that the name is not itself a button, and at 0.1rem of padding
+   they measured 25×18px — under the 24px minimum, on a PWA that is used on a
+   phone. */
+.spark-matches .seg { padding: 0.45rem 0.5rem; font-size: 0.68rem; line-height: 1; cursor: pointer; }
+.spark-matches .seg:hover { opacity: 1; background: #1e3a5f; }
+/* A held spark answers its own search rather than vanishing from it. */
+.spark-held { flex: none; font-size: 0.7rem; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.5; }
 /* Says the list was cut. Not a button — narrowing the query is the action,
    and a "show more" would rebuild the browser the cap exists to avoid. */
 .spark-more { padding: 0.28rem 0.45rem; font-size: 0.76rem; opacity: 0.5; }

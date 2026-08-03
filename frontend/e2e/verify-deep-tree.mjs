@@ -535,10 +535,10 @@ try {
   // tab is there anyway: it is where sparks are TYPED, and gating it on a
   // score once made the only editor vanish whenever the design was too sparse
   // to score or the backend blipped. It opens onto an honest empty state.
-  check("the Procs tab exists before there's a score to roll against",
+  check("the Sparks tab exists before there's a score to roll against",
     (await page.locator(".focus-tab").count()) === 2 &&
     (await page.locator(".proc-table").count()) === 0);
-  await page.locator(".focus-tabs .focus-tab", { hasText: "Procs" }).click();
+  await page.locator(".focus-tabs .focus-tab", { hasText: "Sparks" }).click();
   check("and says the tree is empty rather than showing numbers",
     (await page.locator(".focus .proc-table").count()) === 0 &&
     (await page.locator(".focus .focus-note", { hasText: "No sparks on the ancestors" }).count()) === 1);
@@ -751,12 +751,14 @@ try {
   // Every node that can hold sparks is tabbed, scored or not. A deep spark
   // slot is the one that isn't: the document gives generations 3-4 a pink and
   // nothing else, so there is no spark list to type and no tab to hold one.
-  check("a named ancestor has a Procs tab", (await page.locator(".focus-tab").count()) === 2);
+  check("a named ancestor has a Sparks tab", (await page.locator(".focus-tab").count()) === 2);
+  check("the tabs are Details and Sparks — the label names the sheet, not the estimate",
+    (await page.locator(".focus-tab").allTextContents()).join(",") === "Details,Sparks");
   await selectNode("Sparks 3-1");
   check("a deep spark slot has no tabs", (await page.locator(".focus-tab").count()) === 0);
 
   await selectNode("Grandparent 1-1");
-  await openTab("Procs");
+  await openTab("Sparks");
   const rowFor = (name) => page.locator(".focus .proc-table tbody tr", { hasText: name });
   const chanceOf = (name) => rowFor(name).locator(".proc-chance").textContent();
   const g11Pink = procPct("pink", 3, expectedAff.g11_affinity);
@@ -764,8 +766,17 @@ try {
     (await page.locator(".focus .proc-table tbody tr").allTextContents()).length === 1 &&
     (await chanceOf("Mile")) === pct(g11Pink));
   check("named as the spark it is, with its stars and its kind's colour",
-    (await rowFor("Mile").locator(".proc-name").textContent())?.trim() === "Mile ★★★" &&
+    (await rowFor("Mile").locator(".proc-name").textContent())?.trim() === "Mile" &&
+    (await rowFor("Mile").locator(".proc-level").textContent())?.trim() === "★★★" &&
     (await rowFor("Mile").getAttribute("class"))?.includes("proc-row-pink"));
+  // The pink's editor is on Details, beside the letters it bumps at career
+  // start — so on an editable table it holds the level column with the same
+  // glyphs a locked table uses, rather than leaving a gap where every other
+  // row has a control. A value where the others are controls, not a missing
+  // control.
+  check("the pink row shows its level, and offers no ✕ — its editor is on Details",
+    (await rowFor("Mile").locator(".proc-drop").count()) === 0 &&
+    (await rowFor("Mile").locator(".proc-level .proc-stars").count()) === 1);
   // The tab is where the other kinds are typed: they feed nothing but these
   // numbers, unlike the pink, which bumps the letters on the Details tab.
   // Driven off the served reference rather than hardcoded names, the same way
@@ -776,9 +787,13 @@ try {
   // contain a skill's name as a substring, so a `hasText` match would click a
   // different kind's row and every assertion below would fail on reference
   // data alone.
-  const addSpark = async (label, ref) => {
+  // The level is chosen on the match itself, so an add names both the spark
+  // and its ★ — there is no "lands at 1★, then correct it" step to drive.
+  const addSpark = async (label, ref, stars = 1) => {
     await page.locator(`input[aria-label="${label} spark search"]`).fill(ref.name);
-    await page.locator(`.spark-matches button[data-spark="${ref.kind}:${ref.key}"]`).click();
+    await page
+      .locator(`.spark-matches button[data-spark="${ref.kind}:${ref.key}"][data-stars="${stars}"]`)
+      .click();
   };
   const added = [];
   for (const kind of ["white", "unique", "race", "scenario"]) {
@@ -809,21 +824,161 @@ try {
   // width they need, and the tables never repeat it as a word.
   check("no spelled-out kind in the spark column",
     (await page.locator(".focus .proc-table .proc-kind").count()) === 0);
-  // Ranked like the trainee's, and for the same reason: which of these is
-  // actually likely to land is the question either table answers.
-  check("an ancestor's own sparks are ordered by chance",
-    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+  // GROUPED by kind here, not ranked — the two tables default differently on
+  // purpose. At one member's single affinity every chance is
+  // min(base × (1 + aff/100), 100), a pure function of (kind, ★), so the
+  // ranking is a tie for most of its length and the order inside a tie says
+  // nothing. Pink → Green → Race → White → Scenario, the game's own grouping.
+  const rowKinds = () =>
+    page.locator(".focus .proc-table tbody tr").evaluateAll((rows) =>
+      rows.map((r) => [...r.classList].find((c) => c.startsWith("proc-row-"))?.slice(9))
+    );
+  const rowNames = async () =>
+    (await page.locator(".focus .proc-table tbody tr .proc-name").allTextContents())
+      .map((t) => t.trim());
+  const rankedDown = () =>
+    page.locator(".focus .proc-table tbody").evaluate((el) => {
       const nums = [...el.querySelectorAll(".proc-pct")].map((n) =>
         Number(n.textContent.replace("%", ""))
       );
       return nums.length > 3 && nums.every((n, i) => i === 0 || nums[i - 1] >= n);
+    });
+  // The column headers are the sort control — no separate switch to drive.
+  const setSort = (by) =>
+    page.locator(`.focus .proc-table th.${by === "kind" ? "proc-name" : "proc-chance"} .proc-h`)
+      .click();
+  const sortedBy = () =>
+    page.locator(".focus .proc-table thead").evaluate((el) => {
+      const on = [...el.querySelectorAll("th.proc-th-sort")].find(
+        (th) => th.getAttribute("aria-sort") !== "none"
+      );
+      return on === undefined ? null : `${on.textContent.trim()}:${on.getAttribute("aria-sort")}`;
+    });
+  check("an ancestor's table groups by kind by default",
+    (await rowKinds()).join(",") === "pink,unique,race,white,scenario" &&
+    (await sortedBy()) === "Spark:other");
+  await setSort("chance");
+  check("and ranks by chance when its own header is clicked",
+    (await rankedDown()) &&
+    (await rowKinds()).join(",") !== "pink,unique,race,white,scenario" &&
+    (await sortedBy()) === "Est. Per Run:descending");
+  await setSort("kind");
+  // The headers carry the sort, so the tab keeps a single control on it.
+  // Asserted against what's RENDERED between the tabs and the table — not
+  // against the class names of the pill this replaced, which would report
+  // "no second switch" however many switches a later change put there under
+  // different classes. The panel's own `seg-group`s are the ★ pickers, one
+  // per non-pink row, and the tab bar itself.
+  check("and the sort lives on the headers, with no second switch under the tabs",
+    (await sortedBy()) === "Spark:other" &&
+    (await page.locator(".focus .proc-table thead .proc-h").count()) === 2 &&
+    // The tab bar is the panel's only segmented control now: the row's ★
+    // picker is gone, and the match rows' only appear while searching.
+    (await page.locator(".focus .seg-group").count()) === 1 &&
+    (await page.locator(".focus").evaluate((f) => {
+      const tabs = f.querySelector(".focus-tabs");
+      const table = f.querySelector(".proc-table");
+      // Every element sat between the tab bar and the table, whatever it is.
+      const between = [];
+      for (let n = tabs.nextElementSibling; n && n !== table; n = n.nextElementSibling) {
+        between.push(n.className);
+      }
+      return between.length;
+    })) === 0);
+  // NOTHING in the table can change a chance: the level is chosen on the
+  // match row when the spark is added, and the table only shows it. That is
+  // what lets both sorts stay live on a table you edit — a control that moved
+  // a number would re-rank its own row out from under the pointer that
+  // clicked it. Measured before this landed: index 2 → 0 while GROUPED (the
+  // sort that was supposed to make it safe), 4 → 0 while ranked, with a
+  // different spark left under the cursor both times.
+  check("no control in the table can move a row",
+    (await page.locator(".focus .proc-table .seg").count()) === 0 &&
+    (await page.locator(".focus .proc-table button").count()) ===
+      (await page.locator(".focus .proc-table .proc-drop").count()) +
+        (await page.locator(".focus .proc-table thead .proc-h").count()));
+  // Every row carries the level it was added at, glyphs on the pink and the
+  // rest alike — the ✕ is the only thing that differs.
+  check("every row shows the level it was added at",
+    (await page.locator(".focus .proc-table tbody .proc-stars").count()) === added.length + 1 &&
+    (await page.locator(".focus .proc-drop").count()) === added.length);
+  // The pink carries no ✕, so its row has to hold that space anyway — or her
+  // ★ run to the cell edge and the column stops lining up. Geometry, because
+  // this is a claim about where things are drawn.
+  check("the ★ line up down the column, ✕ or no ✕",
+    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+      const rights = [...el.querySelectorAll(".proc-stars")].map(
+        (s) => Math.round(s.getBoundingClientRect().right)
+      );
+      return rights.length > 1 && Math.max(...rights) - Math.min(...rights) <= 1;
     }));
-  // Stars are editable in place, and the estimate follows.
-  const white = pickOf("white");
-  await page.locator(`[aria-label="${white.name} stars"] button`, { hasText: "3★" }).click();
-  check("raising one to 3★ raises its estimate",
-    await until(async () =>
-      (await chanceOf(white.name)) === pct(procPct("white", 3, expectedAff.g11_affinity))));
+  //
+  // The table IS the editor: one row per spark, not a ranked row plus a
+  // second entry in a differently-ordered held list 30px below it. Counted
+  // over what the panel RENDERS — a check for an absent class name passes
+  // whatever is on screen, and the class it named was deleted in the same
+  // change that added the check.
+  check("each spark is on the panel exactly once",
+    (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1 &&
+    (await Promise.all(
+      added.map(async (r) =>
+        (await page.locator(".focus", { hasText: r.name }).count()) > 0 &&
+        (await page.locator(`.focus :text-is("${r.name.replace(/"/g, '\\"')}")`).count()) === 1
+      )
+    )).every(Boolean) &&
+    // One ✕ per non-pink spark, and none anywhere but the rows.
+    (await page.locator(".focus .proc-drop").count()) === added.length &&
+    (await page.locator(".focus .proc-table .proc-drop").count()) === added.length);
+  // ✕ removes it, from the same row that set its level — the held list's only
+  // other job. Added and dropped again so the design is left as it was.
+  const spare = factorRef.filter((f) => f.kind === "white").at(-1);
+  // A DIFFERENT white from the one already held, or the add is a no-op and
+  // the ✕ below waits 30s for a row that never appeared — a timeout on an
+  // unrelated-looking selector instead of a readable failure here.
+  check("the fixture has a second white to add and drop",
+    spare !== undefined && spare.key !== pickOf("white").key);
+  // Added at 3★ from the match row — one click, no land-at-1★-then-correct.
+  // The level the button names is the level the estimate is computed from,
+  // which is the whole of what moved out of the table.
+  await addSpark("G1-1", spare, 3);
+  const withSpare = await until(async () =>
+    (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 2);
+  check("a spark added at 3★ from the match row lands at 3★",
+    withSpare &&
+    (await until(async () =>
+      (await chanceOf(spare.name)) === pct(procPct("white", 3, expectedAff.g11_affinity)))) &&
+    (await rowFor(spare.name).locator(".proc-level .proc-stars").textContent()) === "★★★");
+  // And SURVIVES the save, which the rendered glyphs can't tell you: the
+  // level is the one field whose default (1★) would mask a drop on the way
+  // to the server, so a non-default one has to be read back from the API.
+  await settled();
+  const withThree = (await (await fetch(`${BASE}/api/blueprints`)).json())
+    .find((b) => b.name === bpName);
+  check("and the 3★ reaches the server as a 3★",
+    (withThree?.slots.named[3]?.factors ?? []).some(
+      (f) => f.kind === spare.kind && f.key === spare.key && f.stars === 3
+    ));
+  // A held spark answers its own search instead of vanishing from it —
+  // typing a correct name and getting an empty box reads as "no such spark".
+  await page.locator('input[aria-label="G1-1 spark search"]').fill(spare.name);
+  check("searching a spark you already hold says so, rather than nothing",
+    (await until(async () => (await page.locator(".focus .spark-held").count()) === 1)) &&
+    (await page.locator(".focus .spark-matches li", { hasText: spare.name })
+      .locator(".seg").count()) === 0);
+  await page.locator('input[aria-label="G1-1 spark search"]').fill("");
+  // Guarded: clicking unconditionally after a failed `until` aborts the run
+  // and skips every assertion below it.
+  if (withSpare) {
+    // By id, not by the displayed name: the reference holds two distinct
+    // whites both called "Pressure", so a name-matched ✕ is ambiguous the
+    // moment a member carries both.
+    await page
+      .locator(`.focus .proc-row[data-spark="${spare.kind}:${spare.key}"] .proc-drop`)
+      .click();
+    check("and ✕ drops it from that row too",
+      await until(async () =>
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1));
+  }
 
   // The trainee's tab answers a different question: what she is likely to
   // come out with, per spark rather than per member.
@@ -917,11 +1072,12 @@ try {
   await settled();
   const withSparks = (await (await fetch(`${BASE}/api/blueprints`)).json())
     .find((b) => b.name === bpName);
-  check("typed sparks are persisted with their kind on the member carrying them",
+  // All four at 1★, the level their match buttons were clicked at — the 3★
+  // path is covered above by the spare, which was added at 3★ and dropped
+  // again so this snapshot stays the four.
+  check("typed sparks are persisted with their kind and level on the member carrying them",
     JSON.stringify(withSparks?.slots.named[3]?.factors ?? []) ===
-      JSON.stringify(
-        added.map((r) => ({ kind: r.kind, key: r.key, stars: r.kind === "white" ? 3 : 1 }))
-      ));
+      JSON.stringify(added.map((r) => ({ kind: r.kind, key: r.key, stars: 1 }))));
   check("and land on nobody else",
     [0, 1, 2, 4, 5, 6].every(
       (i) => (withSparks?.slots.named[i]?.factors ?? []).length === 0));
@@ -944,7 +1100,7 @@ try {
   // works. Gating the tab on a score once put the only editor behind the
   // thing you hadn't decided yet.
   await selectNode("Grandparent 1-2");
-  await openTab("Procs");
+  await openTab("Sparks");
   await page.locator('input[aria-label="G1-2 spark search"]').fill(pickOf("white").name);
   await selectNode("Grandparent 2-1");
   check("an uncast ancestor still offers spark entry",
@@ -956,52 +1112,110 @@ try {
     (await page.locator(".focus .spark-matches").count()) === 0);
   await selectNode("Trainee");
 
-  // ---------- the trainee's table caps its tail ----------
+  // ---------- the trainee's table folds by height ----------
   // A fully bred tree runs to ~34 distinct sparks, which is a panel 1.2x the
-  // viewport. The cast so far is under the cap, so this loads P2 up until it
-  // is over — everything above ran against the short list, which is the
-  // common case and must keep showing every row.
-  await openTab("Procs");
-  const shortList = await page.locator(".focus .proc-table tbody tr").count();
-  check(`no cap while the list is short (${shortList} rows)`,
-    shortList < 12 && (await page.locator(".focus .proc-more").count()) === 0);
+  // viewport. The fold is a 24rem CLIP, not a row count: every row is
+  // rendered in the sort's own order and the panel shows the top of it, so
+  // the fold selects nothing and cannot disagree with the sort. The cast so
+  // far is short enough to fit, so this loads P2 up until it doesn't.
+  await openTab("Sparks");
+  // The clip is measured, so read the geometry rather than counting rows.
+  const clipState = () =>
+    page.locator(".focus .proc-clip").evaluate((el) => ({
+      clipped: el.classList.contains("proc-clipped"),
+      shown: Math.round(el.getBoundingClientRect().height),
+      full: Math.round(el.querySelector(".proc-table").getBoundingClientRect().height),
+      faded: getComputedStyle(el).maskImage !== "none" ||
+        getComputedStyle(el).webkitMaskImage !== "none",
+      // The clip is specified in rem, so the expected height is too.
+      // Read from the same custom property the CSS clips by and the panel
+      // measures against, so a change to the height can't leave this suite
+      // asserting the old one.
+      clip: (() => {
+        const raw = getComputedStyle(el).getPropertyValue("--proc-clip").trim();
+        const root = parseFloat(getComputedStyle(document.documentElement).fontSize);
+        return raw.endsWith("rem") ? parseFloat(raw) * root : parseFloat(raw);
+      })(),
+    }));
+  const shortList = await page.locator(".focus .proc-row").count();
+  const short = await clipState();
+  check(`nothing is folded while the table fits (${shortList} rows, ${short.full}px)`,
+    !short.clipped && !short.faded &&
+    (await page.locator(".focus .proc-more").count()) === 0);
   // Distinct from anything already in the tree — slice past the white G1-1
   // holds, so every one of these adds a row rather than joining one.
   const filler = factorRef.filter((f) => f.kind === "white").slice(1, 10);
   await selectNode("Parent 2");
-  await openTab("Procs");
+  await openTab("Sparks");
   for (const f of filler) {
     await addSpark("P2", f);
   }
   await selectNode("Trainee");
-  await openTab("Procs");
+  await openTab("Sparks");
   const allRows = shortList + filler.length;
-  check(`${allRows} sparks show as 12, with the rest behind a button`,
-    await until(async () =>
-      (await page.locator(".focus .proc-table tbody tr").count()) === 12 &&
-      (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}`));
-  // What's hidden is always the least likely — the cap is only honest because
-  // the table is ranked, so the twelve shown must be the twelve best.
-  check("the rows kept are the twelve highest chances",
-    await page.locator(".focus .proc-table tbody").evaluate((el) => {
+  check(`${allRows} sparks fold to a 24rem clip, with the rest behind a button`,
+    await until(async () => {
+      const c = await clipState();
+      return c.clipped && c.shown < c.full &&
+        Math.abs(c.shown - c.clip) <= 1 &&
+        (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}`;
+    }));
+  // Nothing is SELECTED — that is the whole point of folding by height. Every
+  // row is in the DOM, in the sort's order; the clip only decides how much of
+  // it you can see, so what's out of sight is always the bottom of the order
+  // you chose rather than a slice taken on a different rule.
+  check("every row is rendered, folded or not",
+    (await page.locator(".focus .proc-row").count()) === allRows);
+  check("and the cut row is faded rather than ending on a clean edge",
+    (await clipState()).faded);
+  // The trainee's ranking is real — hers is a union across carriers at
+  // DIFFERENT affinities, so the ties that flatten an ancestor's table don't
+  // happen here — which is why this table alone defaults to it.
+  const rankedAll = await rowNames();
+  check("the trainee's table defaults to ranking, where the ranking is real",
+    (await sortedBy()) === "Est. Per Run:descending" &&
+    (await page.locator(".focus .proc-table tbody").evaluate((el) => {
       const nums = [...el.querySelectorAll(".proc-pct")].map((n) =>
         Number(n.textContent.replace("%", ""))
       );
       return nums.every((n, i) => i === 0 || nums[i - 1] >= n);
+    })));
+  await setSort("kind");
+  // The sort and the fold no longer interact: grouping reorders every row and
+  // the clip still shows the top of whatever that order is.
+  check("grouping reorders the whole table, and the fold still holds",
+    (await page.locator(".focus .proc-row").count()) === allRows &&
+    (await rowNames()).sort().join(",") === [...rankedAll].sort().join(",") &&
+    (await clipState()).clipped &&
+    (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}` &&
+    (await page.locator(".focus .proc-table tbody tr").evaluateAll((rows) => {
+      const order = ["pink", "unique", "race", "white", "scenario"];
+      const ks = rows.map((r) =>
+        order.indexOf([...r.classList].find((c) => c.startsWith("proc-row-")).slice(9))
+      );
+      return ks.every((k, i) => i === 0 || ks[i - 1] <= k);
+    })));
+  await setSort("chance");
+  await page.locator(".focus .proc-more").click();
+  check("the button lifts the clip, and the fade with it",
+    await until(async () => {
+      const c = await clipState();
+      return !c.clipped && !c.faded && c.shown === c.full &&
+        (await page.locator(".focus .proc-more").textContent()) === "Show Fewer";
     }));
   await page.locator(".focus .proc-more").click();
-  check("and the button reveals every one of them",
-    (await page.locator(".focus .proc-table tbody tr").count()) === allRows &&
-    (await page.locator(".focus .proc-more").textContent()) === "Show Fewer");
-  await page.locator(".focus .proc-more").click();
-  check("and folds them away again",
-    (await page.locator(".focus .proc-table tbody tr").count()) === 12);
-  // Ancestor tables are never capped: a member holds a handful, and hiding
+  check("and folds it away again",
+    await until(async () => {
+      const c = await clipState();
+      return c.clipped && c.shown < c.full;
+    }));
+  // Ancestor tables are never folded: a member holds a handful, and hiding
   // rows on the tab where you EDIT them would hide what you just typed.
   await selectNode("Parent 2");
-  await openTab("Procs");
+  await openTab("Sparks");
   check("an ancestor's own table shows everything she carries",
-    (await page.locator(".focus .proc-table tbody tr").count()) === filler.length &&
+    (await page.locator(".focus .proc-row").count()) === filler.length &&
+    (await page.locator(".focus .proc-clip").count()) === 0 &&
     (await page.locator(".focus .proc-more").count()) === 0);
   await selectNode("Trainee");
   await openTab("Details");
@@ -1642,6 +1856,22 @@ try {
     check("and no spark editor — that pink is the horse's own",
       (await page.locator('select[aria-label="Grandparent 1-1 pink spark"]').count()) === 0 &&
       (await page.locator(".spark-static").count()) === 1);
+    // Her sparks tab is the same two-column readout it always was: the ★
+    // control folded into the row on nodes you BUILD, and a pulled branch
+    // builds nothing. No level column, no ✕, no search box.
+    await page.locator(".focus-tabs .focus-tab", { hasText: "Sparks" }).click();
+    check("her sparks are a readout, with no controls anywhere on the table",
+      (await page.locator(".focus .proc-table tbody tr").count()) > 0 &&
+      (await page.locator(".focus .proc-level").count()) === 0 &&
+      (await page.locator(".focus .proc-drop").count()) === 0 &&
+      (await page.locator(".focus .spark-add").count()) === 0 &&
+      (await page.locator(".focus .proc-table tbody tr").first().locator("td").count()) === 2);
+    // The level still reads on the row, as glyphs in the name cell — the
+    // shape this table has always had.
+    check("and each row still carries the level it was pulled with",
+      (await page.locator(".focus .proc-table tbody .proc-stars").count()) ===
+        (await page.locator(".focus .proc-table tbody tr").count()));
+    await page.locator(".focus-tabs .focus-tab", { hasText: "Details" }).click();
     check("the panel says whose pedigree it is",
       (await page.locator(".focus-note").textContent()).includes("Parent 1"));
     await selectNode("Parent 1");

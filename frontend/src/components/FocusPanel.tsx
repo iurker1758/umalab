@@ -17,7 +17,7 @@ import {
   sparkLocked,
   type Design,
 } from "../blueprint";
-import { sparkId } from "../procs";
+import { sparkId, type SparkSort } from "../procs";
 import { ReplaceIcon, TrashIcon } from "./icons";
 import { AffinityPanel, NodeAffinity } from "./AffinityPanel";
 import { AptitudeTable } from "./AptitudeTable";
@@ -100,6 +100,17 @@ const NodeActions = ({
     </div>
   );
 
+// The tab's id stays `procs` while its label reads "Sparks": the estimate the
+// tab carries is still an inspiration proc, which is what `procs.ts`, the
+// `.proc-*` styles and DECISIONS.md #30's model are all named for. What the
+// rename fixed is the LABEL — the tab is a member's spark sheet, more than
+// half of it entry rather than estimates, and on a pulled ancestor it is a
+// readout you consult after deciding everything (#29).
+//
+// Two tabs now say "spark": Details keeps its PINK SPARK section, and it
+// stays there deliberately — the pink sits beside the ten letters it bumps at
+// career start, which is a real reason and not a filing convenience
+// (DECISIONS.md #26/#30). Don't "tidy" it onto this tab.
 type Tab = "details" | "procs";
 
 // The app's own segmented control, the same `seg-group` the picker's source
@@ -128,7 +139,7 @@ const FocusTabs = ({
         aria-pressed={tab === t}
         onClick={() => onPick(t)}
       >
-        {t === "details" ? "Details" : "Procs"}
+        {t === "details" ? "Details" : "Sparks"}
       </button>
     ))}
   </div>
@@ -180,6 +191,20 @@ export function FocusPanel({
   // — deep slots, and the trainee before anyone is cast — simply render
   // Details and no tab bar.
   const [tab, setTab] = useState<Tab>("details");
+  // Sort order for the spark tables, persisted beside `tab` and for the same
+  // reason — comparing one view between two ancestors is the common move, and
+  // it is a sort you set and see, so it hides nothing (DECISIONS.md #31's
+  // argument for the picker's sort).
+  //
+  // Two states, because the two tables answer different questions and start
+  // from different defaults (DECISIONS.md #34): an ancestor's chances are a
+  // pure function of (kind, ★) at her single affinity, so ranking is a tie for
+  // most of its length and grouping is the only ordering that informs; the
+  // trainee's is a union across carriers at differing affinities, where the
+  // ranking is real. One shared state would have to pick one default and lose
+  // the other.
+  const [ancestorSort, setAncestorSort] = useState<SparkSort>("kind");
+  const [traineeSort, setTraineeSort] = useState<SparkSort>("chance");
   // Keyed by kind AND key, as the sparks themselves are: the kinds number
   // their keys independently, so a bare key would collide across them. Built
   // above the early returns because every branch that can show sparks needs
@@ -306,6 +331,8 @@ export function FocusPanel({
                 sparkNames={sparkNames}
                 factorRefs={factorRefs}
                 locked={false}
+                sort={ancestorSort}
+                onSort={setAncestorSort}
                 onSetFactors={onSetFactors}
               />
             ) : (
@@ -381,7 +408,13 @@ export function FocusPanel({
       <FocusTabs index={index} tab={tab} onPick={setTab} />
       {tab === "procs" ? (
         index === 0 ? (
-          <TraineeProcs design={design} affinity={affinity} sparkNames={sparkNames} />
+          <TraineeProcs
+            design={design}
+            affinity={affinity}
+            sparkNames={sparkNames}
+            sort={traineeSort}
+            onSort={setTraineeSort}
+          />
         ) : (
           <NodeProcs
             design={design}
@@ -390,6 +423,8 @@ export function FocusPanel({
             sparkNames={sparkNames}
             factorRefs={factorRefs}
             locked={pinkFixed}
+            sort={ancestorSort}
+            onSort={setAncestorSort}
             onSetFactors={onSetFactors}
           />
         )

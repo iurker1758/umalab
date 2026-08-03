@@ -182,6 +182,50 @@ export function combineOutlooks(
   );
 }
 
+// ---------- display order ----------
+// How a spark table is ordered on screen. It is also what decides what the
+// trainee's fold hides: that fold is a HEIGHT clip over this order, not a
+// selection taken on chance (#30's row cap, replaced in #34) — so under the
+// kind grouping the rows below the fold are the bottom of the grouping, which
+// can include a high-chance white. What's hidden is the bottom of the order
+// you chose, and no longer "always the least likely".
+export type SparkSort = "chance" | "kind";
+
+// Pink → Green → Race → White → Scenario, the game's own grouping. Not
+// alphabetical and not the reference's (kind, name): that order buries whites
+// behind races, the same bias #30 caught in the search's cap.
+//
+// Numbered from 1, leaving 0 for blue: stat sparks are not a kind the
+// document holds (#30 — they would sit at the top of every ranked table and
+// never move), but when they are added they group ABOVE the pink. Adding
+// `blue` to SPARK_BASE won't compile until it is placed here, which is the
+// point.
+const TYPE_ORDER: Record<SparkType, number> = {
+  pink: 1,
+  unique: 2,
+  race: 3,
+  white: 4,
+  scenario: 5,
+};
+
+// Ties break on the spark id in both modes, so the order is stable across
+// re-scores rather than shuffling when an unrelated node is edited. Nothing
+// in a spark table can change a chance any more — the level is chosen when
+// the spark is added (#34) — so this is about re-scores, not about a row
+// moving under a control.
+export function sortSparks<T extends SparkRef & { chance: number | null }>(
+  rows: readonly T[],
+  sort: SparkSort
+): T[] {
+  const byChance = (a: T, b: T) => (b.chance ?? -1) - (a.chance ?? -1);
+  const byId = (a: T, b: T) => sparkId(a).localeCompare(sparkId(b));
+  return [...rows].sort(
+    sort === "kind"
+      ? (a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || byChance(a, b) || byId(a, b)
+      : (a, b) => byChance(a, b) || byId(a, b)
+  );
+}
+
 // One decimal throughout: the inputs are ★ (three values) and an integer
 // affinity, so more precision would dress a coarse model as a fine one, and
 // less would collapse the 1★ pink range — a 1★ at 0 affinity is 2.0% and at

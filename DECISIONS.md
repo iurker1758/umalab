@@ -3085,7 +3085,8 @@ watches before being trusted.
   `app.config.settings` is a module-level singleton — in-process, env.py
   would read the app's own DATABASE_URL. The concurrency test warms the
   pool before racing, and a second, deterministic guard holds the owner's
-  advisory lock from another transaction, fills the owner to the cap
+  advisory lock from another transaction, waits until the create shows up
+  in pg_locks as a waiter on that lock, fills the owner to the cap
   mid-hold, and asserts the blocked create answers the cap 409 — which
   fails both when the lock is deleted and when it slides below the count
   it protects.
@@ -3093,8 +3094,10 @@ watches before being trusted.
   migrations — closes the drift class more thoroughly, deferred as a
   rework this didn't need. Asserting only "the create blocks" — passes
   with the lock moved below the count; the ordering is the invariant.
-  Invoking `alembic check` from the test — it runs env.py, whose URL is
-  the singleton's.
+  Reading "still running after a timeout" as "waiting on the lock" — a
+  slow connect or a loaded runner also produces it, so the sighting has
+  to be positive. Invoking `alembic check` from the test — it runs
+  env.py, whose URL is the singleton's.
 - **What would change my mind:** the suite moving onto migrations-built
   schema, which retires test_migrations.py whole. Settings becoming
   injectable, which retires the subprocess. The test engine growing pool

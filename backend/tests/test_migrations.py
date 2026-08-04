@@ -39,11 +39,20 @@ import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection
-from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+# Registers the tables on Base.metadata — the comparison below is empty
+# without it, and reaching them through conftest's transitive imports would
+# break the moment a fixture refactor drops one. env.py carries the same
+# import for the same reason.
+from app import models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from app.database import Base
-from tests.conftest import REQUIRE_DB, TEST_DATABASE_URL
+from tests.conftest import (
+    DB_UNREACHABLE,
+    REQUIRE_DB,
+    TEST_DATABASE_URL,
+    reset_public_schema,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -52,7 +61,7 @@ def _drift(connection: Connection) -> list[object]:
     # compare_server_default is OFF by default in alembic (and in CI's
     # `alembic check`), which would let a migration drop a hand-mirrored
     # default — spark_lists.sparks, veterans.win_saddles — while this test
-    # stays green. models.py declares eight; all compare clean.
+    # stays green. models.py declares seven; all compare clean.
     return list(
         compare_metadata(
             MigrationContext.configure(
@@ -68,30 +77,13 @@ async def test_upgrade_head_matches_the_models():
     try:
         try:
             async with engine.begin() as connection:
-                # Whole schema, for conftest's reason: a leftover table from
-                # another branch would fail a targeted drop on its foreign
-                # keys. This also removes alembic_version, so the upgrade
-                # below always runs the full chain from the initial revision.
-                await connection.exec_driver_sql("DROP SCHEMA public CASCADE")
-                await connection.exec_driver_sql("CREATE SCHEMA public")
-        except (OperationalError, InterfaceError, OSError) as e:
+                # Also removes alembic_version, so the upgrade below always
+                # runs the full chain from the initial revision.
+                await reset_public_schema(connection)
+        except DB_UNREACHABLE as e:
             if REQUIRE_DB:
                 raise
             pytest.skip(f"no test database at {TEST_DATABASE_URL}: {e}")
-
-        # The drop and the upgrade are separate connections, so pin the
-        # handoff: a table surviving here (another session writing to the
-        # shared test database mid-run) would otherwise surface as alembic
-        # dying mid-chain on DuplicateTableError — a traceback naming the
-        # initial migration instead of the leftover schema.
-        async with engine.connect() as connection:
-            leftover = (
-                await connection.exec_driver_sql(
-                    "SELECT count(*) FROM information_schema.tables"
-                    " WHERE table_schema = 'public'"
-                )
-            ).scalar()
-        assert leftover == 0, f"{leftover} tables survived the schema drop"
 
         result = await asyncio.to_thread(
             subprocess.run,

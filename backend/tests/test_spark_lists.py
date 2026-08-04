@@ -491,7 +491,7 @@ async def test_concurrent_creates_cannot_exceed_the_cap(
     `test_the_cap_check_runs_under_the_advisory_lock` below.
     """
     a, _ = users
-    for n in range(49):
+    for n in range(MAX_LISTS_PER_OWNER - 1):
         assert (await create(client, a, f"build {n}")).status_code == 201
     async with client(a) as http:
         await asyncio.gather(
@@ -504,60 +504,77 @@ async def test_concurrent_creates_cannot_exceed_the_cap(
             )
         )
     codes = sorted(r.status_code for r in responses)
-    assert codes == [201, 409, 409, 409, 409], codes
-    assert len(await listing(client, a)) == 50
+    assert codes == [201] + [409] * (CONCURRENT_CREATES - 1), codes
+    assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
 
 
 async def test_the_cap_check_runs_under_the_advisory_lock(
     client: Any, users: list[User], sessions: Any
 ):
     """The deterministic guard on the lock, where the race above could still
-    accidentally serialize — this cannot pass by timing.
+    accidentally serialize.
 
     A second transaction holds the owner's advisory lock while a create is
-    fired, fills the owner to the cap, then releases. A create that takes
-    the lock BEFORE counting blocks through all of that and answers the cap
-    409. So this fails if the lock is deleted — the create finishes
-    mid-hold — AND if it slides below the count it protects: the create
-    would count an empty table before blocking, then insert a 51st list on
-    release. Both measured, three runs of three.
-
-    Half a second of "still blocked" is the margin between a create that is
-    waiting and one that is merely slow; the suite's requests finish in
-    milliseconds, and the pool is warmed so none of the window is spent
-    establishing a connection.
+    fired. The create must turn up in pg_locks as a WAITER ON THAT LOCK —
+    a positive sighting, not "still running after a timeout", which a slow
+    connect or a loaded runner produces too. Then the holder fills the
+    owner to the cap and releases: a create that counts under the lock
+    finds a full owner and answers the cap 409. So this fails if the lock
+    is deleted — the create finishes instead of waiting — AND if it slides
+    below the count it protects: the create counted an empty table, so it
+    inserts one list past the cap on release. Both measured, three runs
+    of three.
     """
     a, _ = users
-    async with client(a) as http:
-        # Two concurrent checkouts force two real connections: one for the
-        # holder, one for the create under test.
-        await asyncio.gather(http.get(LISTS), http.get(LISTS))
-        async with sessions() as holder:
-            await holder.execute(select(func.pg_advisory_xact_lock(a.id)))
-            request = asyncio.ensure_future(
-                http.post(LISTS, json={"name": "Front Runner"})
-            )
-            done, _ = await asyncio.wait([request], timeout=0.5)
-            if done:
-                # Retrieved, so a POST that raised reports its own
-                # traceback rather than a missing lock.
-                pytest.fail(
-                    "the create finished while the lock was held: "
-                    f"{request.exception() or request.result()!r}"
-                )
+    async with client(a) as http, sessions() as holder:
+        await holder.execute(select(func.pg_advisory_xact_lock(a.id)))
+        request = asyncio.ensure_future(
+            http.post(LISTS, json={"name": "Front Runner"})
+        )
+        try:
+            # pg_advisory_xact_lock(bigint) files under classid = the
+            # key's high 32 bits (0 for any real user id), objid = the
+            # low 32, objsubid 1.
+            waiting = text(
+                "SELECT count(*) FROM pg_locks"
+                " WHERE locktype = 'advisory' AND classid = 0"
+                " AND objid = :oid AND objsubid = 1 AND NOT granted"
+            ).bindparams(oid=a.id)
+            for _ in range(100):
+                if request.done():
+                    # Retrieved, so a POST that raised reports its own
+                    # traceback rather than a missing lock.
+                    pytest.fail(
+                        "the create finished instead of waiting: "
+                        f"{request.exception() or request.result()!r}"
+                    )
+                if await holder.scalar(waiting):
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                pytest.fail("the create never waited on the owner lock")
             await holder.execute(
                 text(
                     "INSERT INTO spark_lists (owner_id, name)"
-                    " SELECT :o, 'bulk ' || n FROM generate_series(1, :cap) n"
+                    " SELECT :o, 'bulk ' || n"
+                    " FROM generate_series(1, :cap) n"
                 ).bindparams(o=a.id, cap=MAX_LISTS_PER_OWNER)
             )
-            # Commit ends the holder's transaction, which IS the release —
-            # the lock is transaction-scoped. Only now may the create
-            # proceed, and what it must find is a full owner.
+            # Commit ends the holder's transaction, which IS the
+            # release — the lock is transaction-scoped. Only now may
+            # the create proceed, and what it must find is a full
+            # owner.
             await holder.commit()
             response = await asyncio.wait_for(request, timeout=5)
+        finally:
+            # A failure above would otherwise abandon the task to be
+            # torn down with the transport, burying the real error
+            # under "Task exception was never retrieved".
+            if not request.done():
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
     assert response.status_code == 409, response.text
-    assert "50 lists" in response.json()["detail"]
+    assert f"{MAX_LISTS_PER_OWNER} lists" in response.json()["detail"]
     assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
 
 

@@ -284,6 +284,9 @@ export function DesignerPage({
           if (bp.id !== id) {
             setDesign((d) => ({ ...d, id: bp.id }));
             writeOpenId(bp.id);
+            // Ahead of the mirroring effect, as in adopt: the created row
+            // must be visible to the mount effect's fallback guard at once.
+            openRow.current = bp.id;
           }
           setSavedJson(JSON.stringify(body));
         }
@@ -357,6 +360,10 @@ export function DesignerPage({
         setDesign(d);
         setSavedJson(JSON.stringify(bodyOf(d)));
         writeOpenId(bp.id);
+        // Ahead of the mirroring effect, which waits on the commit: the
+        // mount effect's fallback guards on this ref from async
+        // continuations that can run inside that window (issue #71).
+        openRow.current = bp.id;
         setSelected(0);
         // The score belongs to the blueprint you just left. Keyed on the
         // request payload alone it would survive the switch, and the incoming
@@ -426,6 +433,9 @@ export function DesignerPage({
     void (async () => {
       // Read BEFORE the fetches start — see sparkListWrites.
       const writes = sparkListWrites.current;
+      // Also read before: the row the shell handed us, as distinct from one
+      // that gets opened or created while the fetches are in flight.
+      const heldAtMount = openRow.current;
       const [cat, bps, factors, lists] = await Promise.allSettled([
         api.catalog(),
         api.blueprints(),
@@ -454,7 +464,17 @@ export function DesignerPage({
         onError("Couldn't load the spark reference — hand entry won't find anything.");
       }
       if (bps.status !== "fulfilled") return;
-      setSaved(bps.value);
+      // Merged, not replaced: a row created while this fetch was in flight
+      // isn't in the snapshot, and replacing would drop it from the picker.
+      // Rows this page already deleted stay out — the snapshot can predate
+      // the DELETE, and re-listing one offers a dead row whose edits the
+      // 404 recovery deliberately refuses to resurrect. A delete that later
+      // fails restores its own row (see onDelete).
+      const live = bps.value.filter((n) => !deleted.current.has(n.id));
+      setSaved((prev) => [
+        ...prev.filter((b) => bps.value.every((n) => n.id !== b.id)),
+        ...live,
+      ]);
 
       // Open something, always: the design the shell already holds, else the
       // one last open here, else the most recently touched, else a fresh row.
@@ -466,23 +486,40 @@ export function DesignerPage({
       // usable before this fetch lands, and on a slow link people do start
       // designing.
       if (dirtyRef.current) return;
-      const held = design.id === null ? null : bps.value.find((b) => b.id === design.id);
-      if (held !== undefined && held !== null) return;
+      // Nor over a row that moved openRow during the flight — adopted from
+      // the picker, created by the autosave, or a delete mid-replacement.
+      // The ref, not the `design` closure: this continuation runs long after
+      // mount, and a created row postdates the snapshot anyway, so no lookup
+      // below could find it (issue #71).
+      if (openRow.current !== heldAtMount) return;
+      // The shell-held design, if its row still exists — absent means it was
+      // deleted elsewhere, and the fallbacks below find a live one. Checked
+      // against the raw snapshot: an own delete still in flight also lands
+      // here, and returning defers to onDelete's replacement instead of
+      // racing it.
+      if (heldAtMount !== null && bps.value.some((b) => b.id === heldAtMount)) return;
       const lastOpen = readOpenId();
       const target =
-        bps.value.find((b) => b.id === lastOpen) ??
-        [...bps.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+        live.find((b) => b.id === lastOpen) ??
+        [...live].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
       if (target !== undefined) {
         adopt(target);
         return;
       }
       try {
         const bp = await bootstrapBlueprint();
+        if (openRow.current !== null) {
+          // A row opened or created while the create was in flight keeps the
+          // screen and lastOpen; the blank would only be picker clutter that
+          // the next visit might even reopen, so it goes.
+          if (!cancelled) void api.deleteBlueprint(bp.id).catch(() => undefined);
+          return;
+        }
         // Remembered even if we've unmounted: the row exists, so the next
         // visit must reopen it rather than create a second blank one.
         writeOpenId(bp.id);
         if (cancelled) return;
-        setSaved([bp]);
+        setSaved((prev) => (prev.some((b) => b.id === bp.id) ? prev : [bp, ...prev]));
         adopt(bp);
       } catch {
         // Recoverable: with no row, the first edit creates one.
@@ -492,8 +529,7 @@ export function DesignerPage({
     return () => {
       cancelled = true;
     };
-    // Runs once: `design` is read only to notice a shell-held blueprint, and
-    // re-running on every edit would fight the autosave.
+    // Runs once: re-running on every edit would fight the autosave.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onError]);
 
@@ -827,6 +863,7 @@ export function DesignerPage({
     const id = design.id;
     if (id === null) return;
     if (!window.confirm(`Delete "${bodyOf(design).name}"?`)) return;
+    const row = saved.find((b) => b.id === id);
     setBusy(true);
     // Whatever is queued for this row dies with it — including anything the
     // still-dirty design queues while the DELETE is in flight.
@@ -840,8 +877,13 @@ export function DesignerPage({
       await api.deleteBlueprint(id);
     } catch (e) {
       // Still very much alive: let it save again, or the rest of the session
-      // would edit a blueprint nothing writes.
+      // would edit a blueprint nothing writes. Back into the picker too —
+      // the mount fetch's merge drops rows in `deleted`, and this one no
+      // longer is.
       deleted.current.delete(id);
+      if (row !== undefined) {
+        setSaved((prev) => (prev.some((b) => b.id === id) ? prev : [row, ...prev]));
+      }
       onError(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
       setBusy(false);
       return;

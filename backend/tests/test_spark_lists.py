@@ -15,6 +15,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 
 from app.models import User
 
@@ -239,10 +240,11 @@ async def test_duplicates_collapse_keeping_the_first(client: Any, users: list[Us
     assert response.json()["sparks"] == [spark("white", 10), spark("white", 20)]
 
 
-async def test_the_spark_cap_applies_after_dedupe(client: Any, users: list[User]):
-    """A `max_length` on the field would run BEFORE the dedupe validator, so a
-    payload repeating one spark 300 times would 422 on its raw length even
-    though it collapses to one entry."""
+async def test_a_repeated_spark_collapses_rather_than_being_refused(
+    client: Any, users: list[User]
+):
+    """The client sends the whole membership and "already in it" is the state
+    it asked for, so a repeat is a 200."""
     a, _ = users
     list_id = await a_list(client, a)
     response = await patch(client, a, list_id, sparks=[spark("white", 10)] * 300)
@@ -250,11 +252,52 @@ async def test_the_spark_cap_applies_after_dedupe(client: Any, users: list[User]
     assert response.json()["sparks"] == [spark("white", 10)]
 
 
-async def test_too_many_distinct_sparks_are_refused(client: Any, users: list[User]):
+async def test_membership_is_unbounded(client: Any, users: list[User]):
+    """No cap, deliberately. The chooser adds from the factor reference, so
+    the reachable maximum IS the reference size — 432 today and growing every
+    time the game ships skills — and any constant either binds too early or
+    ages into binding too early. An earlier cut used 200 while 256 whites
+    alone could pass it.
+
+    1000 here is well past today's reference precisely to show nothing
+    refuses it."""
     a, _ = users
     list_id = await a_list(client, a)
-    sparks = [spark("white", n) for n in range(201)]
-    assert (await patch(client, a, list_id, sparks=sparks)).status_code == 422
+    sparks = [spark("white", n) for n in range(1000)]
+    response = await patch(client, a, list_id, sparks=sparks)
+    assert response.status_code == 200, response.text
+    assert len(response.json()["sparks"]) == 1000
+
+
+async def test_an_unreadable_entry_costs_that_entry_not_the_response(
+    client: Any, users: list[User], sessions: Any
+):
+    """A JSONB column with no migration path WILL eventually hold something
+    the current model cannot parse — a rolled-back newer client, a hand-fixed
+    row, a kind added later. Raising there loses every list, which is the
+    failure CLAUDE.md records against BlueprintOut.
+
+    Written straight to the column, because the request model correctly
+    refuses these; the read side is what has to be forgiving.
+    """
+    a, _ = users
+    first = await a_list(client, a, "Front Runner")
+    await patch(client, a, first, sparks=[spark("white", 10)])
+    await a_list(client, a, "Medium")
+    async with sessions() as session:
+        await session.execute(
+            text(
+                "UPDATE spark_lists SET sparks = CAST(:s AS jsonb) WHERE id = :i"
+            ).bindparams(
+                s='[{"kind": "white", "key": 10}, {"kind": "blue", "key": 70}]',
+                i=first,
+            )
+        )
+        await session.commit()
+    rows = await listing(client, a)
+    # Both lists still render, and only the unreadable entry is missing.
+    assert [row["name"] for row in rows] == ["Front Runner", "Medium"]
+    assert rows[0]["sparks"] == [spark("white", 10)]
 
 
 async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):

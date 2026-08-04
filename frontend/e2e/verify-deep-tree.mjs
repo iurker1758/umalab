@@ -1139,17 +1139,28 @@ try {
   await page.locator(favStar).click();
   // The popout was remounted by the reopen, so the pill is looked up afresh
   // rather than reusing the locator above.
+  //
+  // BOUNDED AND NON-THROWING, like every other long wait in this file. Bare,
+  // it takes the 30s default and then throws an UNCAUGHT TimeoutError, which
+  // aborts the run and skips the ~1200 lines of designer coverage below —
+  // whenever the create above failed, which is exactly when the guard on
+  // `ourPill` was supposed to have contained the damage to one check.
   const reopenedPill = `.spark-popout .spark-list-pill[data-spark="${favSel}"].active`;
-  await page.waitForSelector(reopenedPill);
-  await page.locator(reopenedPill).first().click();
+  const pillBack = await page
+    .waitForSelector(reopenedPill, { timeout: 5000 })
+    .then(() => true, () => false);
+  check("the list pill comes back lit when the chooser reopens", pillBack);
   // It stays in the Favorites SECTION, not merely somewhere on screen: the
   // frozen membership is the whole point, and a row that fell back to its
   // kind section would have moved under the pointer that just clicked it.
-  check("and emptying its lists leaves the row where it is",
-    (await until(async () => (await ourList())?.sparks.length === 0)) &&
-    (await page.locator(favStar).count()) === 1 &&
-    (await page.locator(".spark-popout .spark-section").first()
-      .locator(`.spark-fav[data-spark="${favSel}"]`).count()) === 1);
+  if (pillBack) {
+    await page.locator(reopenedPill).first().click();
+    check("and emptying its lists leaves the row where it is",
+      (await until(async () => (await ourList())?.sparks.length === 0)) &&
+      (await page.locator(favStar).count()) === 1 &&
+      (await page.locator(".spark-popout .spark-section").first()
+        .locator(`.spark-fav[data-spark="${favSel}"]`).count()) === 1);
+  }
   await closeChooser();
   // Guarded: clicking unconditionally after a failed `until` aborts the run
   // and skips every assertion below it.

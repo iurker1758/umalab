@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
   type FactorRef,
@@ -94,6 +94,14 @@ const greenFilter =
 type Option = { kind: SlotFactorKind; key: number; name: string };
 
 const optionOf = (ref: FactorRef): Option => ref;
+
+/** Whether a failure means "that list is gone", looking THROUGH a
+ *  `PartialWrite` — which wraps the real error and would otherwise hide a 404
+ *  behind its own type. */
+const isMissing = (error: unknown): boolean => {
+  const inner = error instanceof PartialWrite ? error.reason : error;
+  return inner instanceof ApiError && inner.status === 404;
+};
 
 const unknownOption = (spark: SparkRef): Option => ({
   kind: spark.kind,
@@ -192,14 +200,26 @@ function ListPicker({
           type="text"
           aria-label={`New list for ${name}`}
           placeholder="New List…"
+          // Matches `SparkListName`'s bound, so the limit is felt as the
+          // field refusing a 41st character rather than as a save that fails
+          // afterwards. The server still enforces it — this is the same rule
+          // in both places, which is the designer's convention (the tree's
+          // grey-outs mirror `app/schemas.py` while the 422 is what actually
+          // protects the document).
+          maxLength={40}
           value={draft}
           disabled={busy}
           onChange={(e) => setDraft(e.target.value)}
           // Enter submits, because the field is one of a row of controls and
           // reaching for a button after typing a name is the slower half of
           // the interaction.
+          //
+          // `isComposing` guards the IME: confirming a candidate in Japanese
+          // input is an Enter keydown too, and acting on it would create a
+          // list named with the pre-conversion kana — permanently, since
+          // nothing renames or deletes one yet.
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();
             }
@@ -391,6 +411,25 @@ function ChooserPopout({
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
+  // Every control in the popout disables while a write is in flight, which
+  // includes the one the user just activated — and a disabled element cannot
+  // hold focus, so the browser drops it to <body>. For a keyboard user that
+  // means the next Tab restarts from the top of the document, in a popout
+  // with 432 rows. Remembered on the way in, restored on the way out.
+  const focused = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (busy) {
+      focused.current = document.activeElement as HTMLElement | null;
+      return;
+    }
+    const el = focused.current;
+    focused.current = null;
+    // Only if focus actually fell to the body — if the user has moved on
+    // themselves, yanking it back would be worse than leaving it.
+    if (el && el.isConnected && document.activeElement === document.body) {
+      el.focus();
+    }
+  }, [busy]);
   // WHICH sparks sit in the Favorites section, snapshotted for the life of
   // this open. MEMBERSHIP is frozen; the ★ and the picker's pills stay live
   // off the lists. Without the freeze, favoriting a row lifts it out of its kind
@@ -506,11 +545,11 @@ function ChooserPopout({
   const write = async (
     op: () => Promise<SparkList[]>,
     failure: (error: unknown) => string
-  ): Promise<boolean> => {
+  ): Promise<{ ok: true } | { ok: false; error: unknown }> => {
     setBusy(true);
     try {
       sparkLists.onChange(await op());
-      return true;
+      return { ok: true };
     } catch (error) {
       // Half of it landed — adopt that half, or the row exists server-side
       // and nowhere on screen. See sparks.ts PartialWrite.
@@ -520,18 +559,34 @@ function ChooserPopout({
       // FETCH paths, so the reload-on-open guard never fires after a failed
       // WRITE — and without this the dead pill stays on screen and fails
       // identically forever.
-      if (error instanceof ApiError && error.status === 404) sparkLists.onReload();
+      //
+      // `false` so the popout is NOT remounted: the user is mid-interaction,
+      // and rebuilding it here would clear the search they typed and close
+      // the picker they opened to fix the very thing that failed.
+      //
+      // Unwrapped first, because a PartialWrite hides the status: create the
+      // list, have it deleted elsewhere, and the membership PATCH 404s inside
+      // a PartialWrite — which would otherwise be adopted into state as a
+      // permanent phantom pill with no reload to clear it.
+      if (isMissing(error)) sparkLists.onReload(false);
       onError(failure(error));
-      return false;
+      return { ok: false, error };
     } finally {
       setBusy(false);
     }
   };
 
-  // The server's own words for a refusal it can explain, which is every 409
-  // here; anything else is a blip and says so.
+  // The server's own words for a refusal it can explain — 409 for the name
+  // rules, 422 for everything `app/schemas.py` validates. Anything else is a
+  // blip and says so.
+  //
+  // Restricting this to 409 (which it did first) meant a name over 40
+  // characters reported "try again" forever: a permanent refusal, phrased as
+  // a transient one, with the reason sitting unread in the response.
   const detailOr = (error: unknown, fallback: string): string =>
-    error instanceof ApiError && error.status === 409 && error.message !== ""
+    error instanceof ApiError &&
+    (error.status === 409 || error.status === 422) &&
+    error.message !== ""
       ? `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`
       : fallback;
 
@@ -558,14 +613,25 @@ function ChooserPopout({
     // have 50 lists — delete one first". The field keeps the typed name until
     // this resolves true, so a refused name can be corrected rather than
     // retyped.
-    onCreateList: (o: Option, listName: string) =>
-      write(
+    // Resolves "did the NAME get consumed", which is not the same question as
+    // "did the write succeed". On a PartialWrite the list exists under that
+    // name, so keeping the draft would leave the obvious retry — press Add
+    // again — POSTing a name that now 409s against the row created seconds
+    // earlier. The two fixes each worked alone and contradicted each other.
+    onCreateList: async (o: Option, listName: string) => {
+      const result = await write(
         () => createListWith(sparkLists.lists, listName, o.kind, o.key),
         (error) =>
           error instanceof PartialWrite
             ? "Made the list, but couldn't add the spark — click its pill to finish."
             : detailOr(error, "Couldn't make that list — try again.")
-      ),
+      );
+      // A PartialWrite means the list EXISTS under that name — only its
+      // membership failed — so the name is spent and the field must clear.
+      // Keeping it would leave the obvious retry, pressing Add again, POSTing
+      // a name that now 409s against the row created seconds earlier.
+      return result.ok || result.error instanceof PartialWrite;
+    },
   };
 
   return (

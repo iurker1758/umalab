@@ -58,7 +58,12 @@ export type SparkListStore = {
   // says so.
   onChange: (next: SparkList[]) => void;
   onActiveChange: (next: number[]) => void;
-  onReload: () => void;
+  // Re-fetch the lists. `remount: false` replaces them WITHOUT bumping
+  // `epoch`, which the chooser keys its popout on — for the corrective fetch
+  // after a write 404s, where the user is mid-interaction and a remount would
+  // clear their search and close the picker they opened. The default is the
+  // retry-after-failure case, which does want the popout rebuilt.
+  onReload: (remount?: boolean) => void;
 };
 
 const sameSpark = (spark: SparkRef, kind: SlotFactorKind, key: number) =>
@@ -248,6 +253,16 @@ export class PartialWrite extends Error {
  *
  * The reverse order would be worse: a spark added to a list that then failed
  * to be named has nowhere to live.
+ *
+ * `PartialWrite.lists` is built from the `lists` this was CALLED with, so
+ * adopting it replaces the caller's array rather than merging into whatever
+ * the store holds by then — a write that resolved in between would be
+ * overwritten. That is the same property every mutator here has, and it is
+ * the price of pure functions over a caller-held list. It cannot fire from
+ * the chooser: `busy` disables every control in the popout for the whole of
+ * a write, so a second one cannot start. Stated rather than guarded, because
+ * a guard would have to be a merge, and a merge needs an identity for "the
+ * newest version of a list" that the server does not currently give us.
  */
 export async function createListWith(
   lists: SparkList[],

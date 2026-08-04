@@ -3080,11 +3080,20 @@ shape that was being refined in the wrong direction.
   optimistic writes, which this deliberately does not do: a pill lights
   once the row says so.
 
-  **The migration backfills rather than drops.** Unlike `groups`, which
-  no UI ever wrote, the star is wired up and real rows exist — so each
-  owner's `watched_sparks` become one list named `Favorites` in `id`
-  order. Splitting it up afterwards is a rename and some picker clicks;
-  losing it is not recoverable.
+  **The migration drops `watched_sparks` without carrying its rows.**
+  Jason's call: the app is unreleased, everything in it is test data he can
+  recreate, and there is no deployment to protect. He said so early and it
+  was argued past on the grounds that a backfill was already written —
+  which was true and beside the point, since the table turned out to be
+  empty anyway.
+
+  What the backfill cost, before it was deleted: a chunking pass to keep
+  each migrated list under the spark cap, a bug in that pass which landed
+  the first chunk exactly AT the cap so it could never accept another
+  spark, and an oversized-key cast that could abort the downgrade partway.
+  Three defects in service of data nobody wanted. If this ever ships and a
+  later migration has to move real rows, write the backfill then, against
+  a cap that cannot bind.
 
   **Last-write-wins is accepted, on the list row.** A membership change
   rewrites the whole array, so two devices editing the same list within
@@ -3147,13 +3156,28 @@ shape that was being refined in the wrong direction.
   arrives by itself rather than as a mistake anyone notices — and with no
   rename UI it is currently unfixable in the app.
 
-  **The backfill chunks at 200.** `watched_sparks` had no per-owner row
-  cap and `spark_lists` has `MAX_SPARKS_PER_LIST`, so an owner with 250
-  stars would have landed in one 250-entry list that no membership write
-  could ever save — every edit sends the whole array, which 422s on the
-  cap, leaving delete-the-lot as the only working operation. It splits into
-  `Favorites`, `Favorites 2`, … Verified on a seeded 250-row owner: 200 +
-  50, nothing lost, both editable.
+  **Membership is unbounded, and the spark cap is gone.** It was 200,
+  described in its own comment as "far above real use". It was not: there
+  are 256 whites alone, so one "whites I care about" list could pass it,
+  and the old `watched_sparks` had no cap at all so nothing bounded what a
+  user already had. Jason: *"the number of skills in the future can grow.
+  Does it really matter if we put a cap if our cap is higher than what
+  could possibly go in it?"* — and the answer is that it does not, because
+  the chooser adds from the factor reference, so the reachable maximum IS
+  the reference size, and that grows with the game. Any constant either
+  binds too early or ages into binding too early; raising 200 to 500 would
+  only have postponed the same bug.
+
+  What bounds it instead, without a number to age: `_dedupe` collapses to
+  distinct `(kind, key)` pairs, so a stored array cannot exceed the
+  distinct pairs in one request body, and body size is the server's limit
+  rather than a constant in `schemas.py`. `MAX_LISTS_PER_OWNER` stays — 50
+  named builds has no reference deciding a ceiling, so it bounds rows
+  rather than sitting in the path of legitimate use.
+
+  This was the root of a whole cluster: the chunking, the chunk landing at
+  the cap, and a 422 that the client reported as "try again" forever.
+  Removing the cap deleted all three rather than patching each.
 
   **Two smaller things the entry implied and the code did not do.** The
   create's failure path discarded a list the server had *committed*, so the
@@ -3173,6 +3197,25 @@ shape that was being refined in the wrong direction.
   and is **not** the guard: measured, it still passes with the lock
   removed, because the test client drives concurrent requests through one
   connection.
+
+- **A second review, and what it says about fixing under pressure.** The
+  branch was reviewed again before merging, and **five of its six worst
+  findings were defects in the previous round's fixes** — not things the
+  first review had missed. Chunking the backfill at exactly the cap. A
+  `detailOr` scoped to 409 so every 422 still said "try again". A 404
+  reload defeated by the write-count guard next to it, and bumping the
+  `epoch` that keys the popout so it remounted mid-interaction and threw
+  away the user's search. A draft-retention fix that contradicted the
+  partial-write fix, so the obvious retry 409'd. A guard that let the next
+  statement crash anyway.
+
+  Each was a shallow read of the symptom reported rather than of what the
+  fix touched. Recorded here because the pattern is the lesson: a round of
+  fixes is new, unreviewed code written faster than the code it corrects,
+  and it deserves the same suspicion. The e2e restructure in that round
+  also turned out to destabilise the suite — measured, two aborts in two
+  runs against zero in two on the committed baseline — and was replaced by
+  a three-line guard that ran clean three times.
 
 - **What would change my mind:** genuine concurrent use — a second person
   on the account, or one person editing the same list on two devices

@@ -296,6 +296,9 @@ class PinkSparkIn(BaseModel):
 # designer reads them yet and their 70/80/90 bases would dominate every proc
 # table. Adding one is a line here and a line in the frontend's rate map.
 SlotFactorKind = Literal["white", "unique", "race", "scenario"]
+# The same set as a runtime value, for the one place that has to ask "would
+# this parse?" without raising — see SparkListOut._drop_unreadable.
+SLOT_FACTOR_KINDS: frozenset[str] = frozenset(get_args(SlotFactorKind))
 
 
 class SlotFactorIn(BaseModel):
@@ -527,10 +530,28 @@ SparkListName = Annotated[
 ]
 
 
-# Per list, and per owner. Both are the same kind of bound: a list is a
-# build's worth of sparks and a user runs a handful of builds, so these sit
-# far above real use and only stop the column becoming free storage.
-MAX_SPARKS_PER_LIST = 200
+# A list's membership is DELIBERATELY UNBOUNDED. Jason's call, and the
+# reasoning is that a cap here can only ever bind on something you wanted to
+# keep: the chooser adds sparks from the factor reference, so the reachable
+# maximum IS the reference size — and that grows every time the game ships
+# characters and skills. Any constant picked today either binds too early or
+# ages into binding too early. An earlier cut used 200 and called it "far
+# above real use" while 256 whites alone could pass it; 500 would merely have
+# postponed the same bug.
+#
+# What does bound it, without a magic number: `_dedupe` collapses membership
+# to distinct (kind, key) pairs, so a stored array cannot exceed the distinct
+# pairs in one request body, and body size is the server's limit rather than
+# this module's. That bound tracks the game instead of lagging it.
+#
+# The failure modes are not symmetric either. Too low: a permanent 422 on
+# data the app itself produced, which the user cannot read or escape. Absent:
+# a large row in the user's own account, which they can delete.
+#
+# 50 LISTS stays, because it is a different kind of number — named builds a
+# person keeps, with no reference deciding a natural ceiling, so it is a bound
+# on rows rather than a limit that legitimate use walks into. Arbitrary all
+# the same; if it ever refuses someone's 51st build, it was wrong too.
 MAX_LISTS_PER_OWNER = 50
 
 
@@ -593,27 +614,23 @@ class SparkListPatch(BaseModel):
     @field_validator("sparks")
     @classmethod
     def _dedupe(cls, sparks: list[SparkRef] | None) -> list[SparkRef] | None:
-        """Collapse duplicates, THEN bound the length.
+        """Collapse duplicates. There is no length bound — see the note on
+        MAX_LISTS_PER_OWNER for why membership is deliberately unbounded.
 
-        A `max_length` on the field would run first — constraints precede
-        after-validators — so a payload that dedupes to a handful of entries
-        would 422 on its raw length. The client sends the list's whole
-        membership, and "already in it" is the state it asked for.
+        The client sends the list's whole membership, and "already in it" is
+        the state it asked for, so a repeat is a 200 rather than a 422.
 
         First occurrence wins, so dedupe preserves the order the user added
-        them in, which is the order the list renders.
+        them in, which is the order the list renders. It is also the only
+        thing bounding what gets stored: the result cannot exceed the
+        distinct (kind, key) pairs in one request body.
         """
         if sparks is None:
             return None
         seen: dict[tuple[str, int], SparkRef] = {}
         for spark in sparks:
             seen.setdefault((spark.kind, spark.key), spark)
-        deduped = list(seen.values())
-        if len(deduped) > MAX_SPARKS_PER_LIST:
-            raise ValueError(
-                f"a list may hold at most {MAX_SPARKS_PER_LIST} sparks"
-            )
-        return deduped
+        return list(seen.values())
 
 
 class SparkRefOut(BaseModel):
@@ -642,3 +659,34 @@ class SparkListOut(BaseModel):
     position: int
     sparks: list[SparkRefOut]
     model_config = {"from_attributes": True}
+
+    @field_validator("sparks", mode="before")
+    @classmethod
+    def _drop_unreadable(cls, sparks: object) -> object:
+        """Skip entries this model cannot parse instead of failing the row.
+
+        Dropping `extra="forbid"` handled unexpected KEYS; `kind` is still a
+        Literal, so an entry carrying a kind outside it — a rolled-back newer
+        client, a hand-fixed row, a kind added later — would raise during
+        serialization and take EVERY list down with it. That is the failure
+        CLAUDE.md records against `BlueprintOut`, on a JSONB column with no
+        migration path, and there is no reason to repeat it on the read side.
+
+        One unreadable entry costs that entry. The row, and every other row,
+        still renders. Nothing here writes the column back, so a dropped
+        entry is invisible rather than destroyed — the next PATCH from a
+        client that CAN read it will carry it as normal.
+        """
+        if not isinstance(sparks, list):
+            return sparks
+        entries: list[object] = list(sparks)  # pyright: ignore[reportUnknownArgumentType]
+        readable: list[object] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            typed: dict[str, object] = entry  # pyright: ignore[reportUnknownVariableType]
+            if typed.get("kind") in SLOT_FACTOR_KINDS and isinstance(
+                typed.get("key"), int
+            ):
+                readable.append(typed)
+        return readable

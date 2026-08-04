@@ -1,33 +1,41 @@
-import { api, type SlotFactorKind, type WatchedSpark } from "./api";
+import { api, type SlotFactorKind, type SparkList, type SparkRef } from "./api";
+import { writeStore } from "./storage";
 
-// The sparks this user cares about — one list, shared by every feature that
-// needs to ask that question (DECISIONS.md #33).
+// The user's named spark lists — "Front Runner", "Medium" — and the reads
+// every feature does over them (DECISIONS.md #37).
 //
 // Its own module rather than domain.ts or filters.ts: both of those hold
 // roster-page state, and this is read by designer surfaces — the spark
-// chooser (#28), the proc tables' watched block (#27) and hunted-skill
-// scoring. Living in filters.ts would also invite a `reconcile` pass by
-// proximity, which is exactly what this list must not have.
+// chooser's Favorites section (#28), the proc tables' watched block (#27) and
+// hunted-skill scoring. Living in filters.ts would also invite a `reconcile`
+// pass by proximity, which is exactly what these lists must not have.
 //
-// SERVER-BACKED, not localStorage: it spans devices and it belongs to a
-// user, so it is a row rather than a browser preference (#33 covers why the
-// four view-state stores stayed local). That makes the mutators async and
-// the reads pure functions over a list the caller holds — the alternative,
-// a module-held cache with synchronous `isWatched()`, would be a second copy
-// of server state with no way to know it had gone stale.
+// THE LISTS ARE SERVER-BACKED; WHICH ONES ARE ACTIVE IS NOT. A list belongs
+// to a user and spans devices, so it is a row. Which of them you are working
+// against right now is a view, so it is `localStorage` beside the four stores
+// of #32 — the phone being on a different build from the desktop is a feature.
+//
+// That makes the mutators async and the reads pure functions over lists the
+// caller holds. The alternative, a module-held cache with a synchronous
+// `isFavorite()`, would be a second copy of server state with no way to know
+// it had gone stale.
 
-export type { WatchedSpark } from "./api";
+export type { SparkList, SparkRef } from "./api";
 
-// The list plus everything a consumer needs to render and write it, as ONE
-// prop. The chooser sits three levels below the page that owns the fetch
-// (DesignerPage → FocusPanel → NodeProcs → SparkChooser), and passing the
-// five pieces separately meant declaring, typing and forwarding five props
-// at every level for a leaf that reads them — four files touched to add one
-// field. #27's watched block is the next consumer of the same list and would
-// have repeated the edit.
-export type WatchedStore = {
-  list: WatchedSpark[];
-  // Which generation of `list` this is. Zero until the first fetch SETTLES,
+// Which lists the user is working against, per device. Multi-select, because
+// a week can be about two builds at once — which is also why the ★ opens a
+// picker rather than adding to "the" active list (DECISIONS.md #37).
+export const ACTIVE_LISTS_STORE = "umalab.sparkLists.active";
+
+// Everything a consumer needs to render and write the lists, as ONE prop. The
+// chooser sits three levels below the page that owns the fetch (DesignerPage →
+// FocusPanel → NodeProcs → SparkChooser), and passing the pieces separately
+// meant declaring, typing and forwarding each of them at every level for a
+// leaf that reads them — four files touched to add one field. #27's watched
+// block is the next consumer of the same lists and would have repeated it.
+export type SparkListStore = {
+  lists: SparkList[];
+  // Which generation of `lists` this is. Zero until the first fetch SETTLES,
   // then bumped by every fetch that lands, INCLUDING a retry — which an
   // "already loaded" boolean cannot express, because a retry only ever
   // happens once loading is over.
@@ -38,167 +46,287 @@ export type WatchedStore = {
   // is what keeps a row from moving out from under the pointer that starred
   // it.
   epoch: number;
-  // Whether the LAST attempt rejected, which an empty list cannot say — a
-  // user with no favorites yet and a user whose fetch failed hold the same
-  // array, and only one of them has a reason to see the controls disabled.
+  // Whether the LAST attempt rejected, which an empty array cannot say — a
+  // user with no lists yet and a user whose fetch failed hold the same value,
+  // and only one of them has a reason to see the controls disabled.
   failed: boolean;
-  // Hand back the list the server ended up with. Non-optimistic by design:
-  // the mutators in this module return it, so a star only moves once the row
-  // exists.
-  onChange: (next: WatchedSpark[]) => void;
+  // The ids of the lists in play on THIS device. Empty means "everything",
+  // not "nothing" — see `activeSparks`.
+  active: number[];
+  // Hand back what the server ended up with. Non-optimistic by design: the
+  // mutators in this module return it, so a checkbox only moves once the row
+  // says so.
+  onChange: (next: SparkList[]) => void;
+  onActiveChange: (next: number[]) => void;
   onReload: () => void;
 };
 
-// A newly added spark is hunted. Adding is a deliberate pick — the spark,
-// then its star level — which reads as "I want this outcome"; defaulting to
-// false would leave #27's watched block empty on first use, with the bit
-// that fills it one the user has never seen. Filler you only want handy for
-// typing is one click off at the moment you add it.
-//
-// The rule is stated ONCE, and not here: it is the `hunting` column's default
-// (backend/app/models.py). It used to be a constant in this module because
-// under a full-replace PUT only the client knew whether it was adding; a
-// partial update means the row that doesn't exist yet is the server's to
-// furnish (#64). A copy here would be a second answer to a question with one.
-
-const same = (spark: WatchedSpark, kind: SlotFactorKind, key: number) =>
+const sameSpark = (spark: SparkRef, kind: SlotFactorKind, key: number) =>
   spark.kind === kind && spark.key === key;
 
-const find = (watched: WatchedSpark[], kind: SlotFactorKind, key: number) =>
-  watched.find((spark) => same(spark, kind, key));
+const refId = (spark: SparkRef) => `${spark.kind}:${spark.key}`;
 
 // ---------- reads ----------
-// Pure over the list the caller already has in state, so a row can be
+// Pure over the lists the caller already has in state, so a row can be
 // rendered without a fetch per cell.
 
-export const isWatched = (
-  watched: WatchedSpark[],
+export const listById = (
+  lists: SparkList[],
+  id: number
+): SparkList | undefined => lists.find((list) => list.id === id);
+
+/** Every list holding this spark, in the order the lists are in. What the
+ *  picker checks its boxes from. */
+export const listsWith = (
+  lists: SparkList[],
   kind: SlotFactorKind,
   key: number
-): boolean => find(watched, kind, key) !== undefined;
+): SparkList[] =>
+  lists.filter((list) => list.sparks.some((s) => sameSpark(s, kind, key)));
 
-// Unwatched reads as not hunted, so a caller asks one question instead of two.
-export const isHunting = (
-  watched: WatchedSpark[],
+/** In at least one list — what the ★ renders. There is no watched-but-in-no-
+ *  list state any more: Favorites IS the union (DECISIONS.md #37). */
+export const isFavorite = (
+  lists: SparkList[],
   kind: SlotFactorKind,
   key: number
-): boolean => find(watched, kind, key)?.hunting === true;
+): boolean =>
+  lists.some((list) => list.sparks.some((s) => sameSpark(s, kind, key)));
 
-export const groupsOf = (
-  watched: WatchedSpark[],
-  kind: SlotFactorKind,
-  key: number
-): string[] => find(watched, kind, key)?.groups ?? [];
-
-// Insertion order, oldest first — the server orders by row id. With a group
-// name, only that build's sparks: a filter over the one list, never a second
-// store.
-export const list = (watched: WatchedSpark[], group?: string): WatchedSpark[] =>
-  group === undefined
-    ? watched
-    : watched.filter((spark) => spark.groups.includes(group));
-
-// Every group name in use, in the order it was first written. What a group
-// control renders; there is no separate registry, so a group exists exactly
-// as long as a spark is in it.
-export const groupNames = (watched: WatchedSpark[]): string[] => [
-  ...new Set(watched.flatMap((spark) => spark.groups)),
-];
-
-// ---------- writes ----------
-// Each returns the new list, which is what the caller puts back in state.
-// The server is the authority on order and on what a row ended up holding,
-// so the returned row replaces the local one rather than being merged into
-// it.
-
-const replacing = (
-  watched: WatchedSpark[],
-  saved: WatchedSpark
-): WatchedSpark[] => {
-  const index = watched.findIndex((spark) => same(spark, saved.kind, saved.key));
-  if (index >= 0) {
-    const next = [...watched];
-    next[index] = saved;
-    return next;
+/**
+ * The union of the given lists, deduped, first occurrence winning.
+ *
+ * List order then membership order, which is the order the server sorts by
+ * and the order the user arranged. Deduped because a spark in two builds must
+ * render once — #33 got that free by having one row in two groups, and this
+ * shape has to solve it at read time instead.
+ */
+export const union = (lists: SparkList[]): SparkRef[] => {
+  const seen = new Map<string, SparkRef>();
+  for (const list of lists) {
+    for (const spark of list.sparks) {
+      if (!seen.has(refId(spark))) seen.set(refId(spark), spark);
+    }
   }
-  // Not in this copy of the list — it may predate the row (another tab, another
-  // device). Insert by id rather than appending: id IS the insertion order the
-  // server sorts by, so appending would show an old spark last.
-  const at = watched.findIndex((spark) => spark.id > saved.id);
-  return at < 0
-    ? [...watched, saved]
-    : [...watched.slice(0, at), saved, ...watched.slice(at)];
+  return [...seen.values()];
 };
 
-export const loadWatched = (): Promise<WatchedSpark[]> => api.watchedSparks();
-
-// ---------- the three mutators ----------
-// Each sends only the field it is changing and hands back the caller's list
-// with the ONE row the server returned folded in. Nothing re-reads the list
-// first: the PUT is a partial update (#64), so a mutator never has to know —
-// or guess — the field it isn't touching. Guessing one is what #62 was.
-//
-// That is the whole of the rule now, and it is not a guarantee of ordering:
-// `setGroups` still sends a set it computed from the caller's list, so two
-// devices editing the same spark's groups at once is last-write-wins (#66).
-// What the shape removes is the far commoner loss, where a mutator writes
-// over a field nobody touched.
-//
-// A write folds in one row rather than adopting a whole fresh list on
-// purpose: the chooser freezes its Favorites membership at open and filters
-// the kind sections against that snapshot (#35), so a row the snapshot has
-// never seen would arrive as a filled star in a kind section — one click from
-// deleting a favorite added on another device. Refreshing wholesale is
-// `onReload`'s job, and it bumps `epoch` so the snapshot is retaken.
+/** Everything the user has anywhere — the chooser's Favorites section. */
+export const favorites = (lists: SparkList[]): SparkRef[] => union(lists);
 
 /**
- * Add the spark if it isn't watched, remove it if it is.
+ * The sparks in play: the union of the ACTIVE lists.
  *
- * The add is an empty body: "make sure this spark is watched." The server
- * creates it hunted (the column default) or leaves the existing row exactly
- * as it is, and returns whichever — so a spark watched on another device
- * keeps its groups and its filler bit, and the star still lands on. There is
- * nothing to decide client-side and nothing to look up first.
- *
- * The remove needs no lookup either: the DELETE route treats an already-gone
- * row as the outcome the caller wanted, so a stale "watched" costs one 204.
+ * **Nothing selected means everything**, not nothing. Every user starts with
+ * no lists and no selection, and a block that renders empty on first use
+ * reads as broken rather than as unconfigured (DECISIONS.md #37). Ids that no
+ * longer name a list are ignored rather than reconciled — a list deleted on
+ * another device leaves a stale id here, and dropping it silently is the
+ * whole of the handling.
  */
-export async function toggle(
-  watched: WatchedSpark[],
+export const activeSparks = (
+  lists: SparkList[],
+  active: number[]
+): SparkRef[] => {
+  const chosen = lists.filter((list) => active.includes(list.id));
+  return union(chosen.length === 0 ? lists : chosen);
+};
+
+/** Every list name in use, in the user's order — what a selector renders. */
+export const listNames = (lists: SparkList[]): string[] =>
+  lists.map((list) => list.name);
+
+// ---------- the active selection (device-local) ----------
+
+/**
+ * The ids this device has selected. Shape-checked in full and falling back to
+ * "none selected", which is the same as "everything" — so a corrupt key
+ * degrades to showing more than you asked for rather than to an empty block.
+ */
+export function loadActiveLists(store: string = ACTIVE_LISTS_STORE): number[] {
+  try {
+    const raw = localStorage.getItem(store);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((id) => typeof id === "number" && Number.isInteger(id))
+      ) {
+        return parsed;
+      }
+    }
+  } catch {
+    // absent, blocked, or not JSON — fall through to the default
+  }
+  return [];
+}
+
+export const saveActiveLists = (
+  active: number[],
+  store: string = ACTIVE_LISTS_STORE
+): void => writeStore(store, active);
+
+/** Select or deselect one list. Pure — the caller persists what it gets. */
+export const toggleActive = (active: number[], id: number): number[] =>
+  active.includes(id) ? active.filter((n) => n !== id) : [...active, id];
+
+// ---------- writes ----------
+// Each returns the new array of lists, which is what the caller puts back in
+// state. The server is the authority on order and on what a list ended up
+// holding, so a returned list replaces the local one rather than being merged
+// into it.
+//
+// A write folds in the ONE list it touched rather than adopting a whole fresh
+// fetch on purpose: the chooser freezes its Favorites membership at open and
+// filters the kind sections against that snapshot (#35), so a spark the
+// snapshot has never seen would arrive as a filled ★ in a kind section.
+// Refreshing wholesale is `onReload`'s job, and it bumps `epoch` so the
+// snapshot is retaken.
+
+/** Server order: position, ties on id. Applied after every write so a
+ *  reorder lands where the next GET would put it. */
+const ordered = (lists: SparkList[]): SparkList[] =>
+  [...lists].sort((a, b) => a.position - b.position || a.id - b.id);
+
+const replacing = (lists: SparkList[], saved: SparkList): SparkList[] =>
+  ordered(
+    lists.some((list) => list.id === saved.id)
+      ? lists.map((list) => (list.id === saved.id ? saved : list))
+      : [...lists, saved]
+  );
+
+export const loadSparkLists = (): Promise<SparkList[]> => api.sparkLists();
+
+/**
+ * Create an empty list. The picker's `New List`, which is the only way one
+ * gets made — creating and filling are separate requests, and a list with
+ * nothing in it is a normal state (DECISIONS.md #37).
+ *
+ * Rejects with a 409 `ApiError` if the name is taken. Surfaced rather than
+ * swallowed: the picker has a field the user can correct.
+ */
+export async function createList(
+  lists: SparkList[],
+  name: string
+): Promise<SparkList[]> {
+  return replacing(lists, await api.createSparkList(name));
+}
+
+/**
+ * A write whose first half committed and whose second half did not, carrying
+ * the state the caller must adopt anyway.
+ *
+ * Thrown rather than returned so a caller cannot mistake it for success, and
+ * carrying `lists` because throwing alone would strand a row that really
+ * exists: the caller has to both show the error AND fold in what landed.
+ */
+export class PartialWrite extends Error {
+  constructor(
+    readonly lists: SparkList[],
+    readonly reason: unknown
+  ) {
+    super("the list was created but its membership was not saved");
+    this.name = "PartialWrite";
+  }
+}
+
+/**
+ * Create a list and put this spark in it — the picker's `New List`, which is
+ * always reached while starring something.
+ *
+ * Two round trips, because creating and filling are two routes. Worth it over
+ * a "create with members" body: the create is rare, and one shape for
+ * membership means the picker's checkbox and its new-list field cannot drift.
+ *
+ * **If the create succeeds and the fill fails, the created list is still
+ * handed back** — as `PartialWrite.lists`. An earlier cut let the whole
+ * promise reject, which discarded a row the server had committed: the list
+ * appeared nowhere, so there was no pill to retry on, and re-typing the same
+ * name 409'd forever on a list the user could not see. Surfacing it empty
+ * means the next click on its pill finishes the job, which is what the
+ * comment here used to claim without the code doing it.
+ *
+ * The reverse order would be worse: a spark added to a list that then failed
+ * to be named has nowhere to live.
+ */
+export async function createListWith(
+  lists: SparkList[],
+  name: string,
   kind: SlotFactorKind,
   key: number
-): Promise<WatchedSpark[]> {
-  if (isWatched(watched, kind, key)) {
-    await api.unwatchSpark(kind, key);
-    return watched.filter((spark) => !same(spark, kind, key));
+): Promise<SparkList[]> {
+  const created = await api.createSparkList(name);
+  const withList = replacing(lists, created);
+  try {
+    return await setMembership(withList, created.id, [{ kind, key }]);
+  } catch (reason) {
+    throw new PartialWrite(withList, reason);
   }
-  return replacing(watched, await api.watchSpark(kind, key, {}));
+}
+
+export async function renameList(
+  lists: SparkList[],
+  id: number,
+  name: string
+): Promise<SparkList[]> {
+  return replacing(lists, await api.updateSparkList(id, { name }));
 }
 
 /**
- * Set the hunting bit. A spark that isn't watched yet is ADDED by this — the
- * route is an upsert, and "hunt this" is a reason to want the row. Its groups
- * are left alone, which for a new row means empty.
+ * Delete the list and everything in it.
+ *
+ * A spark in no other list leaves Favorites with it, which is the point of
+ * the union: nothing is orphaned and there is nothing to sweep.
  */
-export async function setHunting(
-  watched: WatchedSpark[],
-  kind: SlotFactorKind,
-  key: number,
-  hunting: boolean
-): Promise<WatchedSpark[]> {
-  return replacing(watched, await api.watchSpark(kind, key, { hunting }));
+export async function deleteList(
+  lists: SparkList[],
+  id: number
+): Promise<SparkList[]> {
+  await api.deleteSparkList(id);
+  return lists.filter((list) => list.id !== id);
 }
 
 /**
- * Replace the row's whole group set. Whole set rather than add/remove pairs:
- * the caller has the current groups from `groupsOf`, and two endpoints would
- * need the same de-duplication twice. Duplicates collapse server-side.
+ * Replace one list's membership wholesale.
+ *
+ * Whole set rather than add/remove pairs, matching the route: the caller has
+ * the current membership from the list it holds, and two endpoints would need
+ * the same de-duplication twice. The cost is that two devices editing one
+ * list in the same moment is last-write-wins — accepted, and #37 says what
+ * closing it would take.
  */
-export async function setGroups(
-  watched: WatchedSpark[],
+export async function setMembership(
+  lists: SparkList[],
+  id: number,
+  sparks: SparkRef[]
+): Promise<SparkList[]> {
+  return replacing(lists, await api.updateSparkList(id, { sparks }));
+}
+
+/**
+ * Add the spark to that list, or take it out if it is already there. One
+ * checkbox in the picker.
+ *
+ * Computed from the caller's copy of the list, so a list changed on another
+ * device since the last fetch is written from a stale set — the
+ * last-write-wins case above, at its narrowest.
+ *
+ * A list the caller does not have is a no-op rather than a create: the id
+ * came from a control rendered off these same lists, so its absence means the
+ * list was deleted, and re-creating it would resurrect what another device
+ * just removed.
+ */
+export async function toggleMembership(
+  lists: SparkList[],
+  id: number,
   kind: SlotFactorKind,
-  key: number,
-  groups: string[]
-): Promise<WatchedSpark[]> {
-  return replacing(watched, await api.watchSpark(kind, key, { groups }));
+  key: number
+): Promise<SparkList[]> {
+  const list = listById(lists, id);
+  if (list === undefined) return lists;
+  const held = list.sparks.some((s) => sameSpark(s, kind, key));
+  const sparks = held
+    ? list.sparks.filter((s) => !sameSpark(s, kind, key))
+    : [...list.sparks, { kind, key }];
+  return setMembership(lists, id, sparks);
 }

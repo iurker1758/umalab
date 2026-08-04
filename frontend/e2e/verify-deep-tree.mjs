@@ -82,16 +82,25 @@ const postJson = async (path, body) => {
 
 const catalog = await getJson("/api/catalog");
 const baselineIds = new Set((await getJson("/api/blueprints")).map((b) => b.id));
-// The watched sparks this run favorites, tracked BEFORE the click rather
-// than after it — a `(kind, key)` this run touched may also be one you
-// already had, and a diff can't tell "I added this" from "it was already
-// there and I flipped its bit". Recorded before, because the click writes a
-// real row immediately and anything awaited after it can throw: a timeout
-// between the two would leave that row in the user's list forever.
-const baselineWatched = new Set(
-  (await getJson("/api/watched-sparks")).map((w) => `${w.kind}:${w.key}`)
+// This run makes its OWN spark list rather than writing into one of yours
+// (DECISIONS.md #37) — so cleanup deletes a list it created, and can never
+// take a spark out of a build you assembled. Named with a run-unique prefix
+// because the name is unique per user: a leftover from an aborted run would
+// otherwise 409 the create and fail the section for the wrong reason.
+const E2E_LIST_PREFIX = "e2e spark list";
+const listName = `${E2E_LIST_PREFIX} ${Date.now()}`;
+// The union across your lists, read before anything is written. Used only to
+// pick a spark you do NOT already have, so the assertions below run against a
+// known-empty membership rather than against whatever you had favorited.
+const baselineFavorites = new Set(
+  (await getJson("/api/spark-lists")).flatMap((l) =>
+    l.sparks.map((s) => `${s.kind}:${s.key}`)
+  )
 );
-const watchedOwned = new Set();
+// Tracked at creation, not diffed at the end — the create writes a real row
+// immediately and anything awaited after it can throw, and a timeout between
+// the two would leave the list in your account forever.
+const listsOwned = new Set();
 // Optional: the roster is the pull's source, and an empty one is a legitimate
 // state (nobody has imported a dump). CI seeds tests/fixtures/roster.json so
 // the roster section always runs there; locally it runs against whatever you
@@ -1017,18 +1026,24 @@ try {
   // Favoriting is a separate control from adding, and adding never writes
   // one: a filler white typed onto every node must not reach #27's uncapped
   // watched block (DECISIONS.md #35).
+  //
+  // Read off the ACCESSIBLE state, not the class: the ★ is a disclosure for
+  // the list picker now (#37), so it carries `aria-expanded` for the picker
+  // and names its membership in the label. Asserting the class instead would
+  // let the label silently stop reporting membership — which is exactly the
+  // regression an earlier cut of this shipped.
   check("and adding a spark did not favorite it",
     (await page.locator(`.spark-fav[data-spark="${spare.kind}:${spare.key}"]`)
-      .getAttribute("aria-pressed")) === "false");
+      .getAttribute("aria-label"))?.endsWith("in none") === true);
 
-  // ---------- favorites ----------
+  // ---------- favorites and their lists ----------
   // Server state behind Access, unlike everything else this tab writes — so
-  // it is read back from the API, and the row is tracked for cleanup at
+  // it is read back from the API, and the list is tracked for cleanup at
   // creation rather than diffed at the end.
   //
-  // Deliberately NOT a spark you already watch: the control is a toggle, so
-  // running this against an existing favorite would delete one of yours and
-  // then assert on the wrong direction. 432 factors, so there is always one.
+  // Deliberately NOT a spark you already have: the pill is a toggle, so
+  // running this against an existing favorite would assert on the wrong
+  // direction. 432 factors, so there is always one.
   //
   // And never a GREEN: this runs on G1-1, which is cast, and a cast node
   // offers only its own card's unique — so a green target would simply not be
@@ -1037,34 +1052,77 @@ try {
   // only on a database where every race and scenario spark is already
   // favorited, which is why it isn't what fails today.
   const favTarget = factorRef.find(
-    (f) => f.kind !== "unique" && !baselineWatched.has(`${f.kind}:${f.key}`)
+    (f) => f.kind !== "unique" && !baselineFavorites.has(`${f.kind}:${f.key}`)
   );
   const favSel = `${favTarget.kind}:${favTarget.key}`;
   await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(favTarget.name);
-  // Recorded first: the click PUTs a real row, and the wait below can time
-  // out — which would jump to `finally` with nothing to clean up.
-  watchedOwned.add(favSel);
-  // By id, never by the displayed name: the reference holds distinct factors
-  // that share one, so a name-matched star writes the wrong (kind, key) and
-  // cleanup then deletes a row that was never created.
+  // The ★ DISCLOSES the picker and writes nothing (#37) — a favorite is a
+  // spark in a named list, so starring has to say which. By id, never by the
+  // displayed name: the reference holds distinct factors that share one.
+  // Snapshotted BEFORE the click so the assertion below compares real state
+  // rather than a name that cannot exist yet.
+  const listsBeforeStar = JSON.stringify(await getJson("/api/spark-lists"));
   await page.locator(`.spark-fav[data-spark="${favSel}"]`).click();
-  await page.waitForSelector(`.spark-hunt[data-spark="${favSel}"]`);
-  const watchedRow = async () =>
-    (await getJson("/api/watched-sparks")).find(
-      (w) => w.kind === favTarget.kind && w.key === favTarget.key
-    );
-  // #33 defaults a new row to hunting, and the default lives in the CLIENT —
-  // so this is a check on the chooser, not on the route.
-  check("favoriting writes a watched row, hunted by default",
-    (await watchedRow())?.hunting === true);
-  // "Filler you keep handy to type" is the case the bit exists for, and #33
-  // puts it "one click off at the moment you add it" — which is here.
-  await page.locator(`.spark-hunt[data-spark="${favSel}"]`).click();
-  check("and one click marks it filler rather than removing it",
+  await page.waitForSelector(`.spark-lists [aria-label="New list for ${favTarget.name}"]`);
+  const listsNow = async () => await getJson("/api/spark-lists");
+  const ourList = async () => (await listsNow()).find((l) => l.name === listName);
+  // The WHOLE payload, compared against what it was before the click. The
+  // first cut asserted that a list named with this run's fresh timestamp did
+  // not exist yet, which is true by construction — it could never fail, so a
+  // regression that made the ★ write membership into an EXISTING list would
+  // have sailed past it.
+  check("the star opens the list picker rather than writing anything",
+    (await page.locator(`.spark-fav[data-spark="${favSel}"]`).getAttribute("aria-expanded")) === "true" &&
+    JSON.stringify(await listsNow()) === listsBeforeStar);
+  // Recorded first: the create writes a real row, and the wait below can time
+  // out — which would jump to `finally` with nothing to clean up.
+  listsOwned.add(listName);
+  await page.locator(`[aria-label="New list for ${favTarget.name}"]`).fill(listName);
+  await page.locator(`[aria-label="Create list for ${favTarget.name}"]`).click();
+  // Creating from the picker puts the spark in the new list — you are in the
+  // middle of starring something, so a list that came back empty would be a
+  // second click for an outcome you already asked for.
+  check("New List creates it AND puts the spark in it",
     await until(async () => {
-      const row = await watchedRow();
-      return row !== undefined && row.hunting === false;
+      const list = await ourList();
+      return list !== undefined &&
+        list.sparks.length === 1 &&
+        list.sparks[0].kind === favTarget.kind &&
+        list.sparks[0].key === favTarget.key;
     }));
+  // Resolved ONCE, and guarded: `check` records a failure and carries on, so
+  // reading `.id` off an undefined list here would abort the whole run with a
+  // TypeError and bury the assertion that actually broke. Everything below
+  // needs the id, so a missing list skips the block rather than crashing it.
+  const created = await ourList();
+  const ourPill = created === undefined
+    ? null
+    : page.locator(
+        `.spark-popout .spark-list-pill[data-list="${created.id}"][data-spark="${favSel}"]`
+      );
+  if (ourPill === null) {
+    check("the list this run created is readable back", false);
+  } else {
+    check("and the star fills, and says so accessibly",
+      (await until(async () =>
+        (await ourPill.getAttribute("aria-pressed")) === "true")) &&
+      // The label carries the membership, so a screen reader can tell a
+      // favorited row from an unfavorited one without opening every picker.
+      /in \d+ of \d+$/.test(
+        (await page.locator(`.spark-fav[data-spark="${favSel}"]`)
+          .getAttribute("aria-label")) ?? ""));
+    // The pill is the membership editor, so one click takes it back out —
+    // without deleting the list, which is a different act.
+    await ourPill.click();
+    check("and the pill takes it out again, leaving the list itself",
+      await until(async () => {
+        const list = await ourList();
+        return list !== undefined && list.sparks.length === 0;
+      }));
+    // Put it back, so the Favorites assertions below have something to show.
+    await ourPill.click();
+    await until(async () => (await ourList())?.sparks.length === 1);
+  }
   await closeChooser();
   // Favorites lift to their own section on the next open — and appear there
   // ONLY, never also in their kind's section: the same spark twice on one
@@ -1079,19 +1137,19 @@ try {
   // spark unaddable until the popout was reopened.
   const favStar = `.spark-popout .spark-fav[data-spark="${favSel}"]`;
   await page.locator(favStar).click();
+  // The popout was remounted by the reopen, so the pill is looked up afresh
+  // rather than reusing the locator above.
+  const reopenedPill = `.spark-popout .spark-list-pill[data-spark="${favSel}"].active`;
+  await page.waitForSelector(reopenedPill);
+  await page.locator(reopenedPill).first().click();
   // It stays in the Favorites SECTION, not merely somewhere on screen: the
   // frozen membership is the whole point, and a row that fell back to its
   // kind section would have moved under the pointer that just clicked it.
-  check("and un-starring it empties the star without removing the row",
-    (await until(async () =>
-      (await page.locator(favStar).getAttribute("aria-pressed")) === "false")) &&
+  check("and emptying its lists leaves the row where it is",
+    (await until(async () => (await ourList())?.sparks.length === 0)) &&
     (await page.locator(favStar).count()) === 1 &&
     (await page.locator(".spark-popout .spark-section").first()
-      .locator(`.spark-fav[data-spark="${favSel}"]`).count()) === 1 &&
-    (await page.locator(`.spark-popout .spark-hunt[data-spark="${favSel}"]`).count()) === 0);
-  // Put it back, so the cleanup below has the row it expects to delete.
-  await page.locator(`.spark-popout .spark-fav[data-spark="${favSel}"]`).click();
-  await page.waitForSelector(`.spark-hunt[data-spark="${favSel}"]`);
+      .locator(`.spark-fav[data-spark="${favSel}"]`).count()) === 1);
   await closeChooser();
   // Guarded: clicking unconditionally after a failed `until` aborts the run
   // and skips every assertion below it.
@@ -2344,17 +2402,33 @@ try {
   } catch (e) {
     console.log(`  cleanup: FAILED to restore (${e}) — check for leftover "${bpName}" rows`);
   }
-  // The favorites this run created, by the ids it tracked before clicking —
-  // never "everything watched that wasn't there before", which would delete a
-  // spark you starred in another tab mid-run.
+  // The spark lists this run created, by the names it tracked before
+  // creating them — never "every list that wasn't there before", which would
+  // delete one you made in another tab mid-run. Deleting the list takes its
+  // membership with it, so there is nothing else to undo: this run never
+  // writes into a list of yours.
   try {
-    for (const id of watchedOwned) {
-      const [kind, key] = id.split(":");
-      await fetch(`${BASE}/api/watched-sparks/${kind}/${key}`, { method: "DELETE" });
-      console.log(`  cleanup: unwatched ${id}`);
+    for (const list of await getJson("/api/spark-lists")) {
+      // Tracked names first, then anything else carrying the run prefix. The
+      // prefix sweep is what collects ORPHANS: a run killed between the
+      // create and the `finally` leaves its list behind, and cleaning only
+      // the current run's name meant those accumulated forever against
+      // MAX_LISTS_PER_OWNER — on the developer's real account, until creating
+      // any list 409'd for a reason unrelated to the code under test.
+      //
+      // Safe to widen this far because the prefix is this suite's own and no
+      // human would type it; every other list is left alone, which is the
+      // rule the blueprint sweep above follows too.
+      const ours = listsOwned.has(list.name) || list.name.startsWith(E2E_LIST_PREFIX);
+      if (!ours) continue;
+      await fetch(`${BASE}/api/spark-lists/${list.id}`, { method: "DELETE" });
+      const why = listsOwned.has(list.name) ? "" : " (orphan from an earlier run)";
+      console.log(`  cleanup: deleted spark list ${list.id} (${list.name})${why}`);
     }
   } catch (e) {
-    console.log(`  cleanup: FAILED to unwatch (${e}) — check /api/watched-sparks`);
+    console.log(
+      `  cleanup: FAILED to delete lists (${e}) — check /api/spark-lists for "${E2E_LIST_PREFIX}" rows`
+    );
   }
 }
 console.log(`\n${pass} passed, ${fail} failed`);

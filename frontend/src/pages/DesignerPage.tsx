@@ -21,9 +21,14 @@ import {
   type PinkSpark,
   type SlotFactor,
   type Veteran,
-  type WatchedSpark,
+  type SparkList,
 } from "../api";
-import { loadWatched, type WatchedStore } from "../sparks";
+import {
+  loadActiveLists,
+  loadSparkLists,
+  saveActiveLists,
+  type SparkListStore,
+} from "../sparks";
 import { FocusPanel } from "../components/FocusPanel";
 import { CopyIcon, TrashIcon } from "../components/icons";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
@@ -156,51 +161,58 @@ export function DesignerPage({
   // committed and works offline, the favorites are server state behind
   // Access, so a chooser that couldn't be browsed because a list of
   // favorites didn't load would be the failure doing the most damage.
-  const [watched, setWatched] = useState<WatchedSpark[]>([]);
-  // Whether that fetch REJECTED, which an empty list can't say — a user with
-  // no favorites yet and a user whose fetch failed hold the same array, and
-  // only one of them has a reason to see the controls disabled.
-  const [watchedFailed, setWatchedFailed] = useState(false);
-  // Which generation of the list is in `watched` — see WatchedStore. Zero
-  // until the first fetch settles; a settle counts even when it failed, so
-  // the popout that opened over a failure remounts when a retry lands.
-  const [watchedEpoch, setWatchedEpoch] = useState(0);
+  const [sparkLists, setSparkLists] = useState<SparkList[]>([]);
+  // Whether that fetch REJECTED, which an empty array can't say — a user with
+  // no lists yet and a user whose fetch failed hold the same value, and only
+  // one of them has a reason to see the controls disabled.
+  const [sparkListsFailed, setSparkListsFailed] = useState(false);
+  // Which generation of the lists is in `sparkLists` — see SparkListStore.
+  // Zero until the first fetch settles; a settle counts even when it failed,
+  // so the popout that opened over a failure remounts when a retry lands.
+  const [sparkListsEpoch, setSparkListsEpoch] = useState(0);
+  // Which lists this DEVICE is working against. localStorage rather than a
+  // column: it is a view, not a fact about the user's roster, and the phone
+  // being on a different build from the desktop is a feature (#37, and #32's
+  // line on the four view-state stores). Empty means every list.
+  const [activeLists, setActiveLists] = useState<number[]>(() => loadActiveLists());
+  const onActiveListsChange = useCallback((next: number[]) => {
+    setActiveLists(next);
+    saveActiveLists(next);
+  }, []);
   // How many writes have come back from the chooser. A fetch that was already
   // in flight when one landed is stale BY DEFINITION — the server handed the
   // newer list to the write as its response — and applying the older one would
-  // empty a star the user just filled while the row still existed server-side,
-  // so the obvious response (click again) would re-PUT it as if new and reset
-  // its hunting bit and groups.
+  // empty a star the user just filled while the row still existed server-side.
   //
   // NOT REACHABLE TODAY, and worth saying so rather than implying otherwise:
   // there are two windows where a GET is in flight, and a ★ is clickable in
   // neither. During the mount fetch the four requests settle TOGETHER, so the
-  // factor reference arrives with the watched list and the popout has no rows
-  // to star (measured: 0 rows, 0 stars). During a retry `failed` is still
-  // true, which disables every ★ (measured: 432 stars, 0 enabled). Both are
-  // incidental — the first is one `Promise.allSettled` away from being split
-  // for a faster first paint, the second one refinement away from keeping the
-  // stars live while a retry runs — and #27 adds a second reader of this list.
-  // Eight lines to make the invariant hold on its own rather than by accident.
-  const watchedWrites = useRef(0);
-  const onWatchedChange = useCallback((next: WatchedSpark[]) => {
-    watchedWrites.current += 1;
-    setWatched(next);
+  // factor reference arrives with the lists and the popout has no rows to star
+  // (measured: 0 rows, 0 stars). During a retry `failed` is still true, which
+  // disables every ★ (measured: 432 stars, 0 enabled). Both are incidental —
+  // the first is one `Promise.allSettled` away from being split for a faster
+  // first paint, the second one refinement away from keeping the stars live
+  // while a retry runs — and #27 adds a second reader of these lists. Eight
+  // lines to make the invariant hold on its own rather than by accident.
+  const sparkListWrites = useRef(0);
+  const onSparkListsChange = useCallback((next: SparkList[]) => {
+    sparkListWrites.current += 1;
+    setSparkLists(next);
   }, []);
   // Re-fetch on demand. The load runs once at mount, so without this a
   // one-second blip disabled every ★ for the session — the flag had one
   // writer and no retry. The chooser calls it when it opens after a failure.
-  const reloadWatched = useCallback(() => {
+  const reloadSparkLists = useCallback(() => {
     void (async () => {
-      const writes = watchedWrites.current;
+      const writes = sparkListWrites.current;
       try {
-        const rows = await loadWatched();
-        if (watchedWrites.current === writes) setWatched(rows);
-        setWatchedFailed(false);
+        const rows = await loadSparkLists();
+        if (sparkListWrites.current === writes) setSparkLists(rows);
+        setSparkListsFailed(false);
       } catch {
-        setWatchedFailed(true);
+        setSparkListsFailed(true);
       } finally {
-        setWatchedEpoch((n) => n + 1);
+        setSparkListsEpoch((n) => n + 1);
       }
     })();
   }, []);
@@ -437,29 +449,29 @@ export function DesignerPage({
     // out of it.
     let cancelled = false;
     void (async () => {
-      // Read BEFORE the fetches start — see watchedWrites for why this cannot
-      // fire today and why it is here anyway.
-      const writes = watchedWrites.current;
-      const [cat, bps, factors, watch] = await Promise.allSettled([
+      // Read BEFORE the fetches start — see sparkListWrites for why this
+      // cannot fire today and why it is here anyway.
+      const writes = sparkListWrites.current;
+      const [cat, bps, factors, lists] = await Promise.allSettled([
         api.catalog(),
         api.blueprints(),
         api.factors(),
-        loadWatched(),
+        loadSparkLists(),
       ]);
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
       if (factors.status === "fulfilled") setFactorRefs(factors.value);
-      setWatchedEpoch((n) => n + 1);
+      setSparkListsEpoch((n) => n + 1);
       // Dropped rather than applied when a write beat it home — the write's
       // response IS the newer list, and it is already in state.
-      if (watch.status === "fulfilled") {
-        if (watchedWrites.current === writes) setWatched(watch.value);
+      if (lists.status === "fulfilled") {
+        if (sparkListWrites.current === writes) setSparkLists(lists.value);
       }
       // No toast for this one, unlike the reference below: the chooser is the
-      // only thing that reads it, and it says so itself at the moment you open
-      // it. A page-load toast about favorites would fire for everyone whose
-      // list is simply empty of consequence.
-      else setWatchedFailed(true);
+      // only thing that reads them, and it says so itself at the moment you
+      // open it. A page-load toast about spark lists would fire for everyone
+      // who simply has none.
+      else setSparkListsFailed(true);
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
@@ -552,17 +564,27 @@ export function DesignerPage({
   // green rule itself rests on (checked: it agrees with the catalog's own
   // entry→cards join on all 95 released cards).
   //
-  // One prop for the whole list, not five — see WatchedStore. #27's watched
+  // One prop for the whole thing, not six — see SparkListStore. #27's watched
   // block reads the same store from the same panel.
-  const watchedStore = useMemo(
-    (): WatchedStore => ({
-      list: watched,
-      epoch: watchedEpoch,
-      failed: watchedFailed,
-      onChange: onWatchedChange,
-      onReload: reloadWatched,
+  const sparkListStore = useMemo(
+    (): SparkListStore => ({
+      lists: sparkLists,
+      epoch: sparkListsEpoch,
+      failed: sparkListsFailed,
+      active: activeLists,
+      onChange: onSparkListsChange,
+      onActiveChange: onActiveListsChange,
+      onReload: reloadSparkLists,
     }),
-    [watched, watchedEpoch, watchedFailed, onWatchedChange, reloadWatched]
+    [
+      sparkLists,
+      sparkListsEpoch,
+      sparkListsFailed,
+      activeLists,
+      onSparkListsChange,
+      onActiveListsChange,
+      reloadSparkLists,
+    ]
   );
   // Null rather than a placeholder: the reference carries 42 uniques whose
   // card has not reached Global, and inventing "Card 104502" for them would
@@ -1113,7 +1135,7 @@ export function DesignerPage({
             affinityPending={affinityPending}
             factorRefs={factorRefs}
             cardOwner={cardOwner}
-            watched={watchedStore}
+            sparkLists={sparkListStore}
             onOpenPicker={setPickerFor}
             onClear={clearSlot}
             onSetSpark={setSpark}

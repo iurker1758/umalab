@@ -1,4 +1,4 @@
-"""Fixtures for the database-backed modules (test_isolation, test_watched_sparks).
+"""Fixtures for the database-backed modules (test_isolation, test_spark_lists).
 
 Most of this suite is pure-module and touches none of these — fixtures are
 lazy, so they cost those tests nothing. What needs them needs a real

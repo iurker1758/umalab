@@ -6,7 +6,7 @@ import type {
   PinkSpark,
   SlotFactor,
 } from "../api";
-import type { WatchedStore } from "../sparks";
+import type { SparkListStore } from "../sparks";
 import { APTITUDE_LABELS, aptitudeRows, letterModeOf, undroppableSpark } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -159,7 +159,7 @@ export function FocusPanel({
   affinityFailed,
   affinityPending,
   factorRefs,
-  watched,
+  sparkLists,
   cardOwner,
   onOpenPicker,
   onClear,
@@ -189,7 +189,7 @@ export function FocusPanel({
   // untouched: only the chooser reads it, and the reference is committed and
   // works offline, so a favorites list that didn't load costs an ordering
   // and nothing else.
-  watched: WatchedStore;
+  sparkLists: SparkListStore;
   // Names the uma a green spark belongs to, for the chooser's green rows.
   cardOwner: (cardId: number) => string | null;
   onOpenPicker: (i: number) => void;
@@ -343,7 +343,7 @@ export function FocusPanel({
                 index={index}
                 sparkNames={sparkNames}
                 factorRefs={factorRefs}
-                watched={watched}
+                sparkLists={sparkLists}
                 cardOwner={cardOwner}
                 locked={false}
                 sort={ancestorSort}
@@ -438,7 +438,7 @@ export function FocusPanel({
             index={index}
             sparkNames={sparkNames}
             factorRefs={factorRefs}
-            watched={watched}
+            sparkLists={sparkLists}
             cardOwner={cardOwner}
             locked={pinkFixed}
             sort={ancestorSort}

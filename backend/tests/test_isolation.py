@@ -7,7 +7,7 @@ rule left global, is invisible at every other layer and only shows up as one
 user's roster vanishing when another imports.
 
 Needs a real Postgres, and the fixtures that provide it live in conftest.py
-— shared with test_watched_sparks.py, which asserts the same ownership rule
+— shared with test_spark_lists.py, which asserts the same ownership rule
 over a different table.
 """
 from __future__ import annotations

@@ -366,8 +366,12 @@ function ChooserPopout({
   // this open. MEMBERSHIP is frozen; the ★ and the picker's pills stay live off
   // the lists. Without the freeze, favoriting a row lifts it out of its kind
   // section and the add buttons you were reaching for move away under the
-  // pointer. Freezing membership (rather than `favorited ∩ snapshot`) is what
-  // makes un-starring empty the star and move nothing.
+  // pointer. It has to be MEMBERSHIP rather than `favorited ∩ snapshot`
+  // (DECISIONS.md #36): under the intersection, un-starring dropped a row out
+  // of Favorites while the frozen set still hid it from its kind section, so
+  // the spark left the popout entirely and could not be added until you closed
+  // and reopened. Frozen membership makes un-starring empty the star and move
+  // nothing.
   //
   // Taken once per mount, and the caller REMOUNTS this popout when the lists
   // settle (see the `key` below) — which keeps the snapshot from freezing an

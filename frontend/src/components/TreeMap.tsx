@@ -126,6 +126,10 @@ export function TreeMap({
       const chara = slot?.chara_id ?? null;
       const empty = card === null || chara === null;
       const spark = sparkAt(design, i);
+      // One generic placeholder for every empty card — role names vary too
+      // much in length ("Grandparent 2-1" ellipsizes at the g2 width), so the
+      // role stays on the tooltip and in the aria-label.
+      //
       // Null while the catalog is still in flight — the band below holds its
       // space blank rather than showing a placeholder that's about to change.
       const name = chara === null ? null : charaName(chara);

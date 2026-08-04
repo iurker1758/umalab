@@ -233,7 +233,9 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
     }
     return withNamed(design, i, { ...slot, spark });
   }
-  // Deep slot: replace the pink half, keeping whoever is in it.
+  // Deep slot: replace the pink half, keeping whoever is in it. Clearing the
+  // pink off a slot with nobody in it prunes it to null — same husk rule as
+  // the named branch above.
   const card = design.sparks[i - NAMED_COUNT]?.card_id ?? null;
   return withDeep(
     design,
@@ -268,7 +270,10 @@ export function withDeep(design: Design, i: number, slot: DeepSlot | null): Desi
   return { ...design, sparks };
 }
 
-// Set (or drop) who a deep slot is, keeping its pink.
+// Set (or drop) who a deep slot is, keeping its pink. Dropping the character
+// off a slot with no pink prunes it to null: a husk would read as occupied on
+// the map and count as hand-authored in `handAuthored`, so the next pull would
+// warn about losing a node holding nothing.
 export function withDeepCard(design: Design, i: number, cardId: number | null): Design {
   const slot = design.sparks[i - NAMED_COUNT];
   const pink = slot?.aptitude == null || slot.stars == null ? null : slot;
@@ -683,6 +688,10 @@ export function planPull(design: Design, target: number, veteran: Veteran): Pull
   };
 }
 
+// `clears` and `writes` are disjoint by construction (planPull derives the
+// first by excluding the second), so clear-then-fill is order-independent —
+// filling first, or letting a written index into `clears`, would blank nodes
+// the pull just populated.
 export function applyPull(design: Design, plan: PullPlan): Design {
   let next = clearNodes(design, plan.clears);
   for (const w of plan.writes) {

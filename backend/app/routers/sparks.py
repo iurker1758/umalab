@@ -111,8 +111,10 @@ async def create_spark_list(
     # check-then-act: without this, two requests can both read 49, both pass,
     # and both insert, leaving 51 rows on a cap meant to bound the table.
     #
-    # An advisory lock rather than SERIALIZABLE (retry logic on every caller)
-    # or a `FOR UPDATE` on `users` (makes an unrelated table the gate).
+    # An advisory lock rather than SERIALIZABLE (retry logic on every caller),
+    # a `FOR UPDATE` on `users` (makes an unrelated table the gate), or a slot
+    # column with a CHECK (declarative, but leaves holes on delete and makes
+    # every create hunt for a free index).
     # Transaction-scoped, so it goes at commit or rollback with no unlock to
     # forget, and keyed on the owner, so the only thing that ever waits is one
     # user creating two lists at once.

@@ -546,6 +546,10 @@ export function DesignerPage({
   // green's factor key IS a card_id, so "Shooting Star" alone doesn't say
   // whose spark it is.
   //
+  // Composed from the two indexes that already exist rather than a third
+  // full-catalog map. Checked: `deriveCharaId` agrees with the catalog's own
+  // entry→cards join on all 95 released cards.
+  //
   // Null rather than a placeholder: the reference carries 42 uniques whose
   // card has not reached Global, and inventing "Card 104502" for them would
   // read as a name. The row shows the spark alone in that case.
@@ -654,9 +658,10 @@ export function DesignerPage({
         const spark = wasPulled ? null : (d.named[target]?.spark ?? null);
         // ...except a green, which IS bound to a card (DECISIONS.md #36). The
         // chooser enforces that at offer time; a re-pick is the one path that
-        // can leave a foreign green behind, and nothing downstream would
-        // notice.
-
+        // can leave a foreign green behind, and nothing downstream would catch
+        // it — the Procs tab would keep estimating a spark this member cannot
+        // carry, the trainee's roll-up would include it, and the autosave
+        // would persist it.
         const factors = wasPulled
           ? []
           : (d.named[target]?.factors ?? []).filter(

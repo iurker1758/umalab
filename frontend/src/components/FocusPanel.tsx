@@ -201,6 +201,10 @@ export function FocusPanel({
   // Keyed by kind AND key: the kinds number their keys independently, so a
   // bare key would collide across them.
   const sparkNames = new Map(factorRefs.map((f) => [sparkId({ type: f.kind, key: f.key }), f.name]));
+  // No lineage lists here, deliberately: the map already shows every node and
+  // is the one place you navigate from, so a second copy in the panel is
+  // duplication. Don't re-add one.
+
   // ---------- deep spark slot ----------
   // Anonymous unless a roster pull filled it: the map has no room for a name
   // down here, so the identity that arrived with the pull is shown in the

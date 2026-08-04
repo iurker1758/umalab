@@ -35,6 +35,14 @@ const CAP = LETTERS.indexOf("A");
 const idx = (l) => LETTERS.indexOf(l);
 const bump = (s) => (s >= 10 ? 4 : s >= 7 ? 3 : s >= 4 ? 2 : s >= 1 ? 1 : 0);
 const boost = (base, stars) => LETTERS[Math.min(idx(base) + bump(stars), CAP)];
+// Letters the bump actually buys: the cap takes the rest, and a base already
+// past A keeps its own ceiling. The From column reports THIS, not `bump` — a
+// 4★ on a B is worth +2 and moves one step (issue #42).
+const gained = (base, stars) =>
+  Math.min(idx(base) + bump(stars), Math.max(CAP, idx(base))) - idx(base);
+// What the From column should read for a projected row, cap note included.
+const fromText = (base, stars) =>
+  `${stars}★ → +${gained(base, stars)}` + (gained(base, stars) < bump(stars) ? " (at cap)" : "");
 const KEYS = ["turf", "dirt", "sprint", "mile", "medium", "long", "front", "pace", "late", "end"];
 const LABEL = {
   turf: "Turf", dirt: "Dirt", sprint: "Sprint", mile: "Mile", medium: "Medium",
@@ -617,7 +625,8 @@ try {
   await selectNode("Trainee");
   const tMile = boost(T.apt.mile, 6);
   check(`trainee mile boosted to ${tMile}`, (await rowLetter("Mile")) === tMile);
-  check("trainee mile From = 6★ → +2", (await rowFrom("Mile")).startsWith("6★ → +2"));
+  check(`trainee mile From = ${fromText(T.apt.mile, 6)}`,
+    (await rowFrom("Mile")) === fromText(T.apt.mile, 6), await rowFrom("Mile"));
   check("boosted letter highlighted",
     (await aptRow("Mile").locator(".apt-final.boosted").count()) === 1);
 
@@ -1480,7 +1489,8 @@ try {
   await selectNode("Parent 1");
   check(`p1 mile capped at A (10★ on base ${P1.apt.mile})`,
     (await rowLetter("Mile")) === boost(P1.apt.mile, 10));
-  check("p1 mile From = 10★ → +4", (await rowFrom("Mile")).startsWith("10★ → +4"));
+  check(`p1 mile From = ${fromText(P1.apt.mile, 10)}`,
+    (await rowFrom("Mile")) === fromText(P1.apt.mile, 10), await rowFrom("Mile"));
 
   // ---------- past the 10★ max: counted, never warned about ----------
   await selectNode("Sparks 3-2");
@@ -1489,26 +1499,30 @@ try {
     (await mapChip("Sparks 3-2").locator(".star").count()) === 3 &&
     (await mapChip("Sparks 3-2").locator(".star.filled").count()) === 2);
   await selectNode("Parent 1");
-  check("p1 mile From shows the raw 12★ → +4", (await rowFrom("Mile")).startsWith("12★ → +4"));
+  check(`p1 mile From shows the raw 12★: ${fromText(P1.apt.mile, 12)}`,
+    (await rowFrom("Mile")) === fromText(P1.apt.mile, 12), await rowFrom("Mile"));
   check("no over-10★ warning anywhere",
     !(await rowFrom("Mile")).includes("over 10") &&
     (await page.locator(".apt-over, .node-warn:not(.red)").count()) === 0);
 
-  // ---------- past the A cap: counted, never annotated ----------
-  // Stars beyond what the ceiling can absorb are neither warned about nor
-  // called out: overstacking is usually deliberate, since every matching
-  // spark is an independent inspiration ticket toward S. The row reports
-  // what the window holds and leaves the verdict alone.
+  // ---------- past the A cap: counted, and stated as bought nothing ----------
+  // Stars the ceiling cannot absorb are still not warned about — overstacking
+  // is usually deliberate, since every matching spark is an independent
+  // inspiration ticket toward S. What the row must not do is claim a gain it
+  // did not make: 3★ on a base already at A reads +0, not +1 (issue #42).
   await selectNode("Sparks 3-4");
   await setSpark("Sparks 3-4", aptA, 3);
   await selectNode("Parent 1");
   check(`p1 ${aptA} stays A`, (await rowLetter(LABEL[aptA])) === "A");
-  check("the row still reports the stars behind it",
-    (await rowFrom(LABEL[aptA])).startsWith("3★ → +1"),
+  check("the row reports the stars behind it and the nothing they bought",
+    (await rowFrom(LABEL[aptA])) === "3★ → +0 (at cap)",
     await rowFrom(LABEL[aptA]));
-  check("and says nothing about the excess",
+  check("the cap note is a note, not a warning",
     !(await rowFrom(LABEL[aptA])).includes("past A") &&
-    (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 0);
+    (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 1 &&
+    (await aptRow(LABEL[aptA]).locator(".node-warn, .spark-warn, .apt-over").count()) === 0);
+  check("a letter that never moved is not highlighted as boosted",
+    (await aptRow(LABEL[aptA]).locator(".apt-final.boosted").count()) === 0);
 
   // ---------- G11's own window: gen-3/4 sparks only ----------
   await selectNode("Sparks 4-1");
@@ -1518,7 +1532,8 @@ try {
   await selectNode("Grandparent 1-1");
   check(`g11 mile from its deep slots (5★)`,
     (await rowLetter("Mile")) === boost(G11.apt.mile, 5));
-  check("g11 mile From = 5★ → +2", (await rowFrom("Mile")).startsWith("5★ → +2"));
+  check(`g11 mile From = ${fromText(G11.apt.mile, 5)}`,
+    (await rowFrom("Mile")) === fromText(G11.apt.mile, 5), await rowFrom("Mile"));
   check(`g11 long from its gen-4 slot`,
     (await rowLetter("Long")) === boost(G11.apt.long, 2));
 
@@ -1668,7 +1683,8 @@ try {
   check("clearing g12 keeps the deep sparks",
     (await mapChip("Sparks 3-1").getAttribute("aria-label")) === "Sparks 3-1 — 3★ Mile");
   await selectNode("Parent 1");
-  check("p1 mile re-brackets to 9★ → +3", (await rowFrom("Mile")).startsWith("9★ → +3"));
+  check(`p1 mile re-brackets to ${fromText(P1.apt.mile, 9)}`,
+    (await rowFrom("Mile")) === fromText(P1.apt.mile, 9), await rowFrom("Mile"));
 
   // ---------- delete, from the bar's icon ----------
   await barButton("Delete").click();
@@ -1698,7 +1714,7 @@ try {
   await selectNode("Trainee");
   await pickInto(T);
   check("trainee brackets count the character-less spark",
-    (await rowFrom("Turf")).startsWith("2★ → +1"));
+    (await rowFrom("Turf")) === fromText(T.apt.turf, 2), await rowFrom("Turf"));
 
   // It has to survive the API, not just the client.
   await settled();

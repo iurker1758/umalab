@@ -806,7 +806,16 @@ Keep adding entries as the build evolves. This file is the interview.
   mistake to flag). *(v2 note: past-cap originally got a soft "+N past
   A" annotation. It was cut — the row already read "12★ → +4 · +4
   past A", two numbers that cancel, and calling the excess waste
-  contradicted the very reason it was left un-warned.)* The one real
+  contradicted the very reason it was left un-warned.)* *(#42
+  amendment: the From column reports what the ★ **bought**, not what
+  the bracket was worth — `4★ → +0 (at cap)` on a base already at A,
+  and `4★ → +1 (at cap)` on a B, where the bracket pays +2 and the
+  ceiling allows one step. The old row rendered `bump` unconditionally
+  and so claimed a gain that never happened; `boosted` does not
+  separate the two, since it is true for the B case as well. Not the
+  cut annotation returning: nothing is called waste and nothing is
+  styled as a warning — the note states the ceiling, which is the one
+  fact the letter column cannot show.)* The one real
   warning is a typed gen-1/2 pink whose own
   aptitude resolves below A = red "undroppable" (the game only
   generates pinks at A) — advisory, not a proof of impossibility,

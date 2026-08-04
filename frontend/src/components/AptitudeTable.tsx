@@ -55,9 +55,25 @@ export function AptitudeTable({ rows }: { rows: AptitudeRow[] }) {
                       </span>
                     )}
                     {r.mode === "project" && r.stars > 0 && (
-                      // Without a base the bump has nothing to land on —
-                      // show the raw ★ total only.
-                      <>{r.base === null ? `${r.stars}★` : `${r.stars}★ → +${r.bump}`}</>
+                      // Without a placeable base the bump has nothing to land
+                      // on — show the raw ★ total only.
+                      <>
+                        {r.gained === null ? (
+                          `${r.stars}★`
+                        ) : (
+                          <>
+                            {`${r.stars}★ → +${r.gained}`}
+                            {r.gained < r.bump && (
+                              <span
+                                className="apt-cap"
+                                title={`These ★ are worth +${r.bump}, but career-start inheritance stops at A, so ${r.gained === 0 ? "none of it" : `only +${r.gained}`} landed. The rest still counts as inspiration-proc tickets toward S.`}
+                              >
+                                {" (at cap)"}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </>
                     )}
                   </td>
                 </tr>

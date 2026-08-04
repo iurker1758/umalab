@@ -15,6 +15,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from fastapi.exceptions import ResponseValidationError
 from sqlalchemy import text
 
 from app.models import User
@@ -263,27 +264,34 @@ async def test_membership_is_unbounded(client: Any, users: list[User]):
     refuses it."""
     a, _ = users
     list_id = await a_list(client, a)
-    sparks = [spark("white", n) for n in range(1000)]
+    sparks = [spark("white", n) for n in range(1, 1001)]
     response = await patch(client, a, list_id, sparks=sparks)
     assert response.status_code == 200, response.text
     assert len(response.json()["sparks"]) == 1000
 
 
-async def test_an_unreadable_entry_costs_that_entry_not_the_response(
+async def test_an_unreadable_entry_fails_the_read_rather_than_vanishing(
     client: Any, users: list[User], sessions: Any
 ):
-    """A JSONB column with no migration path WILL eventually hold something
-    the current model cannot parse — a rolled-back newer client, a hand-fixed
-    row, a kind added later. Raising there loses every list, which is the
-    failure CLAUDE.md records against BlueprintOut.
+    """LOUD, on purpose, and this is the accepted tradeoff rather than an
+    oversight.
 
-    Written straight to the column, because the request model correctly
-    refuses these; the read side is what has to be forgiving.
+    A lenient read was written and reverted. Membership is a whole-array
+    PATCH, so an entry the response quietly drops is missing from the
+    client's copy and is DELETED by that client's next write — silent,
+    permanent data loss on the first pill click. Failing the read keeps the
+    row intact: nothing has told the client a truncated array is the truth.
+
+    The cost is the `BlueprintOut` failure CLAUDE.md records — one bad row
+    takes the whole list response with it — which is filed rather than
+    papered over, because the fix that actually helps is a lossless round
+    trip (#66), not a quieter loss.
+
+    Written straight to the column, because the request model refuses this.
     """
     a, _ = users
     first = await a_list(client, a, "Front Runner")
     await patch(client, a, first, sparks=[spark("white", 10)])
-    await a_list(client, a, "Medium")
     async with sessions() as session:
         await session.execute(
             text(
@@ -294,10 +302,19 @@ async def test_an_unreadable_entry_costs_that_entry_not_the_response(
             )
         )
         await session.commit()
-    rows = await listing(client, a)
-    # Both lists still render, and only the unreadable entry is missing.
-    assert [row["name"] for row in rows] == ["Front Runner", "Medium"]
-    assert rows[0]["sparks"] == [spark("white", 10)]
+    # The ASGI test client re-raises server exceptions rather than
+    # returning the 500 a browser would see; either way the read fails
+    # loudly, which is the point.
+    with pytest.raises(ResponseValidationError):
+        async with client(a) as http:
+            await http.get(LISTS)
+    # The row is untouched by the failed read — nothing has been dropped.
+    async with sessions() as session:
+        stored = await session.scalar(
+            text("SELECT jsonb_array_length(sparks) FROM spark_lists WHERE id = :i")
+            .bindparams(i=first)
+        )
+    assert stored == 2
 
 
 async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
@@ -459,12 +476,17 @@ async def test_concurrent_creates_cannot_exceed_the_cap(
     test, and the owner would land on 54.
 
     **This asserts the OUTCOME and is NOT the guard. Measured: it still
-    passes with `pg_advisory_xact_lock` removed** — the test client drives
-    these through one connection, so the interleaving that would break the
-    cap never happens here. Kept because the outcome is what the cap
-    promises and a future harness may interleave for real; do not read a
-    pass as evidence the lock is present. The lock is documented at its call
-    site in `routers/sparks.py`, and deleting it would not fail this suite.
+    passes with `pg_advisory_xact_lock` removed.** An earlier version of this
+    docstring explained that away by saying the test client drives these
+    through one connection — which is FALSE: `conftest`'s override opens a
+    new `AsyncSession` per request off a pooled engine, so they do interleave
+    on separate connections.
+
+    So the measurement stands and the reason for it is unknown, which means
+    the lock's behaviour under real concurrency is unverified in either
+    direction. Do not read a pass here as evidence the lock is present —
+    deleting it would not fail this suite. Filed as #76, along with what a
+    test that actually guards it would need.
     """
     a, _ = users
     for n in range(49):

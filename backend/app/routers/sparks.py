@@ -42,6 +42,21 @@ router = APIRouter(prefix="/api")
 # collide, and a message that doesn't say so reads as a bug.
 _DUPLICATE_NAME = "you already have a list with that name, ignoring case"
 _AT_CAP = f"you already have {MAX_LISTS_PER_OWNER} lists — delete one first"
+# The unique expression index, by the name the migration gives it. Postgres
+# reports it in the violation, which is the only thing distinguishing "that
+# name is taken" from every other integrity failure.
+_NAME_INDEX = "uq_spark_list_owner_lower_name"
+
+
+def _duplicate_name(exc: IntegrityError) -> bool:
+    """Whether this violation is the name index, rather than some other
+    constraint wearing its error message.
+
+    Every IntegrityError used to become "you already have a list with that
+    name", which sends the user renaming over a foreign-key or not-null
+    failure that renaming cannot fix.
+    """
+    return _NAME_INDEX in str(getattr(exc, "orig", exc))
 
 
 async def _owned(session: AsyncSession, user: User, list_id: int) -> SparkList | None:
@@ -124,10 +139,14 @@ async def create_spark_list(
     session.add(row)
     try:
         await session.commit()
-    except IntegrityError:
-        # uq_spark_list_owner_name. Two tabs creating "Front Runner" at once,
-        # or — far likelier — the user forgetting they already have one.
+    except IntegrityError as exc:
+        # The name index. Two tabs creating "Front Runner" at once, or — far
+        # likelier — the user forgetting they already have one. Anything
+        # else is a real fault, re-raised rather than dressed up as a name
+        # the user can change.
         await session.rollback()
+        if not _duplicate_name(exc):
+            raise
         raise HTTPException(409, _DUPLICATE_NAME) from None
     await session.refresh(row)
     return row
@@ -161,8 +180,10 @@ async def update_spark_list(
         row.sparks = [spark.model_dump() for spark in body.sparks]
     try:
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await session.rollback()
+        if not _duplicate_name(exc):
+            raise
         raise HTTPException(409, _DUPLICATE_NAME) from None
     return row
 

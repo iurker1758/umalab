@@ -296,9 +296,6 @@ class PinkSparkIn(BaseModel):
 # designer reads them yet and their 70/80/90 bases would dominate every proc
 # table. Adding one is a line here and a line in the frontend's rate map.
 SlotFactorKind = Literal["white", "unique", "race", "scenario"]
-# The same set as a runtime value, for the one place that has to ask "would
-# this parse?" without raising — see SparkListOut._drop_unreadable.
-SLOT_FACTOR_KINDS: frozenset[str] = frozenset(get_args(SlotFactorKind))
 
 
 class SlotFactorIn(BaseModel):
@@ -539,14 +536,20 @@ SparkListName = Annotated[
 # above real use" while 256 whites alone could pass it; 500 would merely have
 # postponed the same bug.
 #
-# What does bound it, without a magic number: `_dedupe` collapses membership
-# to distinct (kind, key) pairs, so a stored array cannot exceed the distinct
-# pairs in one request body, and body size is the server's limit rather than
-# this module's. That bound tracks the game instead of lagging it.
+# `_dedupe` still collapses membership to distinct (kind, key) pairs, so what
+# is stored cannot exceed the distinct pairs the caller sent. An earlier draft
+# of this comment went on to claim body size bounds that in turn — IT DOES
+# NOT. Nothing configures a request-body limit (`app/main.py` adds only CORS),
+# so membership is genuinely unbounded and this comment is not going to
+# pretend otherwise.
 #
-# The failure modes are not symmetric either. Too low: a permanent 422 on
-# data the app itself produced, which the user cannot read or escape. Absent:
-# a large row in the user's own account, which they can delete.
+# That is accepted rather than overlooked. The failure modes are not
+# symmetric: a cap set too low is a permanent 422 on data the app itself
+# produced, which the user cannot read or escape; no cap is a large row in
+# the user's own account, behind Access, which they can delete. If a real
+# bound is ever wanted it belongs at the transport — a body-size limit that
+# applies to every route — not as a constant here that ages against a
+# reference the game keeps growing.
 #
 # 50 LISTS stays, because it is a different kind of number — named builds a
 # person keeps, with no reference deciding a natural ceiling, so it is a bound
@@ -570,7 +573,13 @@ class SparkRef(BaseModel):
     model_config = {"extra": "forbid"}
 
     kind: SlotFactorKind
-    key: int
+    # Bounded to int4 like `SlotFactorIn.key`, not because JSONB minds — it
+    # would store anything — but because the column this replaced was a real
+    # `Integer` and dropped that bound on the way into a JSON array. An
+    # oversized key is unrepresentable everywhere else the app puts a factor
+    # id, so accepting one here only stores something nothing downstream can
+    # use.
+    key: int = Field(ge=1, le=2_147_483_647)
 
 
 class SparkListCreate(BaseModel):
@@ -633,60 +642,29 @@ class SparkListPatch(BaseModel):
         return list(seen.values())
 
 
-class SparkRefOut(BaseModel):
-    """The read side of a membership entry, deliberately NOT `SparkRef`.
+class SparkListOut(BaseModel):
+    """The read side. STRICT, and `sparks` is validated by the same `SparkRef`
+    the request uses.
 
-    `extra="forbid"` belongs on the request, where a mis-keyed body must be
-    refused. On the response it would mean one unexpected key in one row —
-    from a migration, a rolled-back newer client, a hand-fixed row — raising
-    on serialization and taking EVERY list down with it. That is the failure
-    CLAUDE.md already records against `BlueprintOut`, and there is no reason
-    to repeat it on a column that has no migration path either.
+    A lenient read was tried and reverted, because leniency here is not the
+    safe direction — it is the destructive one. Membership is a whole-array
+    PATCH, so anything this model quietly drops on the way out is missing
+    from the client's copy and is deleted by that client's next write. A
+    strict model 500s the list read instead: loud, obvious, and it cannot
+    lose a row, because nothing has told the client a truncated array is the
+    truth.
 
-    Extras are ignored, which is Pydantic's default and the lenient half of
-    "be strict in what you accept".
+    So the failure CLAUDE.md records against `BlueprintOut` — one unparseable
+    row taking down the whole response — is accepted here deliberately, and
+    filed rather than papered over. It needs a fix that keeps the round trip
+    lossless (membership as its own rows, #66), not one that makes the loss
+    silent.
     """
 
-    kind: SlotFactorKind
-    key: int
-
-
-class SparkListOut(BaseModel):
     id: int
     name: str
     # Explicit, because the user curates the order — the list route sorts on
     # it and breaks ties on `id`.
     position: int
-    sparks: list[SparkRefOut]
+    sparks: list[SparkRef]
     model_config = {"from_attributes": True}
-
-    @field_validator("sparks", mode="before")
-    @classmethod
-    def _drop_unreadable(cls, sparks: object) -> object:
-        """Skip entries this model cannot parse instead of failing the row.
-
-        Dropping `extra="forbid"` handled unexpected KEYS; `kind` is still a
-        Literal, so an entry carrying a kind outside it — a rolled-back newer
-        client, a hand-fixed row, a kind added later — would raise during
-        serialization and take EVERY list down with it. That is the failure
-        CLAUDE.md records against `BlueprintOut`, on a JSONB column with no
-        migration path, and there is no reason to repeat it on the read side.
-
-        One unreadable entry costs that entry. The row, and every other row,
-        still renders. Nothing here writes the column back, so a dropped
-        entry is invisible rather than destroyed — the next PATCH from a
-        client that CAN read it will carry it as normal.
-        """
-        if not isinstance(sparks, list):
-            return sparks
-        entries: list[object] = list(sparks)  # pyright: ignore[reportUnknownArgumentType]
-        readable: list[object] = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            typed: dict[str, object] = entry  # pyright: ignore[reportUnknownVariableType]
-            if typed.get("kind") in SLOT_FACTOR_KINDS and isinstance(
-                typed.get("key"), int
-            ):
-                readable.append(typed)
-        return readable

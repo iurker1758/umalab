@@ -199,59 +199,20 @@ export function DesignerPage({
     sparkListWrites.current += 1;
     setSparkLists(next);
   }, []);
-  // Which reload is the newest. Two can overlap — the chooser retries on open
-  // while a 404-triggered refresh is still in flight — and without this the
-  // OLDER one's settle wins: a stale rejection re-raises `failed` after a
-  // newer success cleared it, disabling every ★ for the rest of the session
-  // with no path back, because the only thing that clears `failed` is a
-  // reload that only fires while `failed`.
-  const sparkListFetch = useRef(0);
-  // Re-fetch. The load runs once at mount, so without this a one-second blip
-  // disabled every ★ for the session — the flag had one writer and no retry.
-  //
-  // `remount` is the difference between the two callers, and it is the
-  // popout's React `key`:
-  //
-  //   true  — the chooser opening after a failed fetch. The popout SHOULD be
-  //           rebuilt: it is showing no Favorites section, and re-snapshotting
-  //           is the whole point of the retry.
-  //   false — a write got a 404, so this copy of the lists is provably stale
-  //           and needs replacing UNDER a popout the user is working in.
-  //           Bumping the epoch there throws away their search query, closes
-  //           the picker they opened, and drops them back at the top of 432
-  //           rows — fixing the dead pill by wrecking everything around it.
-  //
-  // The bump is also tied to actually ADOPTING rows, not to the fetch merely
-  // settling: an epoch bumped in `finally` remounts the popout for a refresh
-  // that changed nothing, including one whose rows the write guard discarded.
-  const reloadSparkLists = useCallback((remount = true) => {
+  // Re-fetch on demand. The load runs once at mount, so without this a
+  // one-second blip disabled every ★ for the session — the flag had one
+  // writer and no retry. The chooser calls it when it opens after a failure.
+  const reloadSparkLists = useCallback(() => {
     void (async () => {
       const writes = sparkListWrites.current;
-      const fetchId = (sparkListFetch.current += 1);
       try {
         const rows = await loadSparkLists();
-        // A newer reload started while this was in flight — its answer is the
-        // one that counts, in both directions.
-        if (sparkListFetch.current !== fetchId) return;
-        // A write landed meanwhile: its response IS the newer list and is
-        // already in state, so these rows are stale by definition. `failed`
-        // still clears — the fetch itself succeeded — and the epoch does not
-        // move, because nothing was adopted.
-        if (sparkListWrites.current !== writes) {
-          setSparkListsFailed(false);
-          return;
-        }
-        setSparkLists(rows);
+        if (sparkListWrites.current === writes) setSparkLists(rows);
         setSparkListsFailed(false);
-        if (remount) setSparkListsEpoch((n) => n + 1);
       } catch {
-        if (sparkListFetch.current !== fetchId) return;
         setSparkListsFailed(true);
-        // A failed retry has to move the epoch even though no rows arrived:
-        // the chooser keys its popout on it, and the retry fires precisely
-        // when loading is already over, so a popout opened over the failure
-        // would otherwise never learn the retry happened.
-        if (remount) setSparkListsEpoch((n) => n + 1);
+      } finally {
+        setSparkListsEpoch((n) => n + 1);
       }
     })();
   }, []);

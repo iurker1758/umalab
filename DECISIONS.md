@@ -3168,10 +3168,14 @@ shape that was being refined in the wrong direction.
   binds too early or ages into binding too early; raising 200 to 500 would
   only have postponed the same bug.
 
-  What bounds it instead, without a number to age: `_dedupe` collapses to
-  distinct `(kind, key)` pairs, so a stored array cannot exceed the
-  distinct pairs in one request body, and body size is the server's limit
-  rather than a constant in `schemas.py`. `MAX_LISTS_PER_OWNER` stays — 50
+  What bounds it instead: `_dedupe` collapses to distinct `(kind, key)`
+  pairs, so what is stored cannot exceed the distinct pairs the caller sent.
+  An earlier draft of this paragraph went on to say body size bounds that in
+  turn — **it does not**; nothing configures a request-body limit, and a
+  review caught the claim. Membership is genuinely unbounded, which is
+  accepted rather than overlooked: a real bound belongs at the transport,
+  applying to every route, not as a constant here that ages against a
+  reference the game keeps growing. `MAX_LISTS_PER_OWNER` stays — 50
   named builds has no reference deciding a ceiling, so it bounds rows
   rather than sitting in the path of legitimate use.
 
@@ -3216,6 +3220,41 @@ shape that was being refined in the wrong direction.
   also turned out to destabilise the suite — measured, two aborts in two
   runs against zero in two on the committed baseline — and was replaced by
   a three-line guard that ran clean three times.
+
+- **A third review, and the decision to stop patching.** The second round of
+  fixes was reviewed too, and **at least eight of its fifteen findings were
+  defects in that round's own fixes** — worse than the round before. The
+  clearest was a lenient response model written to stop one unparseable
+  entry failing the whole list read: because membership is a whole-array
+  PATCH, an entry it dropped on the way out was **deleted from the database
+  by the client's next write**. A loud, lossless failure had been turned
+  into a silent, destructive one. In the same round, a focus-restore effect
+  never worked (it captured `document.body`, the state it was written to
+  repair), two fixes contradicted each other again, and this entry asserted
+  a request-body bound that nothing configures.
+
+  Every recurring defect sat in the same place: **speculative recovery for
+  multi-device conflicts that cannot happen to one user on an unreleased
+  app.** `PartialWrite`'s interaction with a corrective reload, the reload's
+  remount flag and fetch-generation guard, the lenient read, the focus
+  restore. Each needed its own correctness argument, and each argument was
+  wrong in a way only the next review found.
+
+  **So the machinery was deleted rather than fixed again.** The corrective
+  reload, its flag and its guard are gone; `onReload` does one thing. The
+  lenient read is gone and the strict one is documented as the deliberate
+  choice, because loud beats silent when data is at stake. The focus restore
+  is gone. What survived is what is simple and checkable: the folded name
+  index, the removed cap, the two distinguishable 409s, the IME guard, the
+  advisory lock, a three-line e2e guard. Everything removed is filed —
+  #73, #74, #75, #76 — so none of it reads as an oversight.
+
+  One more attempted fix in the same round is worth recording because it
+  proves the rule: blocking Escape while a write was in flight, to make
+  `busy` a genuine one-write-at-a-time guard. It silently swallowed the
+  keypress, and the e2e caught it hanging within one run. Reverted. The
+  correct fix for that whole class is not a guard at all — it is membership
+  as its own rows (#66), where a stale copy cannot delete anything.
 
 - **What would change my mind:** genuine concurrent use — a second person
   on the account, or one person editing the same list on two devices

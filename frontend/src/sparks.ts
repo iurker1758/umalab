@@ -58,12 +58,17 @@ export type SparkListStore = {
   // says so.
   onChange: (next: SparkList[]) => void;
   onActiveChange: (next: number[]) => void;
-  // Re-fetch the lists. `remount: false` replaces them WITHOUT bumping
-  // `epoch`, which the chooser keys its popout on — for the corrective fetch
-  // after a write 404s, where the user is mid-interaction and a remount would
-  // clear their search and close the picker they opened. The default is the
-  // retry-after-failure case, which does want the popout rebuilt.
-  onReload: (remount?: boolean) => void;
+  // Re-fetch the lists, for the chooser opening after a FAILED fetch. It is
+  // not a general staleness fix: it bumps `epoch`, which the chooser keys its
+  // popout on, so calling it while the popout is open rebuilds it and throws
+  // away the user's search and any picker they had open.
+  //
+  // A "corrective" variant that skipped the remount, so a write getting a 404
+  // could quietly replace a stale list, was written and reverted — it needed
+  // a fetch-generation guard, an adopted-rows rule for the epoch, and an
+  // interaction with `PartialWrite`, and three reviews found a defect in some
+  // part of that each time. The dead pill it addressed is filed instead.
+  onReload: () => void;
 };
 
 const sameSpark = (spark: SparkRef, kind: SlotFactorKind, key: number) =>

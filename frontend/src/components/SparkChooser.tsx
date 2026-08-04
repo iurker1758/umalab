@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ApiError,
   type FactorRef,
@@ -95,14 +95,6 @@ type Option = { kind: SlotFactorKind; key: number; name: string };
 
 const optionOf = (ref: FactorRef): Option => ref;
 
-/** Whether a failure means "that list is gone", looking THROUGH a
- *  `PartialWrite` — which wraps the real error and would otherwise hide a 404
- *  behind its own type. */
-const isMissing = (error: unknown): boolean => {
-  const inner = error instanceof PartialWrite ? error.reason : error;
-  return inner instanceof ApiError && inner.status === 404;
-};
-
 const unknownOption = (spark: SparkRef): Option => ({
   kind: spark.kind,
   key: spark.key,
@@ -130,6 +122,7 @@ function ListPicker({
   factorKey,
   name,
   busy,
+  listsFailed,
   onToggleList,
   onCreateList,
 }: {
@@ -138,6 +131,12 @@ function ListPicker({
   factorKey: number;
   name: string;
   busy: boolean;
+  // The ★ that discloses this picker is disabled when the lists failed to
+  // load; without the same guard here, an ALREADY-OPEN picker stays writable
+  // after the app has proven its copy stale — and a pill click then PATCHes
+  // the whole membership array built from that stale copy, silently dropping
+  // anything another device added.
+  listsFailed: boolean;
   onToggleList: (listId: number) => void;
   // Resolves false when the server refused the name, which is when the field
   // must keep it.
@@ -180,7 +179,7 @@ function ListPicker({
                 : `Add ${name} to ${list.name}`
             }
             title={holds ? `Remove from ${list.name}` : `Add to ${list.name}`}
-            disabled={busy}
+            disabled={busy || listsFailed}
             onClick={() => onToggleList(list.id)}
           >
             {list.name}
@@ -208,7 +207,7 @@ function ListPicker({
           // protects the document).
           maxLength={40}
           value={draft}
-          disabled={busy}
+          disabled={busy || listsFailed}
           onChange={(e) => setDraft(e.target.value)}
           // Enter submits, because the field is one of a row of controls and
           // reaching for a button after typing a name is the slower half of
@@ -228,7 +227,7 @@ function ListPicker({
         <button
           className="spark-list-add"
           aria-label={`Create list for ${name}`}
-          disabled={busy || draft.trim() === ""}
+          disabled={busy || listsFailed || draft.trim() === ""}
           onClick={submit}
         >
           Add
@@ -374,6 +373,7 @@ function SparkRows({
                 factorKey={o.key}
                 name={o.name}
                 busy={busy}
+                listsFailed={listsFailed}
                 onToggleList={(listId) => onToggleList(o, listId)}
                 onCreateList={(listName) => onCreateList(o, listName)}
               />
@@ -411,25 +411,6 @@ function ChooserPopout({
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
-  // Every control in the popout disables while a write is in flight, which
-  // includes the one the user just activated — and a disabled element cannot
-  // hold focus, so the browser drops it to <body>. For a keyboard user that
-  // means the next Tab restarts from the top of the document, in a popout
-  // with 432 rows. Remembered on the way in, restored on the way out.
-  const focused = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (busy) {
-      focused.current = document.activeElement as HTMLElement | null;
-      return;
-    }
-    const el = focused.current;
-    focused.current = null;
-    // Only if focus actually fell to the body — if the user has moved on
-    // themselves, yanking it back would be worse than leaving it.
-    if (el && el.isConnected && document.activeElement === document.body) {
-      el.focus();
-    }
-  }, [busy]);
   // WHICH sparks sit in the Favorites section, snapshotted for the life of
   // this open. MEMBERSHIP is frozen; the ★ and the picker's pills stay live
   // off the lists. Without the freeze, favoriting a row lifts it out of its kind
@@ -459,6 +440,16 @@ function ChooserPopout({
   const [pinnedRows] = useState(() => unionOf(sparkLists.lists));
   const pinned = new Set(pinnedRows.map((w) => sparkId({ type: w.kind, key: w.key })));
 
+  // Escape closes UNCONDITIONALLY, including mid-write. Blocking it while
+  // `busy` was tried, to make `busy` a real one-write-at-a-time guard — and
+  // it silently swallows the keypress, so a user pressing Escape during a
+  // save gets nothing and has to press again. The e2e caught it within one
+  // run. Deferring the close until the write settles would fix that, and is
+  // more machinery of exactly the kind three reviews found defects in.
+  //
+  // What it leaves open: close mid-write, reopen, and the fresh popout has
+  // `busy` false, so a second whole-array PATCH can be built from state the
+  // first has not updated yet and land last. Filed rather than guarded.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -554,21 +545,13 @@ function ChooserPopout({
       // Half of it landed — adopt that half, or the row exists server-side
       // and nowhere on screen. See sparks.ts PartialWrite.
       if (error instanceof PartialWrite) sparkLists.onChange(error.lists);
-      // A 404 proves this copy of the lists is stale: the list was deleted on
-      // another device. Nothing else re-reads them — `failed` is only set by
-      // FETCH paths, so the reload-on-open guard never fires after a failed
-      // WRITE — and without this the dead pill stays on screen and fails
-      // identically forever.
-      //
-      // `false` so the popout is NOT remounted: the user is mid-interaction,
-      // and rebuilding it here would clear the search they typed and close
-      // the picker they opened to fix the very thing that failed.
-      //
-      // Unwrapped first, because a PartialWrite hides the status: create the
-      // list, have it deleted elsewhere, and the membership PATCH 404s inside
-      // a PartialWrite — which would otherwise be adopted into state as a
-      // permanent phantom pill with no reload to clear it.
-      if (isMissing(error)) sparkLists.onReload(false);
+      // A 404 means the list was deleted elsewhere and this copy is stale.
+      // NOT corrected here: a reload bumps `epoch`, which remounts the popout
+      // and discards the user's search and open picker, and the quieter
+      // variant that avoided that needed a fetch-generation guard, an
+      // adopted-rows rule and a `PartialWrite` interaction — each of which a
+      // review found broken. The dead pill survives until the popout is
+      // reopened, which is filed rather than patched again.
       onError(failure(error));
       return { ok: false, error };
     } finally {

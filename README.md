@@ -48,7 +48,8 @@ before/after reroll, ported from the predecessor tkinter app).
 ## Stack
 
 FastAPI + async SQLAlchemy + PostgreSQL · React + TypeScript + Vite PWA ·
-pytest on the ingest decoding (the code that actually deserves tests).
+pytest on the backend, vitest on the frontend's pure modules, and a
+Playwright end-to-end suite over the designer.
 
 See [DECISIONS.md](DECISIONS.md) for why each of these — every choice is written
 up as requirements → choice → rejected alternatives.
@@ -87,7 +88,9 @@ npm install
 npm run dev   # proxies /api to the backend
 ```
 
-Run the tests: `cd backend && pytest`
+Run the tests: `cd backend && pytest`, and `cd frontend && npm run test` for
+the pure modules. The end-to-end suite (`npm run e2e`) needs both servers
+already running — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Reference data (`backend/app/data/`) is committed; regenerate it when the game
 adds characters: `python scripts/build_reference_data.py` (needs a

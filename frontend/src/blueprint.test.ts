@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   NAMED_COUNT,
   NODE_COUNT,
@@ -44,7 +44,15 @@ import {
   type Design,
 } from "./blueprint";
 import type { Blueprint } from "./api";
-import { designWith, factor, member, slot, stubLocalStorage, veteran } from "./testing";
+import {
+  designWith,
+  factor,
+  member,
+  restoreLocalStorage,
+  slot,
+  stubLocalStorage,
+  veteran,
+} from "./testing";
 
 // ---------- tree arithmetic ----------
 
@@ -789,6 +797,7 @@ describe("which blueprint was open", () => {
   beforeEach(() => {
     stubLocalStorage();
   });
+  afterEach(restoreLocalStorage);
 
   it("round-trips an id", () => {
     writeOpenId(42);
@@ -802,8 +811,9 @@ describe("which blueprint was open", () => {
   });
 
   // "null", '""' and "[]" all coerce to 0, which is an integer — so before
-  // this the fallback let them through as a row id no blueprint can have.
-  // Found by this port.
+  // this the guard let them through as a row id no blueprint can have. Found
+  // by this port; latent rather than live, since the caller looks the id up
+  // in a list it already holds.
   it.each([["{not json"], ['"seven"'], ["1.5"], ["null"], ['""'], ["[]"], ["true"]])(
     "falls back to 'most recent' on %s",
     (raw) => {

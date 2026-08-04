@@ -87,6 +87,11 @@ describe("reads over the caller's list", () => {
 });
 
 describe("toggle", () => {
+  // NB: unlike setHunting/setGroups below, the add path does NOT re-read
+  // before writing, so an add against a stale list full-replaces an existing
+  // row's groups and hunting bit. Issue #62 — these two tests pin current
+  // behaviour and will need changing with the fix; they are not a guard for
+  // it.
   it("adds an unwatched spark as hunted, and appends what the server returned", async () => {
     const calls = stubApi({});
     const next = await toggle([], "white", 700);

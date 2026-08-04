@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   FILTER_STORE,
   commonSparkNamesOf,
@@ -11,7 +11,14 @@ import {
   saveFilters,
   type Filters,
 } from "./filters";
-import { factor, member, stubBrokenLocalStorage, stubLocalStorage, veteran } from "./testing";
+import {
+  factor,
+  member,
+  restoreLocalStorage,
+  stubBrokenLocalStorage,
+  stubLocalStorage,
+  veteran,
+} from "./testing";
 
 const withFilters = (over: Partial<Filters>): Filters => ({ ...defaultFilters, ...over });
 
@@ -214,6 +221,7 @@ describe("loadFilters", () => {
   beforeEach(() => {
     store = stubLocalStorage();
   });
+  afterEach(restoreLocalStorage);
 
   it("defaults on an empty store", () => {
     expect(loadFilters()).toEqual(defaultFilters);

@@ -14,6 +14,11 @@ export default defineConfig({
     // suite there needs Postgres, uvicorn and a dev server, and a runner that
     // silently picked it up would turn a two-second command into the slow one
     // people skip.
-    include: ["src/**/*.test.ts"],
+    //
+    // `.tsx` is in the glob even though component tests are out of scope: one
+    // written anyway then fails loudly on `document is not defined`, which
+    // says what the rule is. Left out, it would be collected by nothing and
+    // report a green run over a file that never executed.
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

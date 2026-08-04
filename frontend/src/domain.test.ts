@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BLUE_ORDER,
   LETTER_ORDER,
@@ -20,7 +20,14 @@ import {
   statGrade,
   type SortPref,
 } from "./domain";
-import { factor, member, stubBrokenLocalStorage, stubLocalStorage, veteran } from "./testing";
+import {
+  factor,
+  member,
+  restoreLocalStorage,
+  stubBrokenLocalStorage,
+  stubLocalStorage,
+  veteran,
+} from "./testing";
 
 describe("apt", () => {
   it("maps the game's 1..8 scale onto G..S", () => {
@@ -98,7 +105,8 @@ describe("gradeClass", () => {
 
   // "" used to pass the palette check — every string contains the empty
   // string — and then throw dereferencing the character it had just found
-  // wasn't there. Found by this port.
+  // wasn't there. Found by this port; no caller can reach it today, so this
+  // pins the guard rather than a fixed crash.
   it("is empty, not a crash, for a letter that isn't there at all", () => {
     expect(gradeClass("")).toBe("");
   });
@@ -208,6 +216,7 @@ describe("loadSortPref", () => {
   beforeEach(() => {
     store = stubLocalStorage();
   });
+  afterEach(restoreLocalStorage);
 
   it("defaults to newest first", () => {
     expect(loadSortPref()).toEqual({ key: "register_time", asc: false });

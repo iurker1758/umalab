@@ -1693,6 +1693,20 @@ Keep adding entries as the build evolves. This file is the interview.
   unit runner, so the suite is the only place the model is verified.
   **— reversed, see the amendment below.**
 
+- **What would change my mind:** a post-2026-06-24 replication (every
+  base rate behind this predates Global's rework, and unlike #29's
+  composition rule these ARE constants, so a retune would invalidate the
+  numbers without touching the shape); hand entry proving too tedious to
+  bother with, which would push toward pulling a member's sparks from
+  the roster by character rather than typing them — **this is what
+  happened**, and #35 answered it with a browser rather than a roster
+  pull, the parenthetical that stood here ("the search is deliberately
+  minimal — an 'add one' affordance, not a browser") being exactly what
+  that entry reverses;
+  blue sparks turning out to be worth showing after all, which would
+  need the ranking to survive five rows that never move; anyone reading
+  "est." as a formality, which would mean the hedge needs to be louder
+  than one word after all.
 - **Amendment (2026-08-03, issue #48): the unit runner lands, on the
   condition that reversed it.** The ruling above was right about the
   cost and wrong about its own stability: "we can't test the new one
@@ -1713,15 +1727,23 @@ Keep adding entries as the build evolves. This file is the interview.
   incur it.
 
   **vitest 4** (the major paired with vite 8), `environment: "node"`,
-  `include: ["src/**/*.test.ts"]`, and its own `vitest.config.ts` so the
-  React and PWA plugins are not loaded to run arithmetic. **No jsdom, no
-  Testing Library, no component rendering** — the two loaders that touch
-  `localStorage` stub it in ten lines, which is cheaper than a DOM
-  implementation for the whole run. Tests are **co-located** as
-  `src/*.test.ts`: `tsconfig.json` is a single config with
-  `"include": ["src"]`, so co-location gets them typechecked by
+  `include: ["src/**/*.test.{ts,tsx}"]`, and its own `vitest.config.ts`
+  so the React and PWA plugins are not loaded to run arithmetic. **No
+  jsdom, no Testing Library, no component rendering** — the two loaders
+  that touch `localStorage` stub it in ten lines, which is cheaper than
+  a DOM implementation for the whole run. `.tsx` is in the glob anyway:
+  a component test written despite the rule then **fails** on `document
+  is not defined`, where leaving it out would have collected the file
+  with nothing and reported a green run over tests that never executed.
+  Tests are **co-located** as `src/*.test.ts`, because `tsconfig.json`'s
+  `include` already covers `src` — co-location gets them typechecked by
   `tsc -b` for free, where a top-level `tests/` directory would need the
-  include list widened to get the same thing. `npm run test` is its own
+  list widened to get the same thing. The one thing that list *was*
+  widened for is the two config files themselves: `vite.config.ts` has
+  never been typechecked and `vitest.config.ts` decides which tests run,
+  where a typo (`enviroment:`) silently falls back to a default and
+  reports green over a different file set than the config claims.
+  `npm run test` is its own
   script and **never** reaches `e2e/` — two runners behind one command is
   how the slow one gets skipped. It runs as a step on the existing
   `frontend` CI job, after `build`, so a fixture that has drifted from
@@ -1739,31 +1761,30 @@ Keep adding entries as the build evolves. This file is the interview.
   would mix the two arguments.
 
   **What the port found**, since a port of 1,979 lines that turns up
-  nothing is itself a result: two live defects, both in the
-  "degrade rather than crash" guards rather than the arithmetic.
-  `gradeClass("")` passed its palette check — every string contains the
-  empty string — and then threw dereferencing the character it had just
-  established was absent. `readOpenId` coerced before checking, so a
-  stored `null`, `""` or `[]` read as blueprint id 0, pointing the page
-  at a row that cannot exist instead of falling back to "most recent" as
-  its own comment promises. Both are fixed here. The models themselves —
-  the bracket table, the proc rates, the union across carriers, the pull
-  bounds, the branch-emptying rule, the document parser — were correct
-  everywhere the tests could reach them.
-- **What would change my mind:** a post-2026-06-24 replication (every
-  base rate behind this predates Global's rework, and unlike #29's
-  composition rule these ARE constants, so a retune would invalidate the
-  numbers without touching the shape); hand entry proving too tedious to
-  bother with, which would push toward pulling a member's sparks from
-  the roster by character rather than typing them — **this is what
-  happened**, and #35 answered it with a browser rather than a roster
-  pull, the parenthetical that stood here ("the search is deliberately
-  minimal — an 'add one' affordance, not a browser") being exactly what
-  that entry reverses;
-  blue sparks turning out to be worth showing after all, which would
-  need the ranking to survive five rows that never move; anyone reading
-  "est." as a formality, which would mean the hedge needs to be louder
-  than one word after all.
+  nothing is itself a result: **two latent defects, neither of them
+  reachable from today's callers** — and both in the "degrade rather
+  than crash" guards rather than in the arithmetic. `gradeClass("")`
+  passed its palette check, every string containing the empty string,
+  and then threw dereferencing the character it had just established
+  was absent; no call site can hand it `""` today. `readOpenId` coerced
+  before checking, so a stored `null`, `""` or `[]` came back as
+  blueprint id 0 — harmless only because its one caller looks that id up
+  in a list it already holds and falls back to "most recent" on a miss.
+  Both are fixed here, and the honest accounting is that the port bought
+  two corrected guards, not two fixed crashes. The models themselves —
+  the bracket table and its cap, the proc rates, the union across
+  carriers, the pull bounds, the branch-emptying rule, the
+  source-derived locking, the document parser — were correct everywhere
+  the tests could reach them. That is the more useful finding, and the
+  one to weigh when sizing the next port: this arithmetic was already
+  right, and what the suite buys is that it stays right.
+
+  **What would change my mind about the runner:** a year of green with
+  no regression caught, which would say the e2e suite had been
+  sufficient after all; a pure module landing untested after this, which
+  would mean the condition above never actually took; or a real case for
+  component tests, which needs jsdom and an entry of its own rather than
+  an extension of this one.
 
 ## 31. Three corrections to the designer and its filters
 

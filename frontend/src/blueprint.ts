@@ -989,9 +989,11 @@ export function readOpenId(): number | null {
   try {
     const raw = localStorage.getItem(DESIGN_STORE);
     // Checked as a number BEFORE coercing: Number() turns null, "" and []
-    // into 0, which is an integer and would read as a row id — one that no
-    // blueprint can have, so it points the page at a 404 instead of falling
-    // back to "most recent" the way this promises to.
+    // into 0, which is an integer and so was returned as a row id no
+    // blueprint can have. Harmless today only because the one caller looks
+    // the id up in a list it already holds and falls back to "most recent"
+    // on a miss — this returns the fallback outright rather than relying on
+    // that.
     const parsed: unknown = raw === null ? null : JSON.parse(raw);
     return typeof parsed === "number" && Number.isInteger(parsed) ? parsed : null;
   } catch {

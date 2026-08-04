@@ -10,8 +10,16 @@
 import type { Factor, LineageMember, Veteran } from "./api";
 import { NAMED_COUNT, SPARK_COUNT, emptyDesign, type Design, type SlotValue } from "./blueprint";
 
+// The kinds number their keys independently, so the id has to fold `kind` in
+// or two genuinely different sparks come out sharing one — which would hide a
+// collision from any future code that keys on the raw factor_id the way
+// CLAUDE.md's invariant requires it be kept for.
+const KIND_OFFSET: Record<Factor["kind"], number> = {
+  blue: 1, pink: 2, white: 3, unique: 4, race: 5, scenario: 6, other: 7,
+};
+
 export const factor = (f: Partial<Factor> & Pick<Factor, "kind" | "key">): Factor => ({
-  factor_id: f.key * 100 + (f.star ?? 1),
+  factor_id: (KIND_OFFSET[f.kind] * 1_000_000 + f.key) * 100 + (f.star ?? 1),
   star: 1,
   name: `factor-${f.key}`,
   ...f,
@@ -113,7 +121,7 @@ export function stubLocalStorage(): Map<string, string> {
     removeItem: (k) => void store.delete(k),
     clear: () => store.clear(),
   };
-  (globalThis as { localStorage?: unknown }).localStorage = stub;
+  install(stub);
   return store;
 }
 
@@ -123,10 +131,26 @@ export function stubBrokenLocalStorage(): void {
   const boom = (): never => {
     throw new Error("storage is blocked");
   };
-  (globalThis as { localStorage?: unknown }).localStorage = {
-    getItem: boom,
-    setItem: boom,
-    removeItem: boom,
-    clear: boom,
-  };
+  install({ getItem: boom, setItem: boom, removeItem: boom, clear: boom });
+}
+
+// Both stubs install a global, and the throwing one would otherwise outlive
+// the test that wanted it — a describe appended below the storage tests would
+// fail with "storage is blocked" and nothing in its own body to point at.
+// Pair either stub with `afterEach(restoreLocalStorage)`.
+let original: unknown;
+let installed = false;
+
+const install = (stub: unknown): void => {
+  if (!installed) {
+    original = (globalThis as { localStorage?: unknown }).localStorage;
+    installed = true;
+  }
+  (globalThis as { localStorage?: unknown }).localStorage = stub;
+};
+
+export function restoreLocalStorage(): void {
+  if (!installed) return;
+  (globalThis as { localStorage?: unknown }).localStorage = original;
+  installed = false;
 }

@@ -107,10 +107,10 @@ describe("aptitudeRows, projecting", () => {
   // consulting `boosted` (AptitudeTable.tsx), not in this arithmetic — so
   // fixing #42 must leave this test passing unchanged.
   it("reports a bump that bought nothing as bump > 0 with boosted false (#42)", () => {
-    const turf = rowFor(aptitudeRows(design, 1, letters({ mile: "A" })), "mile");
-    expect(turf.bump).toBe(2);
-    expect(turf.boosted).toBe(false);
-    expect(turf.final).toBe("A");
+    const mile = rowFor(aptitudeRows(design, 1, letters({ mile: "A" })), "mile");
+    expect(mile.bump).toBe(2);
+    expect(mile.boosted).toBe(false);
+    expect(mile.final).toBe("A");
   });
 
   it("passes an unrecognised base letter through without claiming a boost", () => {

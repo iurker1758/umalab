@@ -127,30 +127,19 @@ const replacing = (
 
 export const loadWatched = (): Promise<WatchedSpark[]> => api.watchedSparks();
 
-/** Add the spark if it isn't watched, remove it if it is. */
-export async function toggle(
-  watched: WatchedSpark[],
-  kind: SlotFactorKind,
-  key: number
-): Promise<WatchedSpark[]> {
-  if (isWatched(watched, kind, key)) {
-    await api.unwatchSpark(kind, key);
-    return watched.filter((spark) => !same(spark, kind, key));
-  }
-  const saved = await api.watchSpark(kind, key, {
-    hunting: DEFAULT_HUNTING,
-    groups: [],
-  });
-  return [...watched, saved];
-}
-
 // The PUT is a full replace, so every mutator has to send the fields it is
 // NOT changing — and must not guess them. A row can exist server-side and be
 // missing from this list (another tab, another device, a list fetched before
-// it was added), and guessing there silently rewrites the user's own choice:
-// `setGroups` assuming `hunting: true` would re-hunt a spark they had
-// deliberately marked as filler. So on a miss, re-read before writing, and
-// only fall back to the defaults if it really is new.
+// it was added, a fetch that failed and left it empty), and guessing there
+// silently rewrites the user's own choice: `setGroups` assuming
+// `hunting: true` would re-hunt a spark they had deliberately marked as
+// filler. So on a miss, re-read before writing, and only fall back to the
+// defaults if it really is new.
+//
+// All three mutators go through this. `toggle` skipping it was issue #62: the
+// list being the caller's is what makes the reads pure (DECISIONS.md #33),
+// and the price of that is that no mutator may treat absence from it as
+// absence from the server.
 async function currentOrFresh(
   watched: WatchedSpark[],
   kind: SlotFactorKind,
@@ -160,6 +149,39 @@ async function currentOrFresh(
   if (row !== undefined) return { row, list: watched };
   const fresh = await loadWatched();
   return { row: find(fresh, kind, key), list: fresh };
+}
+
+/**
+ * Add the spark if it isn't watched, remove it if it is.
+ *
+ * "Isn't watched" is decided against the SERVER on the add path, not against
+ * the caller's list — see `currentOrFresh`. The remove path needs no re-read:
+ * the DELETE route treats an already-gone row as the outcome the caller
+ * wanted, so a stale "watched" costs one 204 and nothing else.
+ *
+ * When the re-read finds the row after all, the click's intent — "I want this
+ * watched" — is already true, so this returns the list it read and writes
+ * NOTHING. The star lands on and the row keeps the groups and the hunting bit
+ * it had. Removing it instead would be the other reading of "toggle", and it
+ * would delete a row the user never saw, which is worse than the stale star
+ * it would be correcting.
+ */
+export async function toggle(
+  watched: WatchedSpark[],
+  kind: SlotFactorKind,
+  key: number
+): Promise<WatchedSpark[]> {
+  if (isWatched(watched, kind, key)) {
+    await api.unwatchSpark(kind, key);
+    return watched.filter((spark) => !same(spark, kind, key));
+  }
+  const { row, list } = await currentOrFresh(watched, kind, key);
+  if (row !== undefined) return list;
+  const saved = await api.watchSpark(kind, key, {
+    hunting: DEFAULT_HUNTING,
+    groups: [],
+  });
+  return replacing(list, saved);
 }
 
 /**

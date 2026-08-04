@@ -87,19 +87,31 @@ describe("reads over the caller's list", () => {
 });
 
 describe("toggle", () => {
-  // NB: unlike setHunting/setGroups below, the add path does NOT re-read
-  // before writing, so an add against a stale list full-replaces an existing
-  // row's groups and hunting bit. Issue #62 — these two tests pin current
-  // behaviour and will need changing with the fix; they are not a guard for
-  // it.
-  it("adds an unwatched spark as hunted, and appends what the server returned", async () => {
+  it("adds a spark the server doesn't have either, as hunted", async () => {
     const calls = stubApi({});
     const next = await toggle([], "white", 700);
+    expect(calls.watchedSparks).toHaveBeenCalledOnce();
     expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
       hunting: DEFAULT_HUNTING,
       groups: [],
     });
     expect(next.map((s) => s.key)).toEqual([700]);
+  });
+
+  // Issue #62. The list is the caller's, so absence from it is not absence
+  // from the server — another tab, another device, or a fetch that failed and
+  // left it empty. Writing the defaults here destroyed both fields.
+  it("does not clobber a row that is only missing from THIS copy of the list", async () => {
+    const server = [
+      watched({ id: 9, kind: "white", key: 700, hunting: false, groups: ["Mile", "Front"] }),
+    ];
+    const calls = stubApi({ watchedSparks: () => Promise.resolve(server) });
+    const next = await toggle([], "white", 700);
+    expect(calls.watchSpark).not.toHaveBeenCalled();
+    expect(calls.unwatchSpark).not.toHaveBeenCalled();
+    // The star lands on, which is what the click asked for, and the row keeps
+    // the filler bit and the groups it already had.
+    expect(next).toEqual(server);
   });
 
   it("removes a watched one, and only that one", async () => {
@@ -108,7 +120,26 @@ describe("toggle", () => {
     const next = await toggle(rows, "white", 700);
     expect(calls.unwatchSpark).toHaveBeenCalledWith("white", 700);
     expect(calls.watchSpark).not.toHaveBeenCalled();
+    // The remove path needs no re-read: the DELETE route treats an
+    // already-gone row as success, so a stale "watched" costs one 204.
+    expect(calls.watchedSparks).not.toHaveBeenCalled();
     expect(next.map((s) => s.key)).toEqual([800]);
+  });
+
+  it("places an added row by id rather than appending it", async () => {
+    const server = [watched({ id: 1 }), watched({ id: 8 })];
+    stubApi({
+      watchedSparks: () => Promise.resolve(server),
+      watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 4, kind, key, ...body })),
+    });
+    const next = await toggle([], "white", 4);
+    expect(next.map((s) => s.id)).toEqual([1, 4, 8]);
+  });
+
+  it("propagates a failed re-read instead of writing blind", async () => {
+    const calls = stubApi({ watchedSparks: () => Promise.reject(new Error("offline")) });
+    await expect(toggle([], "white", 700)).rejects.toThrow("offline");
+    expect(calls.watchSpark).not.toHaveBeenCalled();
   });
 
   it("does not mutate the list it was handed", async () => {

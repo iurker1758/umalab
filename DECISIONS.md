@@ -2130,11 +2130,37 @@ its three routes, and a client module — no UI of its own.
   **A full-replace PUT means no mutator may guess the fields it isn't
   changing.** A row can exist server-side and be missing from the
   caller's list (another tab, another device, a list fetched before it
-  was added), and guessing there rewrites the user's own choice —
-  `setGroups` assuming `hunting: true` would re-hunt a spark they had
-  deliberately marked as filler. On a miss the client re-reads before
-  writing, and only falls back to the default if the spark really is
-  new.
+  was added, a fetch that failed and left it empty), and guessing there
+  rewrites the user's own choice — `setGroups` assuming `hunting: true`
+  would re-hunt a spark they had deliberately marked as filler. On a
+  miss the client re-reads before writing, and only falls back to the
+  default if the spark really is new.
+
+  **Corrected 2026-08-03 (issue #62): `toggle` was exempt from that
+  rule, and shouldn't have been.** It decided "not watched" from the
+  caller's array alone and then PUT `{hunting: true, groups: []}`, so
+  starring a spark from a stale or failed-fetch list destroyed exactly
+  the two fields the paragraph above exists to protect. The entry
+  claimed the rule held for the client; it held for two of the three
+  mutators. Found by the unit port (#48) — the module's first tests
+  pinned the behaviour before anyone noticed it was wrong, which is the
+  argument for the port in miniature.
+
+  **The re-read finding the row means write nothing.** "I want this
+  watched" is already true, so `toggle` returns the list it just read:
+  the star lands on and the row keeps its groups and its hunting bit.
+  The other reading — the row exists, so *remove* it, which is what the
+  word "toggle" says — was rejected: it deletes a row the user never
+  saw in order to correct a star they were looking at, which is a worse
+  outcome than the stale star. **The remove path needs no re-read**: the
+  DELETE route already treats an already-gone row as the outcome the
+  caller wanted, so a stale "watched" costs one 204 and nothing else.
+
+  This is the price of the reads being pure over a caller-held list, and
+  it is still the right trade — a module-held cache would be a second
+  copy of server state with no way to know it had gone stale. But the
+  rule it buys is absolute: **no mutator may treat absence from that
+  list as absence from the server.**
 
   **No reconcile pass**, unlike `reconcileFilters`, and `key` is not
   validated against the factor reference. A watched spark missing from

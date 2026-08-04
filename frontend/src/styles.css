@@ -791,7 +791,11 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .picker-dock > * { pointer-events: auto; }
 /* Roster picks render as the roster page's own cards, so they get its grid —
    narrower tracks, since the popout is 520px against the page's 1100. */
-.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.5rem; }
+/* The dock's -0.3rem bottom margin pulls it up over the grid's last row, so
+   scrolled to the end the final card is 5px under it. Enough padding to undo
+   that and leave a gap the row reads as clear of. */
+.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.5rem;
+  padding-bottom: 0.8rem; }
 .picker-grid .empty { grid-column: 1 / -1; }
 /* The roster page's filter panel, reused inside the picker. It has only ever
    opened from the roster dock (z-index 8), which sits UNDER the popout layer

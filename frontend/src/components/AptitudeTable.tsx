@@ -55,9 +55,21 @@ export function AptitudeTable({ rows }: { rows: AptitudeRow[] }) {
                       </span>
                     )}
                     {r.mode === "project" && r.stars > 0 && (
-                      // Without a base the bump has nothing to land on —
-                      // show the raw ★ total only.
-                      <>{r.base === null ? `${r.stars}★` : `${r.stars}★ → +${r.bump}`}</>
+                      // Without a placeable base the bump has nothing to land
+                      // on — show the raw ★ total only.
+                      <>
+                        {r.gained === null ? (
+                          `${r.stars}★`
+                        ) : (
+                          <>
+                            {`${r.stars}★ → +${r.gained}`}
+                            {/* The ceiling is whatever the base already
+                                cleared, so the note can't name a letter: a
+                                base past A keeps its own. */}
+                            {r.gained < r.bump && <span className="apt-cap"> (at cap)</span>}
+                          </>
+                        )}
+                      </>
                     )}
                   </td>
                 </tr>

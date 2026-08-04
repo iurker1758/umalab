@@ -100,27 +100,50 @@ describe("aptitudeRows, projecting", () => {
     expect(s).toMatchObject({ base: "S", final: "S", bump: 2, boosted: false });
   });
 
-  // Issue #42. This asserts CURRENT behaviour, which is also correct
-  // behaviour: `bump` is what the stars are worth and `boosted` is whether
-  // the letter moved, and the two disagreeing is exactly the case #42 is
-  // about. The bug is in the From column that renders `bump` without
-  // consulting `boosted` (AptitudeTable.tsx), not in this arithmetic — so
-  // fixing #42 must leave this test passing unchanged.
-  it("reports a bump that bought nothing as bump > 0 with boosted false (#42)", () => {
+  // `bump` is what the window paid; `gained` is what the cap let it buy. They
+  // are separate fields because they genuinely differ, and `boosted` does not
+  // stand in for the difference — it is true whenever the letter moved at all,
+  // including the partial case below.
+  it("reports a bump that bought nothing as bump 2, gained 0 (#42)", () => {
     const mile = rowFor(aptitudeRows(design, 1, letters({ mile: "A" })), "mile");
-    expect(mile.bump).toBe(2);
-    expect(mile.boosted).toBe(false);
-    expect(mile.final).toBe("A");
+    expect(mile).toMatchObject({ base: "A", final: "A", bump: 2, gained: 0, boosted: false });
+  });
+
+  // The case that reads worst: B + 4★ is worth +2, the cap allows one step,
+  // and `boosted` is true — so a row rendering `bump` alone overstates the
+  // gain while looking, by every other signal, like an ordinary boost.
+  it("reports a partially clamped bump as bump 2, gained 1 (#42)", () => {
+    const mile = rowFor(aptitudeRows(design, 1, letters({ mile: "B" })), "mile");
+    expect(mile).toMatchObject({ base: "B", final: "A", bump: 2, gained: 1, boosted: true });
+  });
+
+  it("gains nothing on a base already past the cap", () => {
+    const s = rowFor(aptitudeRows(design, 1, letters({ mile: "S" })), "mile");
+    expect(s).toMatchObject({ final: "S", bump: 2, gained: 0 });
+  });
+
+  it("counts the full bump as gained when the cap never bites", () => {
+    const mile = rowFor(aptitudeRows(design, 1, letters()), "mile");
+    expect(mile).toMatchObject({ base: "C", final: "A", bump: 2, gained: 2 });
   });
 
   it("passes an unrecognised base letter through without claiming a boost", () => {
     const row = rowFor(aptitudeRows(design, 1, letters({ mile: "Z" })), "mile");
-    expect(row).toMatchObject({ base: "Z", final: "Z", boosted: false });
+    // gained stays null rather than 0: an unplaceable base means we cannot say
+    // the ★ bought nothing, only that we cannot say what they bought.
+    expect(row).toMatchObject({ base: "Z", final: "Z", boosted: false, gained: null });
   });
 
   it("has no final letter when the card's letters are unknown", () => {
     const row = rowFor(aptitudeRows(design, 1, null), "mile");
-    expect(row).toMatchObject({ base: null, final: null, boosted: false, stars: 4, bump: 2 });
+    expect(row).toMatchObject({
+      base: null,
+      final: null,
+      boosted: false,
+      stars: 4,
+      bump: 2,
+      gained: null,
+    });
   });
 });
 

@@ -77,6 +77,13 @@ export interface AptitudeRow {
   boosted: boolean; // final ended up above base
   stars: number; // total matching ★ in the window
   bump: number; // bracket letters those ★ are worth
+  // Letters the bump actually bought, after the ceiling took its cut — below
+  // `bump` whenever the base sat close enough to it to bite. Null wherever no
+  // bracket gain can be stated: outside "project" (a trained or base row is
+  // not a projection, so it has none — `boosted` is what says the letters
+  // differ there), or with a base that is unknown or unplaceable, where the ★
+  // have nothing to land on.
+  gained: number | null;
   mode: LetterMode; // stars/bump are 0 outside "project"
 }
 
@@ -116,6 +123,7 @@ export function aptitudeRows(
         LETTER_ORDER.indexOf(trained[key]) > LETTER_ORDER.indexOf(letters[key]),
       stars: 0,
       bump: 0,
+      gained: null,
       mode: "trained" as const,
     }));
   }
@@ -128,6 +136,7 @@ export function aptitudeRows(
       boosted: false,
       stars: 0,
       bump: 0,
+      gained: null,
       mode: "base" as const,
     }));
   }
@@ -138,6 +147,7 @@ export function aptitudeRows(
     const base = letters?.[key] ?? null;
     let final: string | null = null;
     let boosted = false;
+    let gained: number | null = null;
     if (base !== null) {
       const baseIdx = LETTER_ORDER.indexOf(base);
       if (baseIdx === -1) {
@@ -148,9 +158,14 @@ export function aptitudeRows(
         const finalIdx = Math.min(baseIdx + bump, capIdx);
         final = LETTER_ORDER[finalIdx];
         boosted = finalIdx > baseIdx;
+        // Measured off the letters, not the bracket: a 4★ on a B is worth +2
+        // and moves one step, so `bump` is what the window paid and this is
+        // what it bought. `boosted` doesn't separate them — it's true for
+        // that row too.
+        gained = finalIdx - baseIdx;
       }
     }
-    return { key, base, final, boosted, stars: st, bump, mode: "project" as const };
+    return { key, base, final, boosted, stars: st, bump, gained, mode: "project" as const };
   });
 }
 

@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 from fastapi.exceptions import ResponseValidationError
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
 from app.models import User
 
@@ -469,35 +469,60 @@ async def test_too_many_lists_are_refused(client: Any, users: list[User]):
 async def test_concurrent_creates_cannot_exceed_the_cap(
     client: Any, users: list[User]
 ):
-    """The check-then-act the advisory lock exists for.
+    """The check-then-act the advisory lock exists for: at 49 lists, five
+    simultaneous creates must yield exactly one 201 and four 409s, never an
+    owner at 54.
 
-    At 49 lists, five simultaneous creates must yield exactly one 201 and
-    four 409s. Without the lock all five could read 49, all five pass the
-    test, and the owner would land on 54.
-
-    **This asserts the OUTCOME and is NOT the guard. Measured: it still
-    passes with `pg_advisory_xact_lock` removed.** An earlier version of this
-    docstring explained that away by saying the test client drives these
-    through one connection — which is FALSE: `conftest`'s override opens a
-    new `AsyncSession` per request off a pooled engine, so they do interleave
-    on separate connections.
-
-    So the measurement stands and the reason for it is unknown, which means
-    the lock's behaviour under real concurrency is unverified in either
-    direction. Do not read a pass here as evidence the lock is present —
-    deleting it would not fail this suite. Filed as #76, along with what a
-    test that actually guards it would need.
+    The pool is warmed first, and that is load-bearing. On a cold pool each
+    gathered request waits on a NEW connection, and connection establishment
+    staggers them into running one at a time — measured: with the lock
+    removed, the cold-pool version still passed [201, 409, 409, 409, 409]
+    while the warmed version landed [201, 201, 201, 201, 201], three runs
+    out of three each way. Genuine interleaving still isn't guaranteed, so
+    the lock itself is pinned deterministically by
+    `test_a_create_waits_for_the_owner_advisory_lock` below.
     """
     a, _ = users
     for n in range(49):
         assert (await create(client, a, f"build {n}")).status_code == 201
     async with client(a) as http:
+        await asyncio.gather(*(http.get(LISTS) for _ in range(5)))
         responses = await asyncio.gather(
             *(http.post(LISTS, json={"name": f"race {n}"}) for n in range(5))
         )
     codes = sorted(r.status_code for r in responses)
     assert codes == [201, 409, 409, 409, 409], codes
     assert len(await listing(client, a)) == 50
+
+
+async def test_a_create_waits_for_the_owner_advisory_lock(
+    client: Any, users: list[User], sessions: Any
+):
+    """The guard on the lock itself, where the outcome test above is a race
+    that could accidentally serialize: a create must block while another
+    transaction holds this owner's advisory lock, and complete once it is
+    released. Deleting `pg_advisory_xact_lock` from the route fails this
+    deterministically — the create sails through mid-hold (measured).
+
+    Half a second of "still blocked" is the margin between an insert that
+    is waiting and one that is merely slow; the whole suite's requests
+    finish in milliseconds.
+    """
+    a, _ = users
+    async with sessions() as holder:
+        await holder.execute(select(func.pg_advisory_xact_lock(a.id)))
+        async with client(a) as http:
+            request = asyncio.ensure_future(
+                http.post(LISTS, json={"name": "Front Runner"})
+            )
+            done, _ = await asyncio.wait([request], timeout=0.5)
+            assert not done, "the create finished while the lock was held"
+            # Rollback ends the holder's transaction, which IS the release —
+            # the lock is transaction-scoped.
+            await holder.rollback()
+            response = await asyncio.wait_for(request, timeout=5)
+    assert response.status_code == 201, response.text
+    assert [row["name"] for row in await listing(client, a)] == ["Front Runner"]
 
 
 async def test_the_cap_is_per_owner(client: Any, users: list[User]):

@@ -44,6 +44,7 @@ import {
   copyName,
   deriveCharaId,
   emptyDesign,
+  factorsSurviving,
   fromApi,
   halfOf,
   lockedBy,
@@ -656,17 +657,10 @@ export function DesignerPage({
         // A re-pick otherwise keeps every spark the slot was given by hand.
         // They are plan inputs, not part of the card's identity.
         const spark = wasPulled ? null : (d.named[target]?.spark ?? null);
-        // ...except a green, which IS bound to a card (DECISIONS.md #36). The
-        // chooser enforces that at offer time; a re-pick is the one path that
-        // can leave a foreign green behind, and nothing downstream would catch
-        // it — the Procs tab would keep estimating a spark this member cannot
-        // carry, the trainee's roll-up would include it, and the autosave
-        // would persist it.
+        // ...except a green, which is bound to a card — `factorsSurviving`.
         const factors = wasPulled
           ? []
-          : (d.named[target]?.factors ?? []).filter(
-              (f) => f.kind !== "unique" || f.key === pick.card_id
-            );
+          : factorsSurviving(d.named[target]?.factors ?? [], pick.card_id);
         return withNamed(
           clearNodes(d, owned),
           target,

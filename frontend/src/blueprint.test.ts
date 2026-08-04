@@ -12,6 +12,7 @@ import {
   deriveCharaId,
   emptyDesign,
   factorsOf,
+  factorsSurviving,
   fromApi,
   genOf,
   halfOf,
@@ -324,6 +325,39 @@ describe("withSpark / withFactors / withoutCharacter prune rather than leave hus
     expect(withoutCharacter(cast, 1).named[1]).toBeNull();
   });
 });
+
+// A green's key IS a card_id (DECISIONS.md #36), which is what makes this a
+// filter on identity rather than a preference.
+describe("factorsSurviving", () => {
+  const white = { kind: "white", key: 700, stars: 3 } as const;
+  const race = { kind: "race", key: 12, stars: 1 } as const;
+  const scenario = { kind: "scenario", key: 4, stars: 2 } as const;
+  const greenFor = (cardId: number) => ({ kind: "unique", key: cardId, stars: 2 }) as const;
+
+  it("keeps every spark that isn't bound to a card", () => {
+    expect(factorsSurviving([white, race, scenario], 100_101)).toEqual([white, race, scenario]);
+  });
+
+  it("keeps the green that belongs to the card being picked", () => {
+    expect(factorsSurviving([greenFor(100_101)], 100_101)).toEqual([greenFor(100_101)]);
+  });
+
+  it("drops a green belonging to any other card", () => {
+    expect(factorsSurviving([greenFor(100_101)], 100_102)).toEqual([]);
+  });
+
+  it("drops only the foreign green, keeping the rest of the plan", () => {
+    const before = [white, greenFor(100_101), race];
+    expect(factorsSurviving(before, 100_102)).toEqual([white, race]);
+  });
+
+  it("does not mutate the array it was given", () => {
+    const before = [white, greenFor(100_101)];
+    factorsSurviving(before, 100_102);
+    expect(before).toHaveLength(2);
+  });
+});
+
 
 // ---------- source-derived locking ----------
 

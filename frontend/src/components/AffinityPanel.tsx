@@ -8,11 +8,8 @@ import { affinityClass } from "../domain";
 //
 // The trainee's panel only: affinity is a property of the pairing you are
 // about to run, not of any one ancestor, so hanging it off a grandparent
-// would invite reading it as that grandparent's own.
-//
-// The total also rides on the trainee's map chip (see TreeMap), so the number
-// you judge a pairing by is legible without opening the panel. This is where
-// it is explained.
+// would invite reading it as that grandparent's own. The total also rides on
+// the trainee's map chip; this is where it is explained.
 export function AffinityPanel({
   affinity,
   traineeSet,
@@ -99,16 +96,14 @@ export function AffinityPanel({
   );
 }
 
-// One ancestor's INDIVIDUAL affinity — every link it appears in, which is
-// what an inspiration proc off it rolls against. Panel-only by design: a
-// parent's includes the two grandparents below her and the parent-pair link,
-// so it nests and double-counts, and putting it on a map tile would show two
-// parents visibly exceeding the trainee's total one row above them
-// (DECISIONS.md #29). Here there is room to show the composition instead of
-// leaving it to be inferred.
+// One ancestor's INDIVIDUAL affinity — every link it appears in, which is what
+// an inspiration proc off it rolls against. Its composition is shown rather
+// than inferred, because these NEST: a parent's includes the two grandparents
+// below her and the parent-pair link, so two parents can visibly exceed the
+// trainee's total one row above them (DECISIONS.md #29).
 //
 // Renders nothing when there is no score, or when this slot was empty in the
-// design that was scored — the ancestor panels have plenty else to show.
+// design that was scored.
 export function NodeAffinity({
   affinity,
   index,

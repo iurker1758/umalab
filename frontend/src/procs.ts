@@ -21,13 +21,12 @@ import type { AptitudeKey, PinkSpark, SlotFactor, SlotFactorKind } from "./api";
 // independent implementation that agree, which is good enough to show and
 // not good enough to state as fact. See DECISIONS.md #29/#30.
 
-// Base per-event chance by ★, before affinity, per spark type. Measured
-// (Polaris's compatibility-0 study, cross-checked against uma.moe's
-// implementation — RESOURCES.md has both).
+// Base per-event chance by ★, before affinity. Measured (Polaris's
+// compatibility-0 study, cross-checked against uma.moe's implementation —
+// RESOURCES.md has both).
 //
-// Every kind the blueprint document can hold. Blue (70/80/90) is the one
-// missing: stat sparks are inherited too, but the document has no kind for
-// them and their bases would dominate every table if it did.
+// Blue (70/80/90) is the one kind missing: stat sparks are inherited too, but
+// the document has no kind for them and their bases would dominate every table.
 export const SPARK_BASE = {
   pink: [1, 3, 5],
   white: [3, 6, 9],
@@ -38,8 +37,7 @@ export const SPARK_BASE = {
 
 export type SparkType = keyof typeof SPARK_BASE;
 
-// What each kind is called in the panel. "Green" is the in-game name for a
-// unique-skill spark, which is what players call it — `unique` is the
+// "Green" is what players call a unique-skill spark; `unique` is the
 // reference's word, kept in the document because it is the game's own.
 export const SPARK_TYPE_LABELS: Record<SparkType, string> = {
   pink: "Pink",
@@ -95,10 +93,9 @@ export type SparkChance = SparkRef & {
   chance: number | null;
 };
 
-// Every spark a member carries, best chance first — the same ranking the
-// trainee's roll-up uses, because the question is the same one: which of
-// these is actually likely to land. Ties break on the spark id so the order
-// is stable across re-scores rather than shuffling on every keystroke.
+// Every spark a member carries, best chance first. Ties break on the spark id
+// so the order is stable across re-scores rather than shuffling on every
+// keystroke.
 export function memberSparks(
   pink: PinkSpark | null,
   factors: readonly SlotFactor[],
@@ -129,13 +126,10 @@ export function memberSparks(
 // One spark on the trainee's roll-up: every member carrying it, and the
 // chance she ends up with it from ANY of them.
 export type SparkOutlook = SparkRef & {
-  // Deliberately NO star level. Carriers can hold the same spark at different
-  // levels, and `chance` is the union across them — so any single ★ figure
-  // beside it would answer a different question from the number it sits next
-  // to. A row reading "★★★ 40.6%" invites "40.6% chance of a 3★", when 40.6%
-  // is the chance of the spark at ANY level and the 3★ carrier alone is
-  // 32.8%. Which level lands is whichever carrier procced; the per-ancestor
-  // tabs carry that, one click away.
+  // Deliberately NO star level: carriers can hold the same spark at different
+  // levels and `chance` is the union across them, so a row reading "★★★ 40.6%"
+  // would invite "40.6% chance of a 3★" when 40.6% is the chance at ANY level.
+  // The per-ancestor tabs carry the levels, one click away.
   //
   // Tree indices of the members carrying it, in tree order.
   from: number[];
@@ -175,34 +169,27 @@ export function combineOutlooks(
       }
     }
   }
-  // Best chance first — the roll-up exists to be ranked. Ties break on the
-  // spark id so the order is stable across re-scores.
   return [...byId.values()].sort(
     (a, b) => (b.chance ?? -1) - (a.chance ?? -1) || sparkId(a).localeCompare(sparkId(b))
   );
 }
 
 // ---------- display order ----------
-// How a spark table is ordered on screen. It is also what decides what the
-// trainee's fold hides: that fold is a HEIGHT clip over this order, not a
-// selection taken on chance (#30's row cap, replaced in #34) — so under the
-// kind grouping the rows below the fold are the bottom of the grouping, which
-// can include a high-chance white. What's hidden is the bottom of the order
-// you chose, and no longer "always the least likely".
+// Also what decides what the trainee's fold hides: the fold is a HEIGHT clip
+// over this order, not a selection taken on chance, so under the kind grouping
+// the rows below it can include a high-chance white.
 export type SparkSort = "chance" | "kind";
 
 // Pink → Green → Race → White → Scenario, the game's own grouping. Not
-// alphabetical and not the reference's (kind, name): that order buries whites
-// behind races, the same bias #30 caught in the search's cap.
+// alphabetical and not the reference's (kind, name), which buries whites
+// behind races.
 //
-// Numbered from 1, leaving 0 for blue: stat sparks are not a kind the
-// document holds (#30 — they would sit at the top of every ranked table and
-// never move), but when they are added they group ABOVE the pink. Adding
-// `blue` to SPARK_BASE won't compile until it is placed here, which is the
-// point.
-// Exported because the chooser's browse sections use it too (#35): the order
-// you pick sparks in and the order the tables group them in are the same
-// order, held once.
+// Numbered from 1, leaving 0 for blue: stat sparks aren't a kind the document
+// holds, but when they are added they group ABOVE the pink. Adding `blue` to
+// SPARK_BASE won't compile until it is placed here, which is the point.
+//
+// The chooser's browse sections use this too, so the order you pick sparks in
+// and the order the tables group them in are one order, held once.
 export const SPARK_TYPE_ORDER: Record<SparkType, number> = {
   pink: 1,
   unique: 2,
@@ -212,10 +199,7 @@ export const SPARK_TYPE_ORDER: Record<SparkType, number> = {
 };
 
 // Ties break on the spark id in both modes, so the order is stable across
-// re-scores rather than shuffling when an unrelated node is edited. Nothing
-// in a spark table can change a chance any more — the level is chosen when
-// the spark is added (#34) — so this is about re-scores, not about a row
-// moving under a control.
+// re-scores rather than shuffling when an unrelated node is edited.
 export function sortSparks<T extends SparkRef & { chance: number | null }>(
   rows: readonly T[],
   sort: SparkSort

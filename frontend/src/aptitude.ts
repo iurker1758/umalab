@@ -64,11 +64,10 @@ export function windowStars(design: Design, i: number): Map<AptitudeKey, number>
 //   trained — read off a roster veteran's own record. Not a forecast at all:
 //             what she finished with, inheritance and training already in it.
 //   base    — the card's letters and nothing more. For a member pulled out of
-//             a dump's lineage, where we know exactly WHO she is and nothing
-//             about what she trained to: her window is missing two thirds of
-//             its slots and always will be, since the game stores only two
-//             generations per veteran, so a projection there would be a
-//             floor dressed up as a forecast.
+//             a dump's lineage: we know WHO she is and nothing about what she
+//             trained to, and her window is permanently missing two thirds of
+//             its slots, so a projection would be a floor dressed as a
+//             forecast.
 export type LetterMode = "project" | "trained" | "base";
 
 export interface AptitudeRow {
@@ -81,25 +80,19 @@ export interface AptitudeRow {
   mode: LetterMode; // stars/bump are 0 outside "project"
 }
 
-// Which mode a node's letters are in, from the slot itself.
-// Keyed off `source`, not off whether the letters happen to be there: a
-// pulled node describes a horse who already ran, so projecting inheritance
-// onto her would double-count what her career consumed and cap at A a mare
-// who finished at S. If her letters are missing (any pull older than them, or
-// a dump field off the 1..8 scale) the honest fallback is her card's base,
+// Keyed off `source`, not off whether the letters happen to be there: a pulled
+// node describes a horse who already ran, so projecting inheritance onto her
+// would double-count what her career consumed and cap at A a mare who finished
+// at S. With her letters missing, the honest fallback is her card's base,
 // never the forecast.
 export function letterModeOf(slot: SlotValue | null): LetterMode {
   if (slot === null || slot.source === "catalog") return "project";
   return slot.aptitudes !== null ? "trained" : "base";
 }
 
-// The ten display rows for a named node.
-//
-// `letters` are the card's base letters. `trained` is a roster pick's own
-// record, and when present it wins outright: her career already consumed
-// whatever her parents passed down, so running the bracket math over her
-// ancestry again would count the same inheritance twice — and cap at A a
-// mare who finished at S.
+// The ten display rows for a named node. `letters` are the card's base;
+// `trained` is a roster pick's own record and wins outright when present, or
+// the bracket math would count the same inheritance twice.
 export function aptitudeRows(
   design: Design,
   i: number,
@@ -114,9 +107,9 @@ export function aptitudeRows(
       // what she trained to is real, and worth highlighting as a boost.
       base: letters?.[key] ?? null,
       final: trained[key],
-      // An unrecognised base (stale reference data) indexes as -1, which
-      // would read as a boost on every row. Same guard the project branch
-      // applies below: if we can't place the base, we can't claim a gain.
+      // An unrecognised base (stale reference data) indexes as -1, which would
+      // read as a boost on every row: if we can't place the base, we can't
+      // claim a gain. The project branch below guards the same way.
       boosted:
         letters?.[key] !== undefined &&
         LETTER_ORDER.indexOf(letters[key]) !== -1 &&
@@ -162,23 +155,18 @@ export function aptitudeRows(
 }
 
 // A PLANNED pink on generations 1–2 whose matching aptitude resolves below A
-// couldn't exist: the game only generates pink sparks at A. Not checkable
-// when the card's letters are unknown, or on anonymous deep slots (no card
-// by design). The trainee carries no spark. This is the map's one badge
-// state — overstacking past 10★ is deliberately unflagged, since the extra
-// sparks are still inspiration-proc tickets toward S.
+// couldn't exist: the game only generates pink sparks at A. This is the map's
+// one badge state — overstacking past 10★ is deliberately unflagged, since the
+// extra sparks are still inspiration-proc tickets toward S.
 //
 // Catalog slots only, and that restriction is load-bearing. A roster or
-// lineage node's pink came out of a real dump: it demonstrably dropped, so a
-// verdict that it couldn't is wrong by construction. It would also fire
-// constantly — a pulled grandparent's own bracket window is half empty by
-// design, because the game stores two generations per veteran and its
-// grandparents therefore have no sparks in the data. Its projected letters
-// are a lower bound; flagging a real pink against a lower bound is exactly
-// the false positive to avoid.
+// lineage node's pink came out of a real dump, so a verdict that it couldn't
+// drop is wrong by construction — and it would fire constantly, since a pulled
+// grandparent's bracket window is half empty by design and her projected
+// letters are only a lower bound.
 //
-// Takes rows rather than letters: callers rendering a node already have
-// them, and the window scan behind them is the expensive part.
+// Takes rows rather than letters: callers rendering a node already have them,
+// and the window scan behind them is the expensive part.
 export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number): boolean {
   if (i === 0 || i >= NAMED_COUNT) return false;
   const slot = design.named[i];

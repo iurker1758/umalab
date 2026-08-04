@@ -227,9 +227,7 @@ export function reconcileFilters(f: Filters, vets: Veteran[]): Filters {
   const marks = new Set<string>([""]); // the no-favorite chip is always valid
   const cards = new Set<number>();
   // The chooser's own vocabulary, so the two can't drift: a name it offers is
-  // a name this keeps, and a name it drops is one no filter can match any
-  // more — which is what makes clearing that filter right rather than a
-  // roster hidden with nothing in the panel to explain why.
+  // a name this keeps, and a name it drops is one no filter can match.
   const sparks = new Set(commonSparkNamesOf(vets));
   for (const v of vets) {
     if (v.tags[0]) marks.add(v.tags[0]);

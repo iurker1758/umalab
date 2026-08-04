@@ -5,10 +5,8 @@ import { writeStore } from "./storage";
 const APT = "-GFEDCBAS";
 export const apt = (n: number) => APT[n] ?? "?";
 
-// The grades themselves, worst to best — the same eight, minus the "-" that
-// only stands for "no value". Lives here rather than in aptitude.ts because
-// blueprint.ts validates against it too, and aptitude.ts already imports
-// blueprint.ts.
+// Worst to best. Here rather than in aptitude.ts because blueprint.ts
+// validates against it too, and aptitude.ts already imports blueprint.ts.
 export const LETTER_ORDER: readonly string[] = [...APT.slice(1)];
 
 // What a chara is called when the committed reference data has no entry for
@@ -88,10 +86,8 @@ export const statGrade = (n: number): string =>
 
 // Letter → color-family class, shared by stat grades and aptitude letters
 // (SS/S gold, A orange, … G gray — same palette as the rank badges).
-// The empty string is a substring of every string, so the guard has to ask
-// for a first character before asking whether it's in the palette — without
-// that, `gradeClass("")` passed the check and then dereferenced the character
-// it had just established wasn't there.
+// The empty string is a substring of every string, so the guard asks for a
+// first character before asking whether it's in the palette.
 export const gradeClass = (letter: string): string => {
   const first = letter[0]?.toLowerCase() ?? "";
   return first !== "" && "sabcdefgu".includes(first) ? `ltr-${first}` : "";
@@ -193,11 +189,10 @@ export const SPARK_ABBR: Record<string, string> = {
 export const sparkAbbr = (name: string) =>
   SPARK_ABBR[name] ?? name.slice(0, 5).toUpperCase();
 
-// The roster derivations the roster page and the designer's picker both
-// need. Shared so the picker can't silently order or group veterans
-// differently from the page it's meant to mirror. The third — the filter's
-// spark vocabulary — lives in filters.ts as `commonSparkNamesOf`, beside the
-// pool rule that decides what belongs in it.
+// The roster derivations the roster page and the designer's picker both need,
+// shared so the picker can't silently order or group veterans differently from
+// the page it mirrors. The filter's spark vocabulary lives in filters.ts as
+// `commonSparkNamesOf`, beside the pool rule that decides what belongs in it.
 
 // One entry per distinct card, for the Umas filter section.
 export const rosterCardsOf = (veterans: Veteran[]): Veteran[] => {

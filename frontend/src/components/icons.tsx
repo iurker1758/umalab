@@ -1,11 +1,6 @@
 // Inline SVG icons for the app's icon buttons. A 16px box rendered at 14px,
 // filled with `currentColor` so the button's own colour (and its hover and
 // disabled states) carries them.
-//
-// Shared rather than defined beside each user: the blueprint bar and the
-// designer's focus panel draw the SAME delete mark for the same meaning, and
-// two copies of a path is how two buttons that should look identical slowly
-// stop being.
 
 export const CopyIcon = () => (
   <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
@@ -16,11 +11,9 @@ export const CopyIcon = () => (
   </svg>
 );
 
-// Destroys what's in something — a blueprint on the save bar, a node's
-// contents in the focus panel. Deliberately NOT an ✕: the app already uses
-// that mark for close/dismiss (the modal, a spark chip), and reusing it for
-// "erase this data" puts a destructive control in the shape and the corner
-// where people expect one that only shuts a panel.
+// Deliberately NOT an ✕: the app uses that mark for close/dismiss, and reusing
+// it for "erase this data" puts a destructive control in the shape and the
+// corner where people expect one that only shuts a panel.
 export const TrashIcon = () => (
   <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
     <path

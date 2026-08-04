@@ -107,18 +107,15 @@ async def create_spark_list(
     then filled by the PATCH that follows. #33's derived group vocabulary
     could not express this state at all.
     """
-    # Serializes concurrent creates FOR THIS OWNER, and nothing else. The
-    # count below is a check-then-act: without this, two requests can both
-    # read 49, both pass the test, and both insert, leaving 51 rows on a cap
-    # that is supposed to bound the table.
+    # Serializes concurrent creates FOR THIS OWNER. The count below is a
+    # check-then-act: without this, two requests can both read 49, both pass,
+    # and both insert, leaving 51 rows on a cap meant to bound the table.
     #
-    # An advisory lock rather than SERIALIZABLE (which needs retry logic on
-    # every caller), a `FOR UPDATE` on `users` (which makes an unrelated table
-    # the gate), or a slot column with a CHECK (which is declarative but
-    # leaves holes on delete and makes every create hunt for a free index).
+    # An advisory lock rather than SERIALIZABLE (retry logic on every caller)
+    # or a `FOR UPDATE` on `users` (makes an unrelated table the gate).
     # Transaction-scoped, so it goes at commit or rollback with no unlock to
-    # forget. Creates are rare and this is keyed on the owner, so the only
-    # thing that ever waits is one user creating two lists at once.
+    # forget, and keyed on the owner, so the only thing that ever waits is one
+    # user creating two lists at once.
     await session.execute(select(func.pg_advisory_xact_lock(user.id)))
     # Owner-scoped, which `test_the_cap_is_per_owner` pins.
     count = await session.scalar(
@@ -140,10 +137,8 @@ async def create_spark_list(
     try:
         await session.commit()
     except IntegrityError as exc:
-        # The name index. Two tabs creating "Front Runner" at once, or — far
-        # likelier — the user forgetting they already have one. Anything
-        # else is a real fault, re-raised rather than dressed up as a name
-        # the user can change.
+        # The name index. Anything else is a real fault, re-raised rather than
+        # dressed up as a name the user can change.
         await session.rollback()
         if not _duplicate_name(exc):
             raise

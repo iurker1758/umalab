@@ -82,11 +82,9 @@ export function SlotPicker({
   // sparks you're hunting has to work against an empty roster — pulling a
   // veteran you already own is the shortcut, not the entry point.
   const [source, setSource] = useState<Source>("catalog");
-  // Sort and filters both persist, under the picker's OWN keys — never the
-  // roster page's. Independence in both directions was the real reason these
-  // started as unpersisted state; "reset on every open" was the half that
-  // cost more than it saved, since filling 31 nodes against one criterion is
-  // the most repeated work in the designer (DECISIONS.md #31).
+  // Sort and filters persist under the picker's OWN keys, never the roster
+  // page's: the two surfaces stay independent, but filling 31 nodes against
+  // one criterion is the designer's most repeated work (DECISIONS.md #31).
   const [sort, setSortState] = useState<SortPref>(() => loadSortPref(PICKER_SORT_STORE));
   const setSort = (next: SortPref) => {
     setSortState(next);
@@ -97,19 +95,17 @@ export function SlotPicker({
   // open the picker on nothing, with no visible cause.
   const [filters, setFiltersState] = useState<Filters>(() => {
     const saved = loadFilters(PICKER_FILTER_STORE);
-    // Only against a roster that has actually arrived. `veterans` starts
-    // empty and stays empty if the fetch fails, and the designer renders
-    // either way — reconciling against nothing would strip every card, mark
-    // and spark filter the moment the picker opened on a slow load, and the
-    // next chip you touched would persist the stripped set. The shell guards
-    // the same way, by reconciling only inside its fetch's success branch.
+    // Only against a roster that has actually arrived. `veterans` starts empty
+    // and stays empty if the fetch fails, so reconciling against nothing would
+    // strip every filter the moment the picker opened on a slow load, and the
+    // next chip you touched would persist the stripped set.
     if (veterans.length === 0) return saved;
     const next = reconcileFilters(saved, veterans);
-    // Written back, not just applied: reconcileFilters' rule is that a filter
-    // whose target left is CLEARED, not masked, and leaving the stale entry
-    // in storage would let it reactivate silently the next time an import
-    // brings that veteran back. Identity is the signal — reconcileFilters
-    // returns its input untouched when nothing changed.
+    // Written back, not just applied: a filter whose target left is CLEARED,
+    // not masked, and a stale entry left in storage would reactivate silently
+    // the next time an import brings that veteran back. Identity is the
+    // signal — reconcileFilters returns its input untouched when nothing
+    // changed.
     if (next !== saved) saveFilters(next, PICKER_FILTER_STORE);
     return next;
   });
@@ -244,10 +240,9 @@ export function SlotPicker({
               ))
             : shownVets.map((v) => (
                 // The roster page's own card, not a bare chip: picking a
-                // veteran is the same act of recognition as browsing them, so
-                // the rank badge, mark and rating/sparks readout all come
-                // along. Keyed by trained_chara_id, not card_id — the same
-                // card appears once per veteran you trained.
+                // veteran is the same act of recognition as browsing them.
+                // Keyed by trained_chara_id, not card_id — the same card
+                // appears once per veteran you trained.
                 <VeteranCard
                   key={v.trained_chara_id}
                   v={v}
@@ -316,9 +311,8 @@ export function SlotPicker({
         )}
       </div>
       {filterOpen && (
-        // The roster page's own panel, unchanged. Wrapped so it can be lifted
-        // above the picker: its z-index sits below the popout layer, having
-        // only ever opened from the roster's dock before.
+        // The roster page's own panel, wrapped so it can be lifted above the
+        // picker — its own z-index sits below the popout layer.
         <div className="picker-filters">
           <FilterPanel
             filters={filters}

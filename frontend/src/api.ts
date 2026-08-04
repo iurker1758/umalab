@@ -106,11 +106,10 @@ export interface PinkSpark {
 export const SLOT_FACTOR_KINDS = ["white", "unique", "race", "scenario"] as const;
 export type SlotFactorKind = (typeof SLOT_FACTOR_KINDS)[number];
 
-// One non-pink spark on a designed node. The game's factor key, not the
-// name: names are localized strings we render, the key is the identity, and
-// the reference resolves one to the other (see FactorRef). `kind` rides along
-// because it decides the base rate, and the key ranges that separate the
-// kinds are an ingest heuristic rather than a guarantee.
+// One non-pink spark on a designed node, keyed by the game's factor key rather
+// than the name: names are localized strings we render, the key is the
+// identity. `kind` rides along because it decides the base rate, and the key
+// ranges separating the kinds are an ingest heuristic, not a guarantee.
 export interface SlotFactor {
   kind: SlotFactorKind;
   key: number;
@@ -127,19 +126,16 @@ export interface FactorRef {
 }
 
 // A generation-3/4 slot: a pink, a character, or both. Flat rather than
-// nesting the spark under the identity, so every row written before
-// `card_id` existed is already this shape and parses unchanged.
-// aptitude/stars travel together — half a spark reads as a different one.
+// nesting the spark under the identity, so a row written before `card_id`
+// existed is already this shape. aptitude/stars travel together — half a spark
+// reads as a different one.
 export interface DeepSlot {
   aptitude?: AptitudeKey | null;
   stars?: number | null;
-  // Who the slot is. Filled by a roster pull, or chosen by hand the same way
-  // a character can be cast into an empty parent before its pink is decided.
-  // Decoration for the math; it's what puts a portrait on a node too deep to
-  // carry a name.
+  // Who the slot is — decoration for the math, and what puts a portrait on a
+  // node too deep to carry a name.
   card_id?: number | null;
-  // Set only when a pull placed the character. Absent ⇒ hand-picked, which
-  // is also what every row written before this field means.
+  // Set only when a pull placed the character; absent ⇒ hand-picked.
   source?: "roster" | "lineage" | null;
 }
 
@@ -167,8 +163,7 @@ export type AffinitySlotId = (typeof AFFINITY_SLOTS)[number];
 
 // A filled slot in the stateless scoring request: the chara plus its raw
 // won-saddle ids, which the server expands to G1 race sets. Catalog picks
-// legitimately send an empty array — they still score their relation terms,
-// so no wins is not the same as no slot.
+// legitimately send an empty array — no wins is not the same as no slot.
 export interface AffinitySlotRequest {
   chara_id: number;
   win_saddle_ids: number[];
@@ -208,12 +203,10 @@ export interface BlueprintSlot {
   position_id?: number | null;
   spark?: PinkSpark | null;
   // A roster pick's own aptitude letters, as trained — snapshotted like the
-  // won saddles. Absent on catalog and lineage slots, which have no horse
-  // behind them to have trained.
+  // won saddles. Absent on catalog and lineage slots.
   aptitudes?: AptitudeLetters | null;
   // The member's non-pink sparks, for the inspiration-proc estimates. Absent
-  // on every row written before they existed, which reads as "carries none" —
-  // the only way this document is allowed to grow.
+  // reads as "carries none" — the only way this document is allowed to grow.
   factors?: SlotFactor[];
 }
 
@@ -238,11 +231,9 @@ export interface Blueprint extends BlueprintIn {
 
 // ---------- spark lists ----------
 
-// One membership entry. The identity every spark surface uses, and never a
-// name — names are localized strings resolved at render time.
-//
-// No `stars`: a list records WHICH sparks you want, not what level you last
-// typed. The level belongs to the slot document (DECISIONS.md #37).
+// One membership entry. No `stars`: a list records WHICH sparks you want, not
+// what level you last typed — the level belongs to the slot document
+// (DECISIONS.md #37).
 export interface SparkRef {
   kind: SlotFactorKind;
   key: number;
@@ -250,7 +241,7 @@ export interface SparkRef {
 
 export interface SparkList {
   id: number;
-  // The user's own build name ("Front Runner", "Medium"), unique per user.
+  // The user's own build name, unique per user.
   name: string;
   // Their curated order. The server sorts on it and breaks ties on `id`.
   position: number;
@@ -258,14 +249,13 @@ export interface SparkList {
   sparks: SparkRef[];
 }
 
-// What a write SENDS, which is not what a list HOLDS: only the fields it
-// means to change. An omitted one is left as it is, so the picker can send
-// `sparks` without knowing or guessing the list's current name.
+// What a write SENDS, which is not what a list HOLDS: only the fields it means
+// to change, so the picker can send `sparks` without guessing the list's
+// current name.
 //
-// `sparks: []` empties the list; omitting `sparks` does not. That
-// distinction is the whole point of the shape, so it is a Partial rather
-// than a type with nullable fields — `undefined` is unsendable in JSON,
-// which is exactly the "absent" the route wants.
+// `sparks: []` empties the list; omitting `sparks` does not. Hence a Partial
+// rather than nullable fields — `undefined` is unsendable in JSON, which is
+// exactly the "absent" the route wants.
 export type SparkListPatch = Partial<Omit<SparkList, "id">>;
 
 // Carries the status so a caller can tell "this row is gone" (404) from
@@ -370,8 +360,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }).then((r) => json<SparkList>(r)),
-  // Rename, reorder, or set membership — whichever the body carries. Returns
-  // the list the server ended up with, which is what the caller stores.
+  // Rename, reorder, or set membership — whichever the body carries.
   updateSparkList: (id: number, body: SparkListPatch) =>
     fetch(`/api/spark-lists/${id}`, {
       method: "PATCH",

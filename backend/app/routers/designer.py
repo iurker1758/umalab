@@ -79,11 +79,9 @@ async def get_catalog():
 
 
 # ---------- spark reference ----------
-# The kinds a designed node can be given by hand, from the game's own factor
-# table. Served rather than bundled into the frontend: it is the same
-# committed reference the decoder reads, so one regen keeps the names a dump
-# decodes to and the names you can pick from in step — they would drift the
-# moment one was copied.
+# Served rather than bundled into the frontend: it is the same committed
+# reference the decoder reads, so one regen keeps the names a dump decodes to
+# and the names you can pick from in step.
 PICKABLE_KINDS: tuple[SlotFactorKind, ...] = get_args(SlotFactorKind)
 
 
@@ -137,8 +135,7 @@ async def score_affinity(body: AffinityIn):
 # factor list and the affinity formula are the same for everybody, and Access
 # still gates them at the edge. Everything below is per-user (DECISIONS.md
 # #32), and `_owned` is the single place a blueprint id is resolved — a route
-# that used session.get() directly would fetch someone else's row and then
-# have to remember not to touch it.
+# calling session.get() directly would fetch someone else's row.
 
 async def _owned(session: AsyncSession, blueprint_id: int, user: User) -> Blueprint:
     """This user's blueprint, or 404. Never 403: telling a caller that an id

@@ -55,13 +55,10 @@ async def test_a_watched_spark_round_trips(client: Any, users: list[User]):
 
 
 # ---------- partial updates (issue #64) ----------
-# These reverse the original "a partial body is refused" rule. That rule was
-# right for a full-replace route — a default on either field would have been a
-# silent delete — and wrong about which half to fix. Requiring both fields
-# meant the client had to send what it wasn't changing, so it had to know it,
-# so every mutator re-read the list first; the one that forgot destroyed a
-# user's groups (#62), and no re-read could close the read-to-write gap
-# anyway. Applying only what was sent, inside the row's own transaction, does.
+# These reverse the original "a partial body is refused" rule, which was right
+# for a full-replace route and wrong about which half to fix (DECISIONS.md #33's
+# amendment). What they pin is the distinction the shape rests on: absent and
+# null leave a field, `groups: []` clears it.
 
 
 async def test_an_empty_body_creates_a_hunted_ungrouped_row(
@@ -140,6 +137,21 @@ async def test_an_empty_group_list_clears_them(client: Any, users: list[User]):
     async with client(a) as http:
         response = await http.put(f"{WATCHED}/white/2010", json={"groups": []})
     assert response.json()["groups"] == []
+
+
+async def test_a_mis_keyed_body_is_refused(client: Any, users: list[User]):
+    """The one thing making both fields optional could have cost: without
+    `extra="forbid"` a typo parses as all-absent, so the route answers 200
+    having written nothing and the user's failed save looks like a saved one.
+    """
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=True, groups=["Mile"])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={"hunted": False})
+    assert response.status_code == 422
+    assert [without_id(row) for row in await listing(client, a)] == [
+        {"kind": "white", "key": 2010, "hunting": True, "groups": ["Mile"]}
+    ]
 
 
 async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
@@ -305,6 +317,43 @@ async def test_the_upsert_recovers_when_it_loses_the_insert_race(
     assert response.status_code == 200, response.text
     assert lookups >= 2, "the retry never re-read the row"
     # One row, carrying what the losing request asked for.
+    assert [without_id(row) for row in await listing(client, a)] == [
+        {"kind": "white", "key": 2010, "hunting": False, "groups": ["Medium"]}
+    ]
+
+
+async def test_the_upsert_loses_the_insert_race_to_an_empty_body(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
+):
+    """The same forced collision, with the body that will actually lose it.
+
+    A double-clicked ★ fires two `{}` PUTs, so the empty body is the one most
+    likely to reach the retry arm — and the one the arm's partial-apply is
+    for. Assigning the body's fields unconditionally there (what this route
+    did before #64) would put `None` in a NOT NULL column and 500, and the
+    full-body test above would still pass.
+    """
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=False, groups=["Medium"])
+
+    real_row = sparks_router._row  # pyright: ignore[reportPrivateUsage]
+    lookups = 0
+
+    async def blind_once(*args: Any, **kwargs: Any) -> Any:
+        nonlocal lookups
+        lookups += 1
+        if lookups == 1:
+            return None
+        return await real_row(*args, **kwargs)
+
+    monkeypatch.setattr(sparks_router, "_row", blind_once)
+
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={})
+
+    assert response.status_code == 200, response.text
+    assert lookups >= 2, "the retry never re-read the row"
+    # The loser asked for nothing, so the row it found keeps everything.
     assert [without_id(row) for row in await listing(client, a)] == [
         {"kind": "white", "key": 2010, "hunting": False, "groups": ["Medium"]}
     ]

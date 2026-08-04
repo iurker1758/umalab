@@ -136,13 +136,13 @@ export const loadWatched = (): Promise<WatchedSpark[]> => api.watchedSparks();
 // Each sends only the field it is changing and hands back the caller's list
 // with the ONE row the server returned folded in. Nothing re-reads the list
 // first: the PUT is a partial update (#64), so a mutator never has to know —
-// or guess — the field it isn't touching.
+// or guess — the field it isn't touching. Guessing one is what #62 was.
 //
-// That is the whole of the rule now. Getting it wrong is what #62 was: under
-// the old full-replace route every mutator had to send both fields, so it had
-// to know both, so it re-read the list before writing, and `toggle` didn't.
-// No re-read could close the gap between the read and the write anyway;
-// applying the change inside the row's own transaction does.
+// That is the whole of the rule now, and it is not a guarantee of ordering:
+// `setGroups` still sends a set it computed from the caller's list, so two
+// devices editing the same spark's groups at once is last-write-wins (#66).
+// What the shape removes is the far commoner loss, where a mutator writes
+// over a field nobody touched.
 //
 // A write folds in one row rather than adopting a whole fresh list on
 // purpose: the chooser freezes its Favorites membership at open and filters

@@ -8,14 +8,8 @@ only one of them is the designer's blueprint CRUD.
 
 Three routes. (kind, key) is the identity and travels in the path; the body
 carries whichever of the two mutable fields the caller means to change, and
-an omitted one is left as it is (issue #64).
-
-That last part reverses this module's original ruling — "no partial updates;
-a PATCH would buy nothing and would need its own 'absent means unchanged'
-rules on a two-field object". The rules turned out to be one line each, and
-the full replace was not free: it forced the client to send fields it was not
-changing, so it had to *know* them, so every mutator re-read the whole list
-first — and the one that forgot destroyed a user's groups (#62). It stays a
+an omitted one is left as it is (issue #64, reversing this entry's original
+"no partial updates" — DECISIONS.md #33's amendment holds why). It stays a
 PUT rather than becoming a PATCH: this is still an upsert on an identity the
 caller names, which is what PUT is for.
 """
@@ -103,11 +97,19 @@ async def watch(
     the end of the list. A row being created takes its defaults from the
     columns, so "new sparks are hunted" is stated once (models.WatchedSpark)
     rather than guessed by whoever is adding.
+
+    NOT serializable against a concurrent write to the same field: `_row` is
+    a plain SELECT, so two group edits landing together are last-write-wins.
+    What the partial body removes is a client *guessing* a field it isn't
+    changing (#62); `setGroups` still computes the whole set from a list it
+    read earlier, which is issue #66.
     """
+    created = False
     row = await _row(session, user, kind, key)
     if row is None:
         row = WatchedSpark(owner_id=user.id, kind=kind, key=key)
         session.add(row)
+        created = True
     _apply(row, body)
     try:
         await session.commit()
@@ -125,7 +127,13 @@ async def watch(
         _apply(existing, body)
         await session.commit()
         row = existing
-    await session.refresh(row)
+        created = False
+    if created:
+        # Only a created row has anything unloaded — the column defaults this
+        # route now leans on are Postgres's to supply. `SessionLocal` sets
+        # `expire_on_commit=False`, so refreshing an existing row would be a
+        # third round trip on every star click that returns what we hold.
+        await session.refresh(row)
     return row
 
 

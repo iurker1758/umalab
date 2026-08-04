@@ -1514,13 +1514,19 @@ try {
   await setSpark("Sparks 3-4", aptA, 3);
   await selectNode("Parent 1");
   check(`p1 ${aptA} stays A`, (await rowLetter(LABEL[aptA])) === "A");
+  // Spelled out rather than via `fromText`: aptA is an A base by construction,
+  // so this is the one site pinning the rendered copy against a literal the
+  // helper can't drift along with.
   check("the row reports the stars behind it and the nothing they bought",
     (await rowFrom(LABEL[aptA])) === "3★ → +0 (at cap)",
     await rowFrom(LABEL[aptA]));
+  // `[class*=warn]` rather than the specific warning classes: those all render
+  // in the map and the panel, never inside a row, so naming them would assert
+  // nothing. This catches whatever a future change calls its warning.
   check("the cap note is a note, not a warning",
     !(await rowFrom(LABEL[aptA])).includes("past A") &&
     (await aptRow(LABEL[aptA]).locator(".apt-cap").count()) === 1 &&
-    (await aptRow(LABEL[aptA]).locator(".node-warn, .spark-warn, .apt-over").count()) === 0);
+    (await aptRow(LABEL[aptA]).locator("[class*=warn]").count()) === 0);
   check("a letter that never moved is not highlighted as boosted",
     (await aptRow(LABEL[aptA]).locator(".apt-final.boosted").count()) === 0);
 

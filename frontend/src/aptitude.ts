@@ -77,10 +77,12 @@ export interface AptitudeRow {
   boosted: boolean; // final ended up above base
   stars: number; // total matching ★ in the window
   bump: number; // bracket letters those ★ are worth
-  // Letters the bump actually bought, after the cap took its cut — below
-  // `bump` whenever the base sat close enough to A for it to bite. null where
-  // no gain can be stated at all: the base is unknown, or it's a letter this
-  // build can't place, and in both cases the ★ have nothing to land on.
+  // Letters the bump actually bought, after the ceiling took its cut — below
+  // `bump` whenever the base sat close enough to it to bite. Null wherever no
+  // bracket gain can be stated: outside "project" (a trained or base row is
+  // not a projection, so it has none — `boosted` is what says the letters
+  // differ there), or with a base that is unknown or unplaceable, where the ★
+  // have nothing to land on.
   gained: number | null;
   mode: LetterMode; // stars/bump are 0 outside "project"
 }

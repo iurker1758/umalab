@@ -63,14 +63,10 @@ export function AptitudeTable({ rows }: { rows: AptitudeRow[] }) {
                         ) : (
                           <>
                             {`${r.stars}★ → +${r.gained}`}
-                            {r.gained < r.bump && (
-                              <span
-                                className="apt-cap"
-                                title={`These ★ are worth +${r.bump}, but career-start inheritance stops at A, so ${r.gained === 0 ? "none of it" : `only +${r.gained}`} landed. The rest still counts as inspiration-proc tickets toward S.`}
-                              >
-                                {" (at cap)"}
-                              </span>
-                            )}
+                            {/* The ceiling is whatever the base already
+                                cleared, so the note can't name a letter: a
+                                base past A keeps its own. */}
+                            {r.gained < r.bump && <span className="apt-cap"> (at cap)</span>}
                           </>
                         )}
                       </>

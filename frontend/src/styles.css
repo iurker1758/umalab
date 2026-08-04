@@ -638,14 +638,18 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    (VeteranCard), and naming this the same restyled every card on the roster
    page with a heading's font and margins. */
 .spark-section-head { margin: 0.7rem 0 0.25rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.55; }
-/* The first section hugs the search band — selected as "the section directly
-   after the band", not with `:first-of-type`. That pseudo-class matches on
-   TAG, and everything here is a div: the original rule made every kind
-   heading first-of-type inside its own wrapper and Favorites never one, and
-   moving it to `.spark-section:first-of-type` only swapped that failure for
-   the band itself being the first div. An adjacent sibling can't be fooled
-   by either. */
-.spark-search-band + .spark-section .spark-section-head { margin-top: 0.55rem; }
+/* The first section hugs whatever sits above it — selected as "first child of
+   the sections wrapper", which is the only form that survived. Three earlier
+   attempts each matched the wrong thing, all for the same reason: the rule
+   was written against POSITION in the popout, where what sits above the
+   sections varies. `:first-of-type` matches on TAG, so every section being a
+   div made each kind heading the first of its type inside its own wrapper and
+   Favorites never one; `.spark-section:first-of-type` swapped that for the
+   search band itself being the first div; and `.spark-search-band + .spark-
+   section` was defeated by the "couldn't load your favorites" note, which
+   slides between the two exactly when the fetch has failed. The wrapper holds
+   the sections and nothing else, so nothing can get between them. */
+.spark-sections > .spark-section:first-child .spark-section-head { margin-top: 0.55rem; }
 /* Said inside the popout, not as a page toast: the popout covers the toast,
    and both messages are only true of a control in here. */
 .spark-note { margin: 0.4rem 0 0; font-size: 0.78rem; opacity: 0.65; }

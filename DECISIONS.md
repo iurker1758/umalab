@@ -2689,10 +2689,67 @@ add buttons, and the id is recorded **before** the click that writes it.
 were driving the designer against whatever blueprint was open**, and
 cleaning up only rows they created. The e2e suite has created and
 deleted its own row from the start; the scratch scripts had no such
-rule and were one habit away from destroying real work. They now take a
-throwaway blueprint from `sandbox.mjs`, which seeds the
-`umalab.designer.open` preference before first paint and deletes the row
-in `finally`.
+rule and were one habit away from destroying real work. They now open a
+throwaway blueprint of their own — seeded into the `umalab.designer.open`
+preference before first paint, and deleted in `finally` — so the rule the
+committed suite follows holds for the local ones too. That tooling is
+local and uncommitted; only the rule belongs here.
+
+### The second review, before merging this time
+
+The same review run again over the fixes above, on the branch rather than
+on `main`. Nine more distinct defects, and the two that mattered were both
+in state the first round had *introduced*:
+
+- **A re-pick kept the previous card's green.** The card rule was enforced
+  at OFFER time only, and `applyPick` deliberately carries a slot's sparks
+  across a character or outfit change — so casting Special Week, adding her
+  green, then swapping the outfit left a green bound to a card nobody in
+  the tree holds. Nothing downstream would notice: the Procs tab kept
+  estimating it, the trainee's roll-up kept including it, the autosave kept
+  persisting it, and the chooser would neither offer it nor let you re-add
+  it once dropped. **A re-pick now drops a foreign green and keeps
+  everything else** — a green is part of the card's identity in a way a
+  white, race or scenario spark is not, and those still carry over because
+  re-typing them after every outfit swap would be pure friction. This is
+  the case #58 cannot catch from the server side either, since the document
+  it would reject is one the client wrote.
+- **A settling fetch could overwrite a favorite saved while it was in
+  flight** — reported as reachable, and it is not. Tried to reproduce it
+  both ways and neither window admits a click: during the four mount
+  fetches `Promise.allSettled` settles them TOGETHER, so the factor
+  reference arrives with the watched list and the popout has no rows to
+  star (measured: 0 rows, 0 stars); during a retry the failure flag is
+  still set, which disables every ★ (measured: 432 stars, 0 enabled).
+  **The guard went in anyway**, with the comment saying plainly that it
+  cannot fire today: both windows are closed by accident rather than by
+  design — splitting the mount fetches for a faster first paint, or keeping
+  the stars live through a retry, opens either one — and #27 adds a second
+  reader of the same list. A write counter, eight lines, and the invariant
+  holds on its own. Documenting an unreachable failure as though it were
+  live would have been the worse outcome; so would dropping the guard and
+  leaving the correctness to two unrelated implementation details.
+
+The retry path from the first round was also wrong in a way worth naming,
+because it is the same mistake twice. `watchedLoaded` was a boolean, and a
+retry can only happen once loading is over — so the key that was supposed
+to re-snapshot the Favorites section **could never change on the one path
+it was added for**. It is a **generation counter** now: bumped by every
+fetch that lands, never by a write, since a write bumping it would remount
+the popout under the pointer that just clicked and undo the frozen
+membership the section depends on. Likewise the "first heading hugs the
+band" rule, defeated a third time — by the failure note sliding between the
+band and the first section — is now `:first-child` inside a wrapper that
+holds the sections and nothing else, which is the first form of it that
+isn't a claim about position in the popout.
+
+The rest were smaller and are listed in the PR: a failed Hunting toggle
+reported as a failed favorite (the shared writer now takes the caller's
+message), the e2e favorite target able to land on a green the filter hides
+on the cast node it runs against, this document naming a local scratch file,
+and two shapes the plumbing had grown — six props drilled three levels to
+reach the chooser, now one `WatchedStore` (#27 reads the same one), and a
+third full-catalog index for a label the existing two already compose.
 
 - **Alternatives rejected:** *hiding the Green section until a character
   is cast* — the strongest reading of the rule, and it would make

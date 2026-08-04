@@ -1029,8 +1029,15 @@ try {
   // Deliberately NOT a spark you already watch: the control is a toggle, so
   // running this against an existing favorite would delete one of yours and
   // then assert on the wrong direction. 432 factors, so there is always one.
+  //
+  // And never a GREEN: this runs on G1-1, which is cast, and a cast node
+  // offers only its own card's unique — so a green target would simply not be
+  // in the popout and the click below would hang for 30s and abort the run
+  // before the cleanup that keeps this suite baseline-relative. Reachable
+  // only on a database where every race and scenario spark is already
+  // favorited, which is why it isn't what fails today.
   const favTarget = factorRef.find(
-    (f) => !baselineWatched.has(`${f.kind}:${f.key}`)
+    (f) => f.kind !== "unique" && !baselineWatched.has(`${f.kind}:${f.key}`)
   );
   const favSel = `${favTarget.kind}:${favTarget.key}`;
   await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(favTarget.name);

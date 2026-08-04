@@ -4,7 +4,7 @@ import { deriveCharaId } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
 // `toggle` is what applies DEFAULT_HUNTING — the default lives in one place
 // in the store (#33), and the chooser must not restate it.
-import { isWatched, setHunting, toggle } from "../sparks";
+import { isWatched, setHunting, toggle, type WatchedStore } from "../sparks";
 
 // Hand entry for a member's non-pink sparks: a popout that BROWSES the 432
 // factors, with the ones you've favorited at the top of it.
@@ -220,25 +220,21 @@ function ChooserPopout({
   factors,
   refs,
   watched,
-  watchedFailed,
   cardId,
   charaId,
   cardOwner,
   onAdd,
-  onWatched,
   onError,
   onClose,
 }: {
   label: string;
   factors: readonly SlotFactor[];
   refs: readonly FactorRef[];
-  watched: WatchedSpark[];
-  watchedFailed: boolean;
+  watched: WatchedStore;
   cardId: number | null;
   charaId: number | null;
   cardOwner: (cardId: number) => string | null;
   onAdd: (option: Option, stars: number) => void;
-  onWatched: (next: WatchedSpark[]) => void;
   onError: (message: string) => void;
   onClose: () => void;
 }) {
@@ -268,7 +264,7 @@ function ChooserPopout({
   // the snapshot from freezing an empty list mid-fetch without needing an
   // effect or a ref read during render.
   const [pinnedRows] = useState(() =>
-    watched.map((w) => ({ kind: w.kind, key: w.key }))
+    watched.list.map((w) => ({ kind: w.kind, key: w.key }))
   );
   const pinned = new Set(pinnedRows.map((w) => sparkId({ type: w.kind, key: w.key })));
 
@@ -344,12 +340,18 @@ function ChooserPopout({
   // missing a spark the user watched themselves mark. The toast is
   // position-fixed and drawn over the backdrops, so it is readable with the
   // popout open too.
-  const write = async (op: () => Promise<WatchedSpark[]>) => {
+  //
+  // The message is the CALLER's, because the two controls fail differently
+  // and this helper serves both. A failed Hunting toggle reported as "couldn't
+  // save that favorite" names a control the user did not touch and an outcome
+  // that did not happen — and the sane reaction to it, re-clicking the ★,
+  // deletes the favorite they were trying to keep.
+  const write = async (op: () => Promise<WatchedSpark[]>, failure: string) => {
     setBusy(true);
     try {
-      onWatched(await op());
+      watched.onChange(await op());
     } catch {
-      onError("Couldn't save that favorite — try again.");
+      onError(failure);
     } finally {
       setBusy(false);
     }
@@ -357,17 +359,24 @@ function ChooserPopout({
 
   const rowProps = {
     held,
-    watched,
-    watchedFailed,
+    watched: watched.list,
+    watchedFailed: watched.failed,
     busy,
     // The owner is only worth printing where the list is still ambiguous.
     // Narrowed to one card, the panel above already names her, and a third
     // repetition on the single row is the width #30 fought for.
     cardOwner: cardId === null ? cardOwner : () => null,
     onAdd,
-    onFavorite: (o: Option) => void write(() => toggle(watched, o.kind, o.key)),
+    onFavorite: (o: Option) =>
+      void write(
+        () => toggle(watched.list, o.kind, o.key),
+        "Couldn't save that favorite — try again."
+      ),
     onHunting: (o: Option, hunting: boolean) =>
-      void write(() => setHunting(watched, o.kind, o.key, hunting)),
+      void write(
+        () => setHunting(watched.list, o.kind, o.key, hunting),
+        "Couldn't save that Hunting change — try again."
+      ),
   };
 
   return (
@@ -399,28 +408,35 @@ function ChooserPopout({
             because a list of favorites didn't load would be the failure
             doing the most damage, so the two are said separately and only the
             favorites go away. */}
-        {watchedFailed && (
+        {watched.failed && (
           <p className="spark-note">
             Couldn't load your favorites — browsing still works.
           </p>
         )}
-        {/* Every section is the same element, Favorites included, so the
-            "first heading hugs the search band" rule can be written as
-            `:first-of-type` and mean it. Favorites used to be a bare heading
-            plus a list while the kinds were wrapped, which made every KIND
-            heading the first of its type and Favorites never one. */}
-        {favorites.length > 0 && (
-          <div className="spark-section">
-            <div className="spark-section-head">Favorites</div>
-            <SparkRows options={favorites} {...rowProps} />
-          </div>
-        )}
-        {sections.map((s) => (
-          <div key={s.kind} className="spark-section">
-            <div className="spark-section-head">{SPARK_TYPE_LABELS[s.kind]}</div>
-            <SparkRows options={s.options} {...rowProps} />
-          </div>
-        ))}
+        {/* Every section is the same element, Favorites included, and they
+            share a WRAPPER so "the first heading hugs the band above it" can
+            be written as `:first-child` against that wrapper alone.
+            Positional selectors against the popout kept matching the wrong
+            thing: `:first-of-type` matches on TAG, so every section being a
+            div made each KIND heading the first of its type and Favorites
+            never one; the adjacent-sibling rule that replaced it was in turn
+            defeated by the note above, which slides between the band and the
+            first section exactly when the fetch has failed. Nothing rendered
+            before this wrapper can reach inside it. */}
+        <div className="spark-sections">
+          {favorites.length > 0 && (
+            <div className="spark-section">
+              <div className="spark-section-head">Favorites</div>
+              <SparkRows options={favorites} {...rowProps} />
+            </div>
+          )}
+          {sections.map((s) => (
+            <div key={s.kind} className="spark-section">
+              <div className="spark-section-head">{SPARK_TYPE_LABELS[s.kind]}</div>
+              <SparkRows options={s.options} {...rowProps} />
+            </div>
+          ))}
+        </div>
         {sections.length === 0 && favorites.length === 0 && (
           <span className="empty">No sparks match.</span>
         )}
@@ -434,14 +450,10 @@ export function SparkChooser({
   factors,
   refs,
   watched,
-  watchedLoaded,
-  watchedFailed,
   cardId,
   charaId,
   cardOwner,
   onChange,
-  onWatched,
-  onReloadWatched,
   onError,
 }: {
   // Distinguishes the choosers on one page for aria/testing, as the pink
@@ -449,23 +461,18 @@ export function SparkChooser({
   label: string;
   factors: readonly SlotFactor[];
   refs: readonly FactorRef[];
-  watched: WatchedSpark[];
-  // Whether the watched fetch has SETTLED, which an empty list cannot say.
-  watchedLoaded: boolean;
-  watchedFailed: boolean;
+  // The favorites, their generation, and the two writers — see WatchedStore.
+  // `onReload` matters because the load happens once at page mount, so a
+  // backend blip lasting one second would otherwise disable every ★ until a
+  // hard reload. Opening the chooser is the moment the list is wanted, so it
+  // is the moment to try again.
+  watched: WatchedStore;
   // Who is cast in this node. A green's key IS a card_id, so these decide
   // which greens the node can hold at all — see greenFilter.
   cardId: number | null;
   charaId: number | null;
   cardOwner: (cardId: number) => string | null;
   onChange: (update: (current: readonly SlotFactor[]) => SlotFactor[]) => void;
-  onWatched: (next: WatchedSpark[]) => void;
-  // Re-fetch the watched list. The load happens once at page mount, so a
-  // backend blip lasting one second would otherwise disable every ★ until a
-  // hard reload — the flag had exactly one writer and no retry path. Opening
-  // the chooser is the moment the list is wanted, so it is the moment to try
-  // again.
-  onReloadWatched: () => void;
   onError: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -494,7 +501,7 @@ export function SparkChooser({
           // Only when the last attempt failed: the list is page-scoped
           // reference-ish state, and re-fetching it on every open would be a
           // request per click for something that rarely changes.
-          if (watchedFailed) onReloadWatched();
+          if (watched.failed) watched.onReload();
           setOpen(true);
         }}
       >
@@ -507,21 +514,26 @@ export function SparkChooser({
           // in the tree when you click another ancestor, so a query left
           // behind would follow you there.
           //
-          // Also remounted when the watched list SETTLES, so a popout opened
-          // during the mount fetch re-snapshots instead of showing no Favorites
-          // section at all with the user's stars scattered through the kind
-          // sections. It costs a query typed inside that sub-second window.
-          key={watchedLoaded ? "loaded" : "loading"}
+          // Also remounted whenever a FETCH of the watched list lands, so a
+          // popout opened during the mount fetch re-snapshots instead of
+          // showing no Favorites section at all with the user's stars
+          // scattered through the kind sections. It costs a query typed inside
+          // that sub-second window.
+          //
+          // The generation, not a loaded/loading flag: the retry above fires
+          // precisely when loading is already over, so a boolean key never
+          // changes and the popout that triggered the retry would keep the
+          // empty snapshot it opened with — the same failure, reached the
+          // other way round.
+          key={watched.epoch}
           label={label}
           factors={factors}
           refs={refs}
           watched={watched}
-          watchedFailed={watchedFailed}
           cardId={cardId}
           charaId={charaId}
           cardOwner={cardOwner}
           onAdd={add}
-          onWatched={onWatched}
           onError={onError}
           onClose={() => setOpen(false)}
         />

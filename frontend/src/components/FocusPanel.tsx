@@ -51,23 +51,20 @@ const LockNote = ({ owner }: { owner: number }) => (
   <p className="focus-note">{nodeLabel(owner)}&apos;s real pedigree.</p>
 );
 
-// Icon buttons for the node's two actions, sat at the right of its name row,
-// on the same `.bar-icon` styles the blueprint bar's own icon buttons use.
-//
-// Labelling follows that bar too: `aria-label` names the TARGET ("Clear
-// Grandparent 1-2"), because "Clear" alone is ambiguous on a panel you
-// reached by clicking one of 31 tiles; `title` is the short generic tooltip,
-// because an unfamiliar icon has to be discoverable on hover. They must not
-// be the same string — a `title` matching the accessible name becomes the
-// accessible DESCRIPTION, and screen readers then read the node twice.
+// `aria-label` names the TARGET ("Clear Grandparent 1-2"), because "Clear"
+// alone is ambiguous on a panel you reached by clicking one of 31 tiles;
+// `title` is the short generic tooltip, so an unfamiliar icon is discoverable
+// on hover. They must NOT be the same string — a `title` matching the
+// accessible name becomes the accessible DESCRIPTION, and screen readers then
+// read the node twice.
 const NodeActions = ({
   index,
   onReplace,
   onClear,
 }: {
-  // The node itself, not its label: every caller would otherwise pass
-  // `nodeLabel(index)` beside handlers already closed over that index, and a
-  // mismatch between the two would mislabel a destructive button silently.
+  // The node itself, not its label: a caller passing `nodeLabel(index)` beside
+  // handlers already closed over that index could mislabel a destructive
+  // button silently.
   index: number;
   // Null where the action doesn't apply — nobody cast to replace, or nothing
   // in the node to clear. Taking the character off while keeping the sparks
@@ -101,27 +98,18 @@ const NodeActions = ({
     </div>
   );
 
-// The tab's id stays `procs` while its label reads "Sparks": the estimate the
-// tab carries is still an inspiration proc, which is what `procs.ts`, the
-// `.proc-*` styles and DECISIONS.md #30's model are all named for. What the
-// rename fixed is the LABEL — the tab is a member's spark sheet, more than
-// half of it entry rather than estimates, and on a pulled ancestor it is a
-// readout you consult after deciding everything (#29).
+// The tab's id stays `procs` while its label reads "Sparks": the estimate it
+// carries is still an inspiration proc, which is what `procs.ts`, the
+// `.proc-*` styles and DECISIONS.md #30's model are all named for.
 //
-// Two tabs now say "spark": Details keeps its PINK SPARK section, and it
-// stays there deliberately — the pink sits beside the ten letters it bumps at
-// career start, which is a real reason and not a filing convenience
-// (DECISIONS.md #26/#30). Don't "tidy" it onto this tab.
+// Details keeps its PINK SPARK section deliberately — the pink sits beside the
+// ten letters it bumps at career start (DECISIONS.md #26/#30). Don't "tidy" it
+// onto this tab.
 type Tab = "details" | "procs";
 
-// The app's own segmented control, the same `seg-group` the picker's source
-// tabs, the star pickers and the tree-half switch use — rather than a
-// bespoke underlined tab bar that appeared nowhere else.
-//
 // Two buttons, not a `role="tablist"`: real tab semantics promise arrow-key
 // navigation between them that nothing here implements, and announcing a
-// contract we don't keep is worse than announcing none. `.focus-tab` rides
-// along as the hook that identifies them.
+// contract we don't keep is worse than announcing none.
 const FocusTabs = ({
   index,
   tab,
@@ -184,11 +172,9 @@ export function FocusPanel({
   // stored sparks by key — every CHANCE on the Procs tab reads the design,
   // not this.
   factorRefs: FactorRef[];
-  // The sparks this user has favorited, as one store — the list, its
-  // generation, whether the fetch failed, and the two writers. Forwarded
-  // untouched: only the chooser reads it, and the reference is committed and
-  // works offline, so a favorites list that didn't load costs an ordering
-  // and nothing else.
+  // Forwarded untouched: only the chooser reads it, and the reference is
+  // committed and works offline, so a favorites list that didn't load costs an
+  // ordering and nothing else.
   sparkLists: SparkListStore;
   // Names the uma a green spark belongs to, for the chooser's green rows.
   cardOwner: (cardId: number) => string | null;
@@ -204,28 +190,20 @@ export function FocusPanel({
   // — deep slots, and the trainee before anyone is cast — simply render
   // Details and no tab bar.
   const [tab, setTab] = useState<Tab>("details");
-  // Sort order for the spark tables, persisted beside `tab` and for the same
-  // reason — comparing one view between two ancestors is the common move, and
-  // it is a sort you set and see, so it hides nothing (DECISIONS.md #31's
-  // argument for the picker's sort).
-  //
-  // Two states, because the two tables answer different questions and start
+  // Two sort states, because the tables answer different questions and start
   // from different defaults (DECISIONS.md #34): an ancestor's chances are a
   // pure function of (kind, ★) at her single affinity, so ranking is a tie for
   // most of its length and grouping is the only ordering that informs; the
   // trainee's is a union across carriers at differing affinities, where the
-  // ranking is real. One shared state would have to pick one default and lose
-  // the other.
+  // ranking is real. One shared state would lose one of the two defaults.
   const [ancestorSort, setAncestorSort] = useState<SparkSort>("kind");
   const [traineeSort, setTraineeSort] = useState<SparkSort>("chance");
-  // Keyed by kind AND key, as the sparks themselves are: the kinds number
-  // their keys independently, so a bare key would collide across them. Built
-  // above the early returns because every branch that can show sparks needs
-  // it.
+  // Keyed by kind AND key: the kinds number their keys independently, so a
+  // bare key would collide across them.
   const sparkNames = new Map(factorRefs.map((f) => [sparkId({ type: f.kind, key: f.key }), f.name]));
-  // No lineage lists here: the map already shows every node and is the one
-  // place you navigate from, so a second, worse copy of it in the panel was
-  // pure duplication.
+  // No lineage lists here, deliberately: the map already shows every node and
+  // is the one place you navigate from, so a second copy in the panel is
+  // duplication. Don't re-add one.
 
   // ---------- deep spark slot ----------
   // Anonymous unless a roster pull filled it: the map has no room for a name
@@ -313,11 +291,8 @@ export function FocusPanel({
       <div className="focus">
         <div className="focus-who">
           <div className="focus-name">{nodeLabel(index)}</div>
-          {/* A planned spark is state worth undoing, so Clear appears for it
-              too — not only once a character is cast. Any spark: a node
-              planned around the whites you're hunting is as real as one
-              planned around a pink, and the server stores either on its own.
-              No Replace: there is nobody in the node to replace. */}
+          {/* A planned spark of any kind is state worth undoing, so Clear
+              appears without a cast. No Replace: nobody is in the node. */}
           {slot !== null && (
             <NodeActions
               index={index}
@@ -331,10 +306,9 @@ export function FocusPanel({
         </button>
         {index > 0 ? (
           <>
-            {/* Tabbed exactly as a cast node is. Spark entry lives on Procs,
-                and a member planned by spark alone is the case that most
-                needs it — gating the tab on a cast (or on a score) would put
-                the only editor behind the thing you haven't decided yet. */}
+            {/* Tabbed exactly as a cast node is: gating the tab on a cast (or
+                on a score) would put the only spark editor behind the thing
+                you haven't decided yet. */}
             <FocusTabs index={index} tab={tab} onPick={setTab} />
             {tab === "procs" ? (
               <NodeProcs
@@ -416,11 +390,9 @@ export function FocusPanel({
           />
         )}
       </div>
-      {/* Always offered, never gated on a score. The chances behind it are
-          this member's affinity times a spark, so before one lands they read
-          "—" — but the tab is also where a member's sparks are TYPED, and
-          hiding the only editor until the design happens to be scorable
-          (or until the backend answers) made entered sparks vanish with it. */}
+      {/* Never gated on a score: the chances read "—" until one lands, but the
+          tab is also where a member's sparks are TYPED, and hiding the only
+          editor behind a scorable design would hide the sparks with it. */}
       <FocusTabs index={index} tab={tab} onPick={setTab} />
       {tab === "procs" ? (
         index === 0 ? (
@@ -449,11 +421,9 @@ export function FocusPanel({
         )
       ) : (
         <>
-          {/* Affinity leads the tab. It is the node's headline number — the
-              trainee's run total, or the individual share a proc off this
-              ancestor rolls against — and the ten letters below it are detail
-              you consult, not the first thing you read. Ancestors get their
-              own, never the run's. */}
+          {/* Affinity leads the tab: it is the node's headline number, and the
+              ten letters below it are detail you consult. Ancestors get their
+              own share, never the run's total. */}
           {index === 0 ? (
             <AffinityPanel
               affinity={affinity}
@@ -481,10 +451,9 @@ export function FocusPanel({
           )}
         </>
       )}
-      {/* Both tabs, outside the switch. The tab choice persists across node
-          switches, so anything that only rendered on Details would never
-          reach someone reading procs down the tree — and these two are the
-          panel's guardrails, not part of either view. */}
+      {/* Outside the switch: the tab choice persists across node switches, so
+          a guardrail that only rendered on Details would never reach someone
+          reading procs down the tree. */}
       {undroppable && slot.spark !== null && (
         <p
           className="spark-warn"

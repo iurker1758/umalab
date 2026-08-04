@@ -188,18 +188,14 @@ class SparkList(Base):
     __tablename__ = "spark_lists"
     __table_args__ = (
         # Per owner, so two users can both have a "Front Runner". Unique
-        # because the name is how the user tells lists apart: two with the
-        # same one is a picker you cannot use.
+        # because the name is how the user tells lists apart.
         #
-        # CASE-INSENSITIVE, and therefore an expression index rather than a
-        # UniqueConstraint. Stored as typed and compared folded: this is a
-        # phone-first PWA, and mobile keyboards autocapitalise, so "Front
-        # Runner" on the desktop and "Front runner" on the phone is a thing
-        # that happens by itself rather than a mistake anyone notices. Byte
-        # -exact uniqueness would let those coexist as two visually identical
-        # pills holding different membership — the silent fork DECISIONS.md
-        # #37 cites as a reason this table exists at all. Nobody runs two
-        # builds differing only in case.
+        # CASE-INSENSITIVE, hence an expression index rather than a
+        # UniqueConstraint: stored as typed, compared folded. Mobile keyboards
+        # autocapitalise, so "Front Runner" on the desktop and "Front runner"
+        # on the phone happens by itself — and byte-exact uniqueness would let
+        # those coexist as two visually identical pills holding different
+        # membership.
         Index(
             "uq_spark_list_owner_lower_name",
             "owner_id",

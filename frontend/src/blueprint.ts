@@ -19,9 +19,6 @@ import {
 } from "./api";
 import { apt, isLetter } from "./domain";
 import { writeStore } from "./storage";
-// One owner for the spark identity string. It lives with the model that
-// defines what a spark IS, and every dedupe in this file keys on it — five
-// hand-built copies of the same template were five places to miss.
 import { sparkId } from "./procs";
 
 // ---------- the designed lineage ----------
@@ -67,9 +64,8 @@ export const NAMED_LABELS: readonly string[] = [
   "Grandparent 2-2",
 ];
 
-// The same seven, abbreviated. For the trainee's proc roll-up, where a row
-// can name several carriers at once and "Grandparent 1-1, Grandparent 2-1"
-// would be wider than the panel.
+// For the trainee's proc roll-up, where a row can name several carriers at
+// once and the full labels would be wider than the panel.
 export const NAMED_SHORT: readonly string[] = [
   "T",
   "P1",
@@ -90,12 +86,9 @@ export const affinitySlotOf = (i: number): AffinitySlotId | null =>
 
 // Every link a node APPEARS in — what its individual affinity sums (see
 // affinity.node_affinity) and what an inspiration proc off it rolls against.
-// A parent's four include the two below her and the parent pair, so a
-// grandparent's single link is also inside its parent's number and `p1-p2` is
-// inside both parents'. They therefore don't sum to the total; the focus
-// panel shows the composition rather than leaving that to be inferred.
-//
-// The trainee has none: it is in every link and a slot in none.
+// These overlap: a grandparent's single link is also inside its parent's, and
+// `p1-p2` is inside both parents', so they do NOT sum to the total. The
+// trainee has none — it is in every link and a slot in none.
 export const NODE_LINKS: readonly (readonly string[])[] = [
   [],
   ["t-p1", "t-p1-g11", "t-p1-g12", "p1-p2"],
@@ -137,12 +130,10 @@ export function nodeLabel(i: number): string {
 // backing veteran's won saddles for the affinity scoring to come.
 export type SlotSource = "catalog" | "roster" | "lineage";
 
-// A designed named node. `spark` is the member's pink: catalog picks have no
-// dump to read it from and it's typed in, roster/lineage picks arrive with
-// the real one. The trainee never carries one. chara/card are null on a
-// spark-only node — you can type the pink you're hunting before deciding who
-// carries it (the bracket math only reads the sparks below a node). A node
-// with neither identity nor spark is null.
+// A designed named node. `spark` is the member's pink: typed in on catalog
+// picks, decoded from the dump on roster/lineage ones. The trainee never
+// carries one. chara/card are null on a spark-only node — you can type the
+// pink you're hunting before deciding who carries it.
 //
 // win_saddle_ids rides in the snapshot rather than being re-read from the
 // roster: a veteran that leaves the roster must keep its win bonus when the
@@ -165,15 +156,12 @@ export interface SlotValue {
   // the same inheritance twice. Null on catalog picks (a card, not a horse)
   // and on lineage slots (the dump gives its members no aptitudes).
   aptitudes: AptitudeLetters | null;
-  // The member's non-pink sparks — white, unique (green), race, scenario.
-  // Decoded from the dump on a roster or lineage pick, typed in by hand on a
-  // catalog one. Unlike the pink, these feed nothing deterministic: they are
-  // inherited by inspiration or not at all, so they exist for the proc
-  // estimates alone.
+  // White, unique (green), race, scenario. Unlike the pink these feed nothing
+  // deterministic — inherited by inspiration or not at all, so they exist for
+  // the proc estimates alone.
   factors: SlotFactor[];
 }
 
-// A hand-picked node: everything a catalog pick knows, which is only who.
 export const catalogSlot = (
   charaId: number | null,
   cardId: number | null,
@@ -207,10 +195,8 @@ export const emptyDesign = (): Design => ({
 
 // ---------- reading and writing nodes ----------
 
-// The pink spark at any tree index — a named member's typed pink, or the
-// pink half of a deep slot. Null when a deep slot holds only a character,
-// which is why every consumer of this can stay exactly as it was: "no pink
-// here" already meant "contributes nothing to the brackets".
+// The pink spark at any tree index — a named member's typed pink, or the pink
+// half of a deep slot. Null when a deep slot holds only a character.
 export function sparkAt(design: Design, i: number): PinkSpark | null {
   if (i < NAMED_COUNT) return design.named[i]?.spark ?? null;
   const slot = design.sparks[i - NAMED_COUNT];
@@ -219,8 +205,8 @@ export function sparkAt(design: Design, i: number): PinkSpark | null {
     : { aptitude: slot.aptitude, stars: slot.stars };
 }
 
-// Who a deep slot is, if anyone. Named nodes keep identity in their own
-// fields, so this only answers for generations 3 and 4.
+// Named nodes keep identity in their own fields, so this only answers for
+// generations 3 and 4.
 export function deepCardAt(design: Design, i: number): number | null {
   return i < NAMED_COUNT ? null : (design.sparks[i - NAMED_COUNT]?.card_id ?? null);
 }
@@ -232,26 +218,24 @@ export function withNamed(design: Design, i: number, value: SlotValue | null): D
 }
 
 // A spark on an empty named node creates an identity-less slot; clearing the
-// spark off one prunes it back to null, so an untouched node never persists
-// as a husk (and the unsaved-changes check stays honest).
+// last thing off one prunes it back to null, so an untouched node never
+// persists as a husk and the unsaved-changes check stays honest.
 export function withSpark(design: Design, i: number, spark: PinkSpark | null): Design {
   if (i < NAMED_COUNT) {
     const slot = design.named[i];
     if (slot === null) {
       return spark === null ? design : withNamed(design, i, catalogSlot(null, null, spark));
     }
-    // Pruned only when nothing else is left: a node planned around its white
-    // sparks survives having its pink cleared, which is the whole point of
-    // the server accepting a spark list without one.
+    // A node planned around its white sparks survives having its pink
+    // cleared — the server accepts a spark list without one.
     if (spark === null && slot.card_id === null && slot.factors.length === 0) {
       return withNamed(design, i, null);
     }
     return withNamed(design, i, { ...slot, spark });
   }
   // Deep slot: replace the pink half, keeping whoever is in it. Clearing the
-  // pink off a slot with nobody in it prunes it back to null, so an
-  // untouched node never persists as a husk — the same rule the named
-  // slots follow, and what keeps the unsaved-changes check honest.
+  // pink off a slot with nobody in it prunes it to null — same husk rule as
+  // the named branch above.
   const card = design.sparks[i - NAMED_COUNT]?.card_id ?? null;
   return withDeep(
     design,
@@ -264,14 +248,9 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
   );
 }
 
-// Set a named node's non-pink sparks.
-//
-// Creates the slot when there wasn't one, exactly as `withSpark` does for a
-// pink: "the parent who carries these two whites" is a plan before any
-// character or pink is chosen, and the server accepts a character-less slot
-// carrying either kind of spark. Clearing the last one off a node that has
-// nothing else prunes it away, the same rule `withSpark` follows — an
-// untouched node never persists as a husk.
+// Creates the slot when there wasn't one, as `withSpark` does for a pink:
+// "the parent who carries these two whites" is a plan before any character or
+// pink is chosen. Prunes on the same rule.
 export function withFactors(design: Design, i: number, factors: SlotFactor[]): Design {
   const slot = design.named[i];
   if (slot === null) {
@@ -285,7 +264,6 @@ export function withFactors(design: Design, i: number, factors: SlotFactor[]): D
   return withNamed(design, i, { ...slot, factors });
 }
 
-// Replace a deep slot wholesale.
 export function withDeep(design: Design, i: number, slot: DeepSlot | null): Design {
   const sparks = design.sparks.slice();
   sparks[i - NAMED_COUNT] = slot;
@@ -293,7 +271,9 @@ export function withDeep(design: Design, i: number, slot: DeepSlot | null): Desi
 }
 
 // Set (or drop) who a deep slot is, keeping its pink. Dropping the character
-// off a slot with no pink prunes it away, as clearing the pink does.
+// off a slot with no pink prunes it to null: a husk would read as occupied on
+// the map and count as hand-authored in `handAuthored`, so the next pull would
+// warn about losing a node holding nothing.
 export function withDeepCard(design: Design, i: number, cardId: number | null): Design {
   const slot = design.sparks[i - NAMED_COUNT];
   const pink = slot?.aptitude == null || slot.stars == null ? null : slot;
@@ -309,22 +289,15 @@ export function withDeepCard(design: Design, i: number, cardId: number | null): 
   );
 }
 
-// Take the character off a node, keeping everything planned about it — the
-// pink AND the non-pink sparks. The mirror of `withSpark`/`withFactors`,
-// which keep the character while the sparks change; without it the only way
-// off a cast was Clear, which took the sparks with it. "Spark set, character
-// still open" is a legal state the document has always had (it's what typing
-// a pink into an empty node produces) and this is the way back to it.
-//
-// Prunes to null when nothing is left, exactly as those two do, so a node
-// emptied this way is indistinguishable from one never touched.
+// Take the character off a node, keeping the pink AND the non-pink sparks.
+// The mirror of `withSpark`/`withFactors`, which keep the character while the
+// sparks change.
 //
 // Rebuilt as a catalog slot rather than nulled in place: a character-less
 // slot may only be a catalog one — a roster or lineage pick always knows who
-// it pulled, and both this client and the server reject the other shape. So
-// the source and the roster-only fields have to go with the face. Only a
-// hand-picked node reaches this (see `canUnselect`), where all of them are
-// already empty.
+// it pulled, and both this client and the server reject the other shape. Only
+// a hand-picked node reaches this (see `canUnselect`), where the roster-only
+// fields are already empty.
 export function withoutCharacter(design: Design, i: number): Design {
   if (i >= NAMED_COUNT) return withDeepCard(design, i, null);
   const slot = design.named[i];
@@ -335,16 +308,13 @@ export function withoutCharacter(design: Design, i: number): Design {
 
 // May this node's character be taken off on its own?
 //
-// Hand-picked nodes only. What a pull placed is recorded history: those
-// sparks are the horse's own, read off her dump, so dropping just her face
-// would leave someone else's sparks hanging under nobody. Clearing the whole
-// branch stays the way out of a pull (DECISIONS.md #28). Named slots declare
-// `catalog`; a deep slot records a source only when a pull placed it, so
-// absent means hand-picked there.
+// Hand-picked nodes only. What a pull placed is recorded history: those sparks
+// are the horse's own, so dropping just her face would leave someone else's
+// sparks hanging under nobody. Clearing the whole branch stays the way out of
+// a pull (DECISIONS.md #28).
 //
-// False when the node has nothing to keep, because then this IS Clear, and
-// two buttons doing one thing on a panel this size is noise. That also keeps
-// it off the trainee, who carries no sparks at all.
+// False when the node has nothing to keep, because then this IS Clear. That
+// also keeps it off the trainee, who carries no sparks at all.
 export function canUnselect(design: Design, i: number): boolean {
   if (lockedBy(design, i) !== null) return false;
   if (i < NAMED_COUNT) {
@@ -360,20 +330,16 @@ export function canUnselect(design: Design, i: number): boolean {
 }
 
 // ---------- game-rule mirror ----------
-// Grey-out reasons for the picker, generalized over the tree arithmetic and
-// applied at every depth — generations 3 and 4 name characters now, so the
-// same two rules reach them: no node repeats the one above it, and two nodes
-// sharing a parent differ. The server stays the authority (its 422 still
-// surfaces in the toast); this only spares obviously dead clicks.
-// Deliberately absent: a grandparent repeating the TRAINEE's chara — the
-// game allows it.
+// Grey-out reasons for the picker, applied at every depth: no node repeats
+// the one above it, and two nodes sharing a parent differ. The server stays
+// the authority (its 422 still surfaces in the toast); this only spares
+// obviously dead clicks. Deliberately absent: a grandparent repeating the
+// TRAINEE's chara — the game allows it.
 //
 // `replacesBranch` is set for a roster pull, which overwrites the target's
-// whole subtree rather than just the node. The descendant rule below is the
-// one that differs: a horse sitting under the target stops being a conflict
-// when the same action is about to overwrite her with the pull's own
-// pedigree. Greying that out blocks a pull the server would accept, and says
-// something false about why.
+// whole subtree. A horse sitting under the target then stops being a
+// conflict, since the same action is about to overwrite her with the pull's
+// own pedigree.
 export function slotConflicts(
   design: Design,
   target: number,
@@ -407,9 +373,9 @@ export function slotConflicts(
   return null;
 }
 
-// The character at any tree index. Named nodes carry chara_id outright; a
-// generation-3/4 slot stores only a card, so its chara is derived — the same
-// rule the server uses, since these checks exist to agree with it.
+// Named nodes carry chara_id outright; a generation-3/4 slot stores only a
+// card, so its chara is derived — the same rule the server uses, since these
+// checks exist to agree with it.
 export function charaAt(design: Design, i: number): number | null {
   if (i < NAMED_COUNT) return design.named[i]?.chara_id ?? null;
   const card = deepCardAt(design, i);
@@ -418,16 +384,14 @@ export function charaAt(design: Design, i: number): number | null {
 
 // ---------- roster pulls ----------
 // Mirrors app/ingest.py's derive_chara_id: 7-digit ids (the rarity-0 NPC
-// copies) prefix an extra digit, so 9100101 is still chara 1001. Needed
-// because a pulled spark stores only a card_id — the chara is derived, not
-// carried, exactly as it is server-side.
+// copies) prefix an extra digit, so 9100101 is still chara 1001.
 export const deriveCharaId = (cardId: number): number =>
   cardId > 999_999 ? Math.floor((cardId % 1_000_000) / 100) : Math.floor(cardId / 100);
 
-// A pink factor packs its aptitude in the key (factor_id // 100) and its
-// star count in the remainder. Keyed by the numeric id rather than the
-// reference's display name: the ids are game data, the names are strings we
-// render. From app/data/factors.json, type 1.
+// A pink factor packs its aptitude in the key (factor_id // 100) and its star
+// count in the remainder. Keyed by numeric id rather than display name: the
+// ids are game data, the names are strings we render. From
+// app/data/factors.json, type 1.
 const PINK_KEY_APTITUDE: Readonly<Record<number, AptitudeKey>> = {
   11: "turf", 12: "dirt",
   31: "sprint", 32: "mile", 33: "medium", 34: "long",
@@ -435,33 +399,27 @@ const PINK_KEY_APTITUDE: Readonly<Record<number, AptitudeKey>> = {
 };
 
 // The one pink a dump member carries. Every lineage member has exactly one
-// (verified against a full dump), but this takes the strongest rather than
-// the first so a future multi-pink record degrades to the useful answer
-// instead of an arbitrary one. `card_id` is the member's identity, which is
-// what makes a pulled gen-3/4 spark distinguishable from a typed one.
+// (verified against a full dump); taking the strongest rather than the first
+// degrades a future multi-pink record to the useful answer.
 export function pinkOf(factors: readonly Factor[]): PinkSpark | null {
   let best: PinkSpark | null = null;
   for (const f of factors) {
     const aptitude = PINK_KEY_APTITUDE[f.key];
-    // Both checks: no non-pink factor uses a key in this range today, and
-    // the kind is what keeps that true if one ever does.
+    // Both checks: no non-pink factor uses a key in this range today, and the
+    // kind is what keeps that true if one ever does.
     if (f.kind !== "pink" || aptitude === undefined || f.star < 1 || f.star > 3) continue;
     if (best === null || f.star > best.stars) best = { aptitude, stars: f.star };
   }
   return best;
 }
 
-// Every non-pink spark a dump member carries, strongest first so the list
-// reads in the order that matters — a 3★ skill is worth three times a 1★ one
-// at the same affinity. Deduped by kind+key: a member holds a given factor at
-// exactly one star level (the factor_id encodes both), a duplicate would be
-// counted twice when a spark's carriers are combined, and the kinds number
-// their keys independently.
+// Every non-pink spark a dump member carries, strongest first. Deduped by
+// kind+key — the kinds number their keys independently, and a duplicate would
+// be counted twice when a spark's carriers are combined.
 //
-// The member's PINK is not in here: it lives in the slot's own `spark`,
-// because it is the one that also feeds the career-start brackets. Blue and
-// anything the reference couldn't classify are dropped — the document has no
-// kind for them.
+// The member's PINK is not in here: it lives in the slot's own `spark`, being
+// the one that also feeds the career-start brackets. Blue and anything the
+// reference couldn't classify are dropped — the document has no kind for them.
 export function factorsOf(factors: readonly Factor[]): SlotFactor[] {
   const best = new Map<string, SlotFactor>();
   for (const f of factors) {
@@ -480,10 +438,8 @@ export function factorsOf(factors: readonly Factor[]): SlotFactor[] {
 }
 
 // Which succession slot feeds which tree node, relative to the node the
-// veteran itself lands in. A veteran's dump carries six members: 10/20 are
-// its parents, 11/12 and 21/22 their parents in turn. So pulling a veteran
-// into a node fills that node's two kids and four grandkids — two whole
-// generations — which is the "2-gen auto-fill" the plan means.
+// veteran itself lands in. A veteran's dump carries six members: 10/20 are its
+// parents, 11/12 and 21/22 their parents in turn.
 //
 // The classic error is off by one generation: a blueprint grandparent is the
 // parent veteran's PARENT (position 10/20), never its grandparent.
@@ -501,9 +457,7 @@ export function pullTargets(target: number): { index: number; position: number }
   ].filter((t) => t.index < NODE_COUNT);
 }
 
-// Every node at or below `i` — the branch a node roots. Breadth-first from
-// the node itself, so a pull can replace a whole ancestry rather than
-// patching seven nodes of it.
+// Every node at or below `i`, breadth-first from the node itself.
 export function subtreeOf(i: number): number[] {
   const out: number[] = [];
   const queue = [i];
@@ -516,15 +470,13 @@ export function subtreeOf(i: number): number[] {
   return out;
 }
 
-// Which roster node, if any, owns this one — the nearest ancestor filled
-// from your roster. Everything under a real veteran is that veteran's actual
-// pedigree: her parents and their sparks are recorded history, not a plan,
-// so they are read-only. Editing them would leave the tree asserting
+// Which roster node, if any, owns this one — the nearest ancestor filled from
+// your roster. Everything under a real veteran is recorded history, not a
+// plan, so it is read-only: editing it would leave the tree asserting
 // something false about a horse you own.
 //
-// Derived from the design rather than remembered from the pull, so it stays
-// true after a reload, and stops applying the moment the roster node above
-// is cleared or replaced — which is the way out.
+// Derived from the design rather than remembered from the pull, so it survives
+// a reload and stops applying the moment the roster node above is cleared.
 export function lockedBy(design: Design, i: number): number | null {
   let j = i;
   while (j > 0) {
@@ -534,28 +486,22 @@ export function lockedBy(design: Design, i: number): number | null {
   return null;
 }
 
-// Where a node's character came from, at any depth. Named nodes always
-// declare it; a deep slot declares it only when a pull placed it, so absent
-// means hand-picked.
+// Named nodes always declare it; a deep slot declares it only when a pull
+// placed it, so absent means hand-picked.
 export function sourceAt(design: Design, i: number): SlotSource | null {
   if (i < NAMED_COUNT) return design.named[i]?.source ?? null;
   return design.sparks[i - NAMED_COUNT]?.source ?? null;
 }
 
-// The nodes a roster pick brought with it — its descendants, empty list for
-// anything else. Clearing or replacing that pick takes them too: every one
-// of them describes THAT veteran's ancestry, so leaving them would hang a
-// pedigree under someone who doesn't have it, and leave it unlocked now that
-// the veteran enforcing the lock is gone.
-//
-// Nothing hand-authored can be in there, which is why this needs no confirm:
-// the branch was read-only from the moment of the pull, and the pull itself
-// cleared whatever preceded it.
+// The nodes a roster pick brought with it. Clearing or replacing that pick
+// takes them too: they describe THAT veteran's ancestry, so leaving them would
+// hang a pedigree under someone who doesn't have it. Nothing hand-authored can
+// be in there — the branch was read-only from the moment of the pull — which
+// is why this needs no confirm.
 export function ownedBranch(design: Design, i: number): number[] {
   return sourceAt(design, i) === "roster" ? subtreeOf(i).slice(1) : [];
 }
 
-// Empty a set of nodes, named or deep.
 export function clearNodes(design: Design, indices: readonly number[]): Design {
   let next = design;
   for (const i of indices) {
@@ -564,28 +510,21 @@ export function clearNodes(design: Design, indices: readonly number[]): Design {
   return next;
 }
 
-// Is this node's pink fixed? True for everything inside a locked branch, and
-// also for the roster node at its head: that pink is the one the horse
-// actually carries, so typing over it would be a fiction about a veteran you
-// own. Her IDENTITY stays editable — swapping which veteran sits in the slot
-// is a plan decision; rewriting her sparks is not.
+// True inside a locked branch and for the roster node at its head: that pink
+// is the one the horse actually carries. Her IDENTITY stays editable —
+// swapping which veteran sits in the slot is a plan decision; rewriting her
+// sparks is not.
 export function sparkLocked(design: Design, i: number): boolean {
   return lockedBy(design, i) !== null || sourceAt(design, i) === "roster";
 }
 
 // Every node but the trainee takes a roster pull. The trainee is the horse
-// you are about to train — not in your roster, that being the point of it,
+// you are about to train — not in your roster, that being the point of it —
 // and a pull there would be the one click that empties all 31 nodes.
-//
-// A pull deeper in simply reaches less: it fills whatever the tree has room
-// for beneath the target, which is one generation at gen 3 and nothing at
-// gen 4. That falls out of pullTargets' bounds check rather than needing a
-// rule of its own.
 export const canPullInto = (i: number): boolean => i > 0;
 
 // One node a pull would write. Named indices carry a whole slot; the deeper
-// ones carry a bare spark (with the member's card_id, so the identity that
-// arrived in the fetch isn't thrown away).
+// ones carry a bare spark plus the member's card_id.
 export interface PullWrite {
   index: number;
   slot?: SlotValue;
@@ -594,23 +533,19 @@ export interface PullWrite {
 
 export interface PullPlan {
   writes: PullWrite[];
-  // The rest of the branch: emptied, not left as it was. What sits under a
-  // node is that node's ancestry, so replacing the node makes all of it
-  // stale — and leaving it would feed the new grandparents' brackets from
-  // the previous plan's sparks, which is a wrong number rather than an old
-  // one. Generation 4 always ends up here: the game stores two generations
-  // per veteran, so a pull has nothing to put there.
+  // The rest of the branch: emptied, not left as it was. Leaving it would
+  // feed the new grandparents' brackets from the previous plan's sparks — a
+  // wrong number rather than an old one. Generation 4 always ends up here,
+  // the game storing only two generations per veteran.
   clears: number[];
-  // Nodes in the branch whose current content a human authored — a catalog
-  // pick, a roster pick, or a typed spark. Everything else (empty, or filled
-  // by an earlier pull) is replaced without asking: it was never
-  // hand-authored, so there is nothing to lose. See DECISIONS.md #28.
+  // Nodes whose current content a human authored. Everything else (empty, or
+  // filled by an earlier pull) is replaced without asking. See DECISIONS.md
+  // #28.
   clobbers: number[];
 }
 
-// Was this node's content authored by hand? Deep spark slots have no source
-// field: a pull records `lineage` on what it placed, so anything without one
-// is yours — a typed pink, or a character you picked.
+// A pull records `lineage` on what it placed, so anything without it is
+// yours — a typed pink, or a character you picked.
 function handAuthored(design: Design, i: number): boolean {
   if (i < NAMED_COUNT) {
     const slot = design.named[i];
@@ -619,9 +554,8 @@ function handAuthored(design: Design, i: number): boolean {
   const slot = design.sparks[i - NAMED_COUNT];
   if (slot === null) return false;
   if (slot.source != null) return slot.source !== "lineage";
-  // Rows written before deep slots recorded a source: back then a pull was
-  // the only thing that set an identity, and it always left it beneath the
-  // roster node that produced it.
+  // Sourceless rows: a pull was once the only thing that set an identity, and
+  // it always left it beneath the roster node that produced it.
   return slot.card_id == null || lockedBy(design, i) === null;
 }
 
@@ -639,8 +573,6 @@ const lineageSlot = (
   // A dump's succession members carry no aptitude fields — only the veteran
   // record itself does. So a lineage node falls back to card base + brackets.
   aptitudes: null,
-  // Their other sparks ARE in the dump though, decoded like the pink. This is
-  // the whole reason a pulled ancestor's proc estimates need no typing.
   factors: factorsOf(member.factors),
 });
 
@@ -659,16 +591,13 @@ const APTITUDE_FIELDS: Record<AptitudeKey, keyof Veteran> = {
   end: "proper_running_style_oikomi",
 };
 
-// A trained veteran's actual letters, off her own dump record. These are
-// what she finished her career with — inheritance, inspirations and any
-// aptitude gained in training, all already in the number.
+// A trained veteran's actual letters, off her own dump record — what she
+// finished her career with, inheritance and training already in the number.
 //
-// Null when any field is off the 1..8 scale (`apt` degrades those to "-" or
-// "?"). All ten letters or none: the server accepts only the real grades, so
-// storing a placeholder would 422 the autosave for the whole design. Dropping
-// them instead costs the slot its "as trained" mode and nothing else — it
-// falls back to the card's base letters, which is what the same slot showed
-// before this snapshot existed.
+// All ten or none: null when any field is off the 1..8 scale, because the
+// server accepts only real grades and a placeholder would 422 the autosave
+// for the whole design. Dropping them costs the slot its "as trained" mode
+// and nothing else — it falls back to the card's base letters.
 export function veteranAptitudes(v: Veteran): AptitudeLetters | null {
   const out = {} as AptitudeLetters;
   for (const key of APTITUDE_KEYS) {
@@ -680,30 +609,21 @@ export function veteranAptitudes(v: Veteran): AptitudeLetters | null {
 }
 
 // What pulling `veteran` into `target` would do: replace that node's whole
-// branch — the node and everything descended from it — with as much of the
-// veteran's real pedigree as the dump carries, and empty the rest.
+// branch with as much of the veteran's real pedigree as the dump carries, and
+// empty the rest.
 //
 // A pull is not a patch. The branch under a node IS that node's ancestry, so
 // swapping the node in makes every node below it describe someone else.
-// Filling only the six slots the dump reaches would leave the generation
-// below still feeding brackets from the plan you just replaced.
 //
 // Pure — the page decides whether to ask about `clobbers`, then applies the
 // result through the normal autosave path.
-//
-// The picked node is planned like any other: its own typed spark counts as
-// hand-authored too, so a pull never silently discards a pink you were
-// hunting. Say yes and the veteran's real pink replaces it, which is the
-// point of pulling a veteran you actually own.
 export function planPull(design: Design, target: number, veteran: Veteran): PullPlan {
   if (!canPullInto(target)) throw new Error("the trainee can't be pulled from the roster");
   const byPosition = new Map(veteran.lineage.map((m) => [m.position_id, m]));
   const ownPink = pinkOf(veteran.factors);
-  // A deep slot has room for a face and a pink and nothing else — no won
-  // saddles, no trained_chara_id, no trained letters. None of those are read
-  // below the grandparents: affinity scores the named triangle only, and the
-  // bracket math reads stars. So the pull carries what fits, and the `source`
-  // is what still marks the branch as recorded history.
+  // A deep slot has room for a face and a pink and nothing else. None of the
+  // rest is read below the grandparents: affinity scores the named triangle
+  // only, and the bracket math reads stars.
   const writes: PullWrite[] = [
     target < NAMED_COUNT
       ? {
@@ -732,21 +652,17 @@ export function planPull(design: Design, target: number, veteran: Veteran): Pull
   for (const { index, position } of pullTargets(target)) {
     const member = byPosition.get(position);
     // A dump can be short a member (an unbred parent). That node is emptied
-    // like the rest of the branch rather than keeping what was there — the
-    // veteran genuinely has nobody in that slot, and showing the previous
-    // plan's pick as its parent would be a false answer, not a partial one.
+    // with the rest of the branch: the veteran genuinely has nobody there, and
+    // showing the previous plan's pick would be a false answer.
     if (member === undefined) continue;
     if (index < NAMED_COUNT) {
       writes.push({ index, slot: lineageSlot(member, veteran.trained_chara_id) });
       continue;
     }
     // Below the grandparents there is nowhere to put a NAME, but the card id
-    // still rides along at every depth the dump reaches: it's what draws the
-    // character's icon on the map, which is how a deep slot is recognisable
-    // at all. Generation 4 only ever gets one from a grandparent-level pull
-    // — a parent-level pull has no data that deep and clears it instead.
-    // A member with no pink still lands, as a face: that is real information
-    // about who is there, and the slot now has somewhere to keep it.
+    // rides along at every depth the dump reaches — it's what draws the
+    // character's icon on the map. A member with no pink still lands, as a
+    // face.
     const pink = pinkOf(member.factors);
     writes.push({
       index,
@@ -759,12 +675,10 @@ export function planPull(design: Design, target: number, veteran: Veteran): Pull
   }
   const written = new Set(writes.map((w) => w.index));
   const branch = subtreeOf(target);
-  // Swapping one veteran for another is the action you just took, so the
-  // node you aimed at isn't collateral and doesn't belong in the warning —
-  // naming it would put a dialog on every re-pull saying only "the thing
-  // you asked to replace will be replaced". It stays in the list when it
-  // holds something you authored yourself: a catalog pick, or a typed pink
-  // (which a roster pick can't have — its pink is the horse's own).
+  // The node you aimed at isn't collateral — naming it would put a dialog on
+  // every re-pull saying only "the thing you asked to replace will be
+  // replaced". It stays in the list when it holds something you authored
+  // yourself: a catalog pick, or a typed pink.
   const collateral = (i: number) =>
     handAuthored(design, i) && !(i === target && sourceAt(design, i) === "roster");
   return {
@@ -774,10 +688,11 @@ export function planPull(design: Design, target: number, veteran: Veteran): Pull
   };
 }
 
+// `clears` and `writes` are disjoint by construction (planPull derives the
+// first by excluding the second), so clear-then-fill is order-independent —
+// filling first, or letting a written index into `clears`, would blank nodes
+// the pull just populated.
 export function applyPull(design: Design, plan: PullPlan): Design {
-  // Clear first, then fill: the two sets are disjoint, so the order only
-  // matters for readability, and "empty the branch, then populate it" is
-  // what the rule actually says.
   let next = clearNodes(design, plan.clears);
   for (const w of plan.writes) {
     next = w.slot !== undefined
@@ -804,11 +719,9 @@ const slotToApi = (s: SlotValue | null): BlueprintSlot | null =>
         factors: s.factors,
       };
 
-// The scoring request: the trainee's chara plus every filled ancestor in the
-// top three generations, each with the won saddles snapshotted into the slot
-// (never re-read from the roster — a veteran that leaves it keeps her win
-// bonus). A node with a planned spark but no character yet is nobody, so it
-// is omitted rather than sent as a slot the server would score as empty.
+// The trainee's chara plus every filled ancestor in the top three
+// generations, with the won saddles as snapshotted into the slot. A node with
+// a planned spark but no character yet is nobody, so it is omitted.
 export function toAffinityRequest(design: Design): AffinityRequest {
   const req: AffinityRequest = { trainee_chara_id: design.named[0]?.chara_id ?? null };
   for (const id of AFFINITY_SLOTS) {
@@ -827,10 +740,11 @@ export const toApi = (design: Design): BlueprintIn => ({
   },
 });
 
-// Throws on a shape this client doesn't understand (e.g. a slot written by
-// a future version) — the caller degrades to a toast, not a crash. Turning
-// malformed into silently-blank is the data-loss shape DECISIONS.md #26 is
-// about, so every one of these stays strict.
+// The parsers below throw on a shape this client doesn't understand — the
+// caller degrades to a toast, not a crash. Turning malformed into
+// silently-blank is the data-loss shape DECISIONS.md #26 is about, so every
+// one of them stays strict.
+
 // The pink half. Both fields present and valid, or neither.
 function pinkFromApi(raw: DeepSlot): PinkSpark | null {
   if (raw.aptitude == null && raw.stars == null) return null;
@@ -845,9 +759,8 @@ function pinkFromApi(raw: DeepSlot): PinkSpark | null {
   return { aptitude: raw.aptitude as AptitudeKey, stars: raw.stars as number };
 }
 
-// A named slot's spark, which must be a real pink — identity lives in the
-// slot's own fields there, so a face-only value is a shape this client
-// doesn't understand rather than a legal spark.
+// A named slot's spark must be a real pink — identity lives in the slot's own
+// fields there, so a face-only value is malformed rather than legal.
 function sparkFromApi(raw: DeepSlot | null | undefined): PinkSpark | null {
   if (raw === null || raw === undefined) return null;
   const pink = pinkFromApi(raw);
@@ -924,10 +837,8 @@ function slotFromApi(raw: BlueprintSlot | null | undefined): SlotValue | null {
   };
 }
 
-// A slot's non-pink sparks. Absent means none — every row written before they
-// existed, which is most of them. A malformed entry throws like every other
-// shape this client doesn't understand: silently dropping one would quietly
-// lower a proc estimate the design was judged on.
+// Absent means none. A malformed entry throws rather than being dropped:
+// dropping one would quietly lower a proc estimate the design was judged on.
 function factorsFromApi(raw: SlotFactor[] | undefined): SlotFactor[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) throw new Error("malformed sparks");
@@ -945,8 +856,7 @@ function factorsFromApi(raw: SlotFactor[] | undefined): SlotFactor[] {
       f.stars <= 3;
     if (!ok) throw new Error("malformed spark");
     // The same rule the server validates on write: one entry per spark, or
-    // combining its carriers would roll it against itself. Kind and key
-    // together — the kinds number their keys independently.
+    // combining its carriers would roll it against itself.
     const id = sparkId({ type: f.kind, key: f.key });
     if (seen.has(id)) throw new Error("duplicate spark");
     seen.add(id);
@@ -955,11 +865,10 @@ function factorsFromApi(raw: SlotFactor[] | undefined): SlotFactor[] {
   return out;
 }
 
-// A roster pick's stored letters. Absent on every catalog and lineage slot,
-// and on every row written before roster pulls existed, so undefined is
-// normal — but a partial or mislabelled set is a shape this client doesn't
-// understand, and silently dropping it would show card base letters for a
-// horse whose real ones were right there.
+// A roster pick's stored letters. Absent on catalog and lineage slots, so
+// undefined is normal — but a partial or mislabelled set throws, since
+// dropping it would show card base letters for a horse whose real ones were
+// right there.
 function lettersFromApi(
   raw: AptitudeLetters | null | undefined,
   source: SlotSource
@@ -969,9 +878,8 @@ function lettersFromApi(
   const out = {} as AptitudeLetters;
   for (const key of APTITUDE_KEYS) {
     const letter = raw[key];
-    // The same ten-keys-of-eight-grades rule the server enforces on write —
-    // these two must agree exactly, or a document it accepts is one this
-    // client can never open again.
+    // Must match the server's rule exactly, or a document it accepts is one
+    // this client can never open again.
     if (!isLetter(letter)) throw new Error("malformed aptitudes");
     out[key] = letter;
   }
@@ -979,21 +887,16 @@ function lettersFromApi(
 }
 
 // ---------- which blueprint was open ----------
-// Every design is a server row (DECISIONS.md #26): the page creates one on
-// first load and autosaves from then on, so there is no local document to
-// persist — only a pointer to the row you were last looking at, so a reload
-// reopens it instead of whichever was edited most recently.
+// Every design is a server row (DECISIONS.md #26), so there is no local
+// document to persist — only a pointer to the row you were last looking at,
+// so a reload reopens it instead of whichever was edited most recently.
 export const DESIGN_STORE = "umalab.designer.open";
 
 export function readOpenId(): number | null {
   try {
     const raw = localStorage.getItem(DESIGN_STORE);
-    // Checked as a number BEFORE coercing: Number() turns null, "" and []
-    // into 0, which is an integer and so was returned as a row id no
-    // blueprint can have. Harmless today only because the one caller looks
-    // the id up in a list it already holds and falls back to "most recent"
-    // on a miss — this returns the fallback outright rather than relying on
-    // that.
+    // Checked as a number BEFORE coercing: Number() turns null, "" and [] into
+    // 0, which is an integer and no blueprint's id.
     const parsed: unknown = raw === null ? null : JSON.parse(raw);
     return typeof parsed === "number" && Number.isInteger(parsed) ? parsed : null;
   } catch {
@@ -1002,19 +905,16 @@ export function readOpenId(): number | null {
   }
 }
 
-// Null forgets which row was open, which is what writeStore's null does.
 export function writeOpenId(id: number | null): void {
   writeStore(DESIGN_STORE, id);
 }
 
-// New blueprints are born named. The first is plain "Untitled Blueprint" —
-// a lone " - 1" is noise when there's nothing to be the first OF — and the
-// numbering starts at 1 for the next one, taking the lowest free number, so
-// deleting "- 2" of three reuses 2 rather than counting ever upward.
+// The first is plain "Untitled Blueprint" — a lone " - 1" is noise when
+// there's nothing to be the first OF. Numbering takes the lowest free number,
+// so deleting "- 2" of three reuses 2 rather than counting ever upward.
 export const UNTITLED = "Untitled Blueprint";
 
-// "X (copy)", then "X (copy 2)" — the same lowest-free-number rule as the
-// untitled names, so duplicating twice doesn't collide.
+// "X (copy)", then "X (copy 2)" — same lowest-free-number rule.
 export function copyName(name: string, existing: readonly { name: string }[]): string {
   const names = new Set(existing.map((b) => b.name.trim()));
   const base = `${name.trim()} (copy)`;
@@ -1039,9 +939,8 @@ export function nextUntitledName(existing: readonly { name: string }[]): string 
 
 export const fromApi = (bp: Blueprint): Design => {
   const slots: Partial<typeof bp.slots> | null = bp.slots;
-  // Same strictness as the per-slot checks: a body missing either array (or
-  // at the wrong length — the document is positional) must throw, not parse
-  // as a legitimately blank or shifted design.
+  // The document is positional, so a missing or wrong-length array must
+  // throw rather than parse as a blank or shifted design.
   if (
     slots === null ||
     typeof slots !== "object" ||

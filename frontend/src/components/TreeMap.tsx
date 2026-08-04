@@ -62,21 +62,15 @@ export function TreeMap({
     </span>
   );
 
-  // A deep slot's portrait, at the same scale in every state so the spark row
-  // below never shifts. Falls back exactly as the named nodes do: the
-  // character's initial when a pull named the slot but the art isn't on disk
-  // (it's gitignored — DECISIONS.md #10), and "+" on a slot nothing has
-  // filled yet.
-  // The letter to stand in for a missing portrait, given who the slot holds.
-  // "+" only when nobody is in it — a slot with a character is never drawn as
-  // an empty one. Blank while the catalog is still in flight, so the space
-  // stays reserved and no letter flashes before the real one. "?" for a chara
-  // the catalog doesn't know: an initial off "Chara 1006" would render an
-  // identical "C" for every one of them, the opposite of the recognition the
-  // stored id exists to provide.
+  // The letter standing in for a missing portrait (the art is gitignored —
+  // DECISIONS.md #10). "+" only when nobody is in the slot; blank while the
+  // catalog is in flight, so the space stays reserved and no letter flashes
+  // before the real one; "?" for a chara the catalog doesn't know, since an
+  // initial off "Chara 1006" renders an identical "C" for every one of them.
   const initial = (card: number | null, name: string | null): string =>
     card === null ? "+" : name === null ? "" : isCharaPlaceholder(name) ? "?" : name.charAt(0);
 
+  // At the same scale in every state, so the spark row below never shifts.
   const deepIcon = (card: number | null) => {
     const icon = card === null ? undefined : iconIndex[String(card)];
     if (icon !== undefined) {
@@ -92,25 +86,18 @@ export function TreeMap({
 
   // What a named node is worth in affinity. The trainee shows the RUN's total
   // with its band symbol — the number the game puts on the parent-select
-  // screen. Every ancestor shows its INDIVIDUAL affinity: every link it
-  // appears in, which is what an inspiration proc off it rolls against.
-  // Bandless, because the △/○/◎ table grades whole pairings — a symbol on one
-  // ancestor would read as a compatibility rating for her alone.
+  // screen. Every ancestor shows its INDIVIDUAL affinity: every link it appears
+  // in, which is what an inspiration proc off it rolls against. Bandless,
+  // because the △/○/◎ table grades whole pairings — a symbol on one ancestor
+  // would read as a compatibility rating for her alone.
   //
   // These deliberately do NOT sum to the trainee's total: a grandparent's
   // number sits inside its parent's, and the p1-p2 link sits inside both
-  // parents'. The focus panel shows each node's composition, which is where
-  // that nesting is explained (DECISIONS.md #29).
-  //
-  // The rejected alternative was the owned-link decomposition — one link per
-  // node, six tiles summing to the total. It reads tidily and it RANKS THE
-  // TREE WRONG: `t-p1` and `t-p2` are the only links that can never carry a
-  // win bonus (the trainee hasn't raced), so every win point lands on a
-  // grandparent's tile and parents show as the weakest nodes on any lineage
-  // with real overlap. Measured on a real ◎ blueprint: parents +18/+24
-  // against grandparents +48/+50/+63/+70, where the individual numbers are
-  // 175/216 against 48/50/63/70. Correct ranking beats additive tidiness —
-  // nobody sums across generations, everybody compares slots.
+  // parents'. The alternative that does sum — one owned link per node — ranks
+  // the tree WRONG, because `t-p1` and `t-p2` can never carry a win bonus (the
+  // trainee hasn't raced), so every win point lands on a grandparent and the
+  // parents read as the weakest nodes on any lineage with real overlap
+  // (DECISIONS.md #29).
   //
   // Null ⇒ nothing to show yet: no score, or a slot with nobody in it. Both
   // render as the placeholder, so the tile holds its footprint either way.
@@ -118,10 +105,9 @@ export function TreeMap({
     if (affinity === null) return null;
     if (i === 0) return { text: String(affinity.total), symbol: affinity.symbol };
     const id = affinitySlotOf(i);
-    // Gated on the design as it stands NOW, not only on what the last score
-    // knew: clearing a node re-renders instantly while the re-score is a
-    // debounce away, and a slot nobody occupies must not keep showing the
-    // number its previous occupant earned — on the tile or in the label.
+    // Gated on the design as it stands NOW, not on what the last score knew:
+    // clearing a node re-renders instantly while the re-score is a debounce
+    // away, and an empty slot must not keep its previous occupant's number.
     if (id === null || design.named[i]?.chara_id == null) return null;
     const share = affinity[`${id}_affinity`];
     // Unsigned: "+175" invites adding the tiles up, which is the one thing
@@ -133,25 +119,22 @@ export function TreeMap({
     const sel = selected === i;
     if (i < NAMED_COUNT) {
       const slot = design.named[i];
-      // "Empty" here means no CHARACTER: a node can carry a planned spark
-      // with nobody cast in it yet, and then it reads like an empty card
-      // with a pink row. Empty cards keep the full footprint with "-"
-      // letters (the u-ma.org convention) so the tree's geometry never
-      // jumps as picks land, and every slot advertises what it will show.
+      // "Empty" means no CHARACTER: a node can carry a planned spark with
+      // nobody cast in it. Empty cards keep the full footprint with "-"
+      // letters, so the tree's geometry never jumps as picks land.
       const card = slot?.card_id ?? null;
       const chara = slot?.chara_id ?? null;
       const empty = card === null || chara === null;
       const spark = sparkAt(design, i);
       // One generic placeholder for every empty card — role names vary too
-      // much in length ("Grandparent 2-1" ellipsizes at the g2 width); the
+      // much in length ("Grandparent 2-1" ellipsizes at the g2 width), so the
       // role stays on the tooltip and in the aria-label.
+      //
       // Null while the catalog is still in flight — the band below holds its
       // space blank rather than showing a placeholder that's about to change.
       const name = chara === null ? null : charaName(chara);
       const icon = empty ? undefined : iconIndex[String(card)];
-      // Three modes, one per source — see LetterMode. A catalog pick
-      // projects, a roster pick reports what she trained to, a pulled
-      // lineage member states her card and no more.
+      // Three modes, one per source — see LetterMode.
       const rows = empty
         ? []
         : aptitudeRows(
@@ -162,9 +145,6 @@ export function TreeMap({
             slot?.aptitudes ?? null
           );
       const byKey = new Map<AptitudeKey, AptitudeRow>(rows.map((r) => [r.key, r]));
-      // Takes the rows already in hand — the window scan and bracket math
-      // behind them are the expensive part, and this runs for every named
-      // node on every render.
       const warn = empty ? false : undroppableSpark(rows, design, i);
       const aff = affinityOf(i);
       const cell = (k: AptitudeKey) => {
@@ -198,12 +178,10 @@ export function TreeMap({
       return (
         <button
           className={`vnode named${empty ? " pick" : ""}${sel ? " sel" : ""}`}
-          // Keyed off whether a character is CAST, not off whether its name
-          // has arrived: a cast node whose catalog entry is still loading
-          // must not read as an empty one.
-          // The affinity rides along on the label so the readout isn't a
-          // symbol-and-number tile only to a screen reader. Appended, never
-          // prefixed: "<node> — " is what everything else keys off.
+          // Keyed off whether a character is CAST, not off whether its name has
+          // arrived: a cast node whose catalog entry is still loading must not
+          // read as an empty one. The affinity is APPENDED, never prefixed —
+          // "<node> — " is what everything else keys off.
           aria-label={`${nodeLabel(i)} — ${
             chara !== null
               ? (name ?? "…")
@@ -229,13 +207,9 @@ export function TreeMap({
             ) : (
               <span className="lineage-icon-fallback">{initial(chara === null ? null : card, name)}</span>
             )}
-            {/* Affinity, on every node the game scores one for: the run's
-                total on the trainee, each ancestor's own contribution to it
-                below. It rides in the head rather than on a row of its own —
-                the portrait spans the left half, so this takes the right
-                half as a wide tile and the track pair tucks under it, which
-                costs the chip no height. Explained in the focus panel; this
-                is the readout. */}
+            {/* In the head rather than on a row of its own: the portrait spans
+                the left half, so this takes the right half as a wide tile and
+                the track pair tucks under it, costing the chip no height. */}
             <span className="aff-chip">
               <span className="aff-chip-tag">Affinity</span>
               {aff === null ? (
@@ -257,9 +231,8 @@ export function TreeMap({
           <span className="apt-row">{styleKeys.map(cell)}</span>
           {i > 0 &&
             (spark !== null ? (
-              // The one thing worth a tooltip here is the undroppable
-              // pink; the warn background is what advertises it, so the
-              // row never carries hidden text you'd have to hunt for.
+              // The warn background is what advertises the undroppable pink,
+              // so the row never carries hidden text you'd have to hunt for.
               <span
                 className={`spark-row${warn ? " warn" : ""}`}
                 title={
@@ -289,14 +262,12 @@ export function TreeMap({
         </button>
       );
     }
-    // A deep slot holds a pink, a character, or both — like the named nodes
-    // above, where a character can be cast before its pink is decided.
+    // A deep slot holds a pink, a character, or both.
     const spark = sparkAt(design, i);
     const card = deepCardAt(design, i);
     if (spark === null) {
-      // The named cards' row-4 placeholder, at slot scale: "Aptitude" over
-      // three unfilled stars — a slot with no pink keeps the filled
-      // footprint. Only one with nobody in it either reads as empty.
+      // A slot with no pink keeps the filled footprint. Only one with nobody
+      // in it either reads as empty.
       const who = card === null ? null : charaName(deriveCharaId(card));
       return (
         <button
@@ -308,11 +279,11 @@ export function TreeMap({
           onClick={() => onSelect(i)}
         >
           {deepIcon(card)}
-          {/* `ph` de-emphasises the placeholder wording. On an empty slot
-              .vnode.pick already does that; a slot with a face in it isn't
-              empty and mustn't take pick's dashed border, so it carries the
-              de-emphasis here instead — otherwise "Aptitude ☆☆☆" renders in
-              the filled-pink weight and reads as a spark by that name. */}
+          {/* `ph` de-emphasises the placeholder wording. A slot with a face in
+              it isn't empty and mustn't take .pick's dashed border, so it
+              carries the de-emphasis here instead — otherwise "Aptitude ☆☆☆"
+              renders in the filled-pink weight and reads as a spark by that
+              name. */}
           {gen === 4 ? (
             <>
               {starTrio(0)}
@@ -327,11 +298,9 @@ export function TreeMap({
     const label = APTITUDE_LABELS[spark.aptitude];
     const who = card === null ? null : charaName(deriveCharaId(card));
     // Deep slots are anonymous by name — there's no room for one down here —
-    // but the portrait is what makes them recognisable at a glance. The art
-    // itself stays decorative: whoever the slot holds is named in the label
-    // instead, so nothing depends on the icons being on disk. The empty-pink
-    // branch above names the character too — a node mustn't change what it
-    // announces just because a spark happens to be present.
+    // so the portrait carries recognition and stays decorative: whoever the
+    // slot holds is named in the label, and nothing depends on the icons
+    // being on disk.
     return (
       <button
         className={`vnode anon${sel ? " sel" : ""}`}

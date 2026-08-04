@@ -81,11 +81,11 @@ const RETRY_MAX_MS = 30000;
 // the autosave: this one has a number on screen waiting on it.
 const AFFINITY_DEBOUNCE_MS = 250;
 
-// One bootstrap create per page load, shared across mounts. The page
-// unmounts on every route change, so a quick Designer → Roster → Designer
-// can otherwise have the second mount's GET race the first mount's POST,
-// see an empty list, and create a second blank blueprint. Cleared on settle,
-// so this only ever collapses genuinely concurrent attempts.
+// One bootstrap create per page load, shared across mounts. The page unmounts
+// on every route change, so a quick Designer → Roster → Designer can otherwise
+// have the second mount's GET race the first mount's POST, see an empty list,
+// and create a second blank blueprint. Cleared on settle, so this only
+// collapses genuinely concurrent attempts.
 let inflightBootstrap: Promise<Blueprint> | null = null;
 function bootstrapBlueprint(): Promise<Blueprint> {
   inflightBootstrap ??= api
@@ -96,12 +96,11 @@ function bootstrapBlueprint(): Promise<Blueprint> {
   return inflightBootstrap;
 }
 
-// The trainee is what a blueprint is ABOUT, so it labels the row alongside
-// the name. A fixed-size blank holds the space when there's no pick yet (or
-// no icon on disk), so names stay on one line down the list.
 const traineeCard = (bp: Blueprint): number | null =>
   bp.slots?.named?.[0]?.card_id ?? null;
 
+// A fixed-size blank holds the space when there's no pick yet (or no icon on
+// disk), so names stay on one line down the list.
 const TraineeIcon = ({
   card,
   iconIndex,
@@ -126,19 +125,15 @@ export function DesignerPage({
   setSavedJson,
   onError,
 }: {
-  // The shell's roster, not a copy: it already fetches this list for the
-  // roster page and replaces it after every import, and the import button
-  // sits in the header on this route too. Fetching our own would both
-  // duplicate the largest response the app makes and freeze it at mount, so
-  // a pull after an import would snapshot a veteran the full-replace just
-  // deleted. Optional throughout — an empty roster (or a failed fetch) costs
-  // you the shortcut, never the designer.
+  // The shell's roster, not a copy: fetching our own would duplicate the
+  // largest response the app makes AND freeze it at mount, so a pull after an
+  // import would snapshot a veteran the full-replace just deleted. Optional
+  // throughout — an empty roster costs you the shortcut, never the designer.
   veterans: Veteran[];
   iconIndex: Record<string, string>;
-  // design + savedJson live in the App shell so a route change can't
-  // discard an unsaved design (see App.tsx). savedJson is the toApi()
-  // JSON at the last save/load — the unsaved-changes hint compares
-  // against it; null ⇒ nothing saved/loaded yet.
+  // design + savedJson live in the App shell so a route change can't discard
+  // an unsaved design (see App.tsx). savedJson is the toApi() JSON at the last
+  // save/load, which the unsaved-changes hint compares against.
   design: Design;
   setDesign: Dispatch<SetStateAction<Design>>;
   savedJson: string | null;
@@ -147,61 +142,47 @@ export function DesignerPage({
 }) {
   const [saved, setSaved] = useState<Blueprint[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  // Whether the catalog fetch has SETTLED, which is not the same as whether
-  // it returned anything: a failed fetch leaves the list empty forever, and
-  // names have to degrade to ids then rather than staying blank.
+  // Whether the catalog fetch has SETTLED, which is not the same as whether it
+  // returned anything: a failed fetch leaves the list empty forever, and names
+  // have to degrade to ids then rather than staying blank.
   const [catalogLoaded, setCatalogLoaded] = useState(false);
-  // The pickable sparks. Static reference data like the catalog, and fetched
-  // beside it: a failure costs the hand-entry search its results and shows
-  // stored sparks as "Unknown (key)", but every proc estimate reads the
-  // design and keeps working.
+  // Static reference data like the catalog. A failure costs hand entry its
+  // names and shows stored sparks as "Unknown (key)", but every proc estimate
+  // reads the design and keeps working.
   const [factorRefs, setFactorRefs] = useState<FactorRef[]>([]);
-  // The sparks this user has favorited (#33). Fetched beside the reference
-  // and the saved list, and allowed to fail on its own: the reference is
-  // committed and works offline, the favorites are server state behind
-  // Access, so a chooser that couldn't be browsed because a list of
-  // favorites didn't load would be the failure doing the most damage.
   const [sparkLists, setSparkLists] = useState<SparkList[]>([]);
   // Whether that fetch REJECTED, which an empty array can't say — a user with
   // no lists yet and a user whose fetch failed hold the same value, and only
   // one of them has a reason to see the controls disabled.
   const [sparkListsFailed, setSparkListsFailed] = useState(false);
-  // Which generation of the lists is in `sparkLists` — see SparkListStore.
-  // Zero until the first fetch settles; a settle counts even when it failed,
-  // so the popout that opened over a failure remounts when a retry lands.
+  // See SparkListStore. Zero until the first fetch settles; a settle counts
+  // even when it failed, so the popout that opened over a failure remounts
+  // when a retry lands.
   const [sparkListsEpoch, setSparkListsEpoch] = useState(0);
-  // Which lists this DEVICE is working against. localStorage rather than a
-  // column: it is a view, not a fact about the user's roster, and the phone
-  // being on a different build from the desktop is a feature (#37, and #32's
-  // line on the four view-state stores). Empty means every list.
+  // Device-local, not a column: which lists you are working against is a view.
+  // Empty means every list.
   const [activeLists, setActiveLists] = useState<number[]>(() => loadActiveLists());
   const onActiveListsChange = useCallback((next: number[]) => {
     setActiveLists(next);
     saveActiveLists(next);
   }, []);
-  // How many writes have come back from the chooser. A fetch that was already
-  // in flight when one landed is stale BY DEFINITION — the server handed the
-  // newer list to the write as its response — and applying the older one would
-  // empty a star the user just filled while the row still existed server-side.
+  // How many writes have come back from the chooser. A fetch already in flight
+  // when one lands is stale BY DEFINITION — the server handed the newer list to
+  // the write as its response — and applying the older one would empty a star
+  // the user just filled while the row still existed server-side.
   //
-  // NOT REACHABLE TODAY, and worth saying so rather than implying otherwise:
-  // there are two windows where a GET is in flight, and a ★ is clickable in
-  // neither. During the mount fetch the four requests settle TOGETHER, so the
-  // factor reference arrives with the lists and the popout has no rows to star
-  // (measured: 0 rows, 0 stars). During a retry `failed` is still true, which
-  // disables every ★ (measured: 432 stars, 0 enabled). Both are incidental —
-  // the first is one `Promise.allSettled` away from being split for a faster
-  // first paint, the second one refinement away from keeping the stars live
-  // while a retry runs — and #27 adds a second reader of these lists. Eight
-  // lines to make the invariant hold on its own rather than by accident.
+  // Not reachable today: during the mount fetch the requests settle together,
+  // so the popout has no rows to star, and during a retry `failed` disables
+  // every ★. Both are incidental to how those two paths happen to be arranged,
+  // so the invariant holds here rather than by accident.
   const sparkListWrites = useRef(0);
   const onSparkListsChange = useCallback((next: SparkList[]) => {
     sparkListWrites.current += 1;
     setSparkLists(next);
   }, []);
-  // Re-fetch on demand. The load runs once at mount, so without this a
-  // one-second blip disabled every ★ for the session — the flag had one
-  // writer and no retry. The chooser calls it when it opens after a failure.
+  // The load runs once at mount, so without a retry path a one-second blip
+  // would disable every ★ for the session. The chooser calls this when it
+  // opens after a failure.
   const reloadSparkLists = useCallback(() => {
     void (async () => {
       const writes = sparkListWrites.current;
@@ -225,10 +206,9 @@ export function DesignerPage({
   const [busy, setBusy] = useState(false);
   const [autosaving, setAutosaving] = useState(false);
   // Set while a write has failed and not yet succeeded. Counted, not just
-  // flagged, so a repeat of the same message still re-arms the retry — and
-  // so the status can say "not saved" instead of reading "Saving…" forever.
-  // There is no Save button to fall back on, so a silent failure is an
-  // afternoon of lost work.
+  // flagged, so a repeat of the same message still re-arms the retry. There is
+  // no Save button to fall back on, so a silent failure is an afternoon of
+  // lost work.
   const [saveFail, setSaveFail] = useState<{ n: number; message: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -237,11 +217,11 @@ export function DesignerPage({
   const bootstrapped = useRef(false);
 
   // ---------- the write queue ----------
-  // The bodies the server still needs, keyed by the row each belongs to
-  // (null = a design with no row yet). A ref rather than effect-closure
-  // state: switching blueprints re-renders, and an edit that lived only in
-  // the old effect's closure would die with it. A leftover entry for the
-  // blueprint you just left is precisely what makes switching lossless.
+  // The bodies the server still needs, keyed by the row each belongs to (null
+  // = a design with no row yet). A ref rather than effect-closure state:
+  // switching blueprints re-renders, and an edit that lived only in the old
+  // effect's closure would die with it — the leftover entry is what makes
+  // switching lossless.
   const pending = useRef(new Map<number | null, BlueprintIn>());
   // Writes run one behind another, so a slow PUT can never land after a
   // newer one and restore an older document under a "Saved" label.
@@ -252,16 +232,15 @@ export function DesignerPage({
   // you left and must not mark the newly opened one clean.
   const openRow = useRef<number | null>(design.id);
   const dirtyRef = useRef(false);
-  // Rows this page deleted. A delete races the edit that was still queued
-  // for the row: without this the queued body PUTs into the hole, 404s, and
-  // the re-create recovery below resurrects the blueprint the user just
-  // threw away.
+  // Rows this page deleted. A delete races the edit still queued for the row:
+  // without this the queued body PUTs into the hole, 404s, and the re-create
+  // recovery below resurrects the blueprint the user just threw away.
   const deleted = useRef(new Set<number>());
 
-  // A blank name field saves as the placeholder rather than not saving at
-  // all — the server rejects an empty name, and "we'll save it later" is how
-  // an afternoon disappears. The dirty check normalizes the same way, so a
-  // stray space can't read as a permanent unsaved edit.
+  // A blank name field saves as the placeholder rather than not saving at all —
+  // the server rejects an empty name, and "we'll save it later" is how an
+  // afternoon disappears. The dirty check normalizes the same way, so a stray
+  // space can't read as a permanent unsaved edit.
   const bodyOf = useCallback((d: Design): BlueprintIn => {
     const body = toApi(d);
     const name = body.name.trim();
@@ -278,10 +257,10 @@ export function DesignerPage({
     dirtyRef.current = dirty;
   }, [design.id, dirty]);
 
-  // One queued write. Creates when the design has no row — a failed
-  // bootstrap, a failed post-delete create, a blueprint deleted out from
-  // under us — so "nowhere to save" is a state the page recovers from
-  // rather than a dead end where every later edit is silently discarded.
+  // One queued write. Creates when the design has no row — a failed bootstrap,
+  // a failed post-delete create, a blueprint deleted out from under us — so
+  // "nowhere to save" is recoverable rather than a dead end where every later
+  // edit is silently discarded.
   const writeOne = useCallback(
     async (id: number | null, body: BlueprintIn): Promise<void> => {
       const land = (bp: Blueprint) => {
@@ -291,9 +270,9 @@ export function DesignerPage({
             : [bp, ...prev]
         );
         if (bp.id !== id) {
-          // The job was filed under a key that no longer exists. Anything
-          // queued behind it moves onto the new row, or the next drain would
-          // create a second copy instead of updating this one.
+          // The job was filed under a key that doesn't exist. Anything queued
+          // behind it moves onto the new row, or the next drain would create a
+          // second copy instead of updating this one.
           const queued = pending.current.get(id);
           if (queued !== undefined) {
             pending.current.delete(id);
@@ -368,8 +347,6 @@ export function DesignerPage({
     await run;
   }, [writeOne]);
 
-  // Adopt a server blueprint as the working design: parse it, remember it as
-  // the one to reopen, and mark it clean so the autosave stays quiet.
   // Callers flush first — adopting is what makes the previous design
   // unreachable, so anything still queued for it has to be on the wire.
   const adopt = useCallback(
@@ -381,17 +358,16 @@ export function DesignerPage({
         writeOpenId(bp.id);
         setSelected(0);
         // The score belongs to the blueprint you just left. Keyed on the
-        // request payload alone it would survive the switch — the new design
-        // is scorable too — and the incoming blueprint would wear the old
-        // one's total, band and six per-node numbers until the debounce and
-        // round trip finished. Cleared here rather than in the scoring
-        // effect: this is the one place a design's IDENTITY changes.
+        // request payload alone it would survive the switch, and the incoming
+        // blueprint would wear the old one's numbers until the round trip
+        // finished. Cleared here because this is the one place a design's
+        // IDENTITY changes.
         setAffinity(null);
         setScoreFailed(false);
       } catch {
-        // Left alone rather than opened half-parsed: editing it here would
-        // overwrite whatever the row actually holds. The design on screen
-        // keeps its null id, which the autosave turns into a new row.
+        // Left alone rather than opened half-parsed, which would overwrite
+        // whatever the row actually holds. The design on screen keeps its null
+        // id, which the autosave turns into a new row.
         onError(
           `Couldn't open "${bp.name}" — its saved data didn't parse. Your next edit starts a new blueprint.`
         );
@@ -419,11 +395,10 @@ export function DesignerPage({
   // is the selection.
   const shownSide = narrow ? (selected === 0 ? side : halfOf(selected)) : null;
 
-  // Phone layout stacks the panel below a tree that's taller than the
-  // screen, so a tap on the map would otherwise update something you can't
-  // see. Only map taps pan — the toggle and the picker set the selection
-  // too, and yanking the view from under those would be motion for its own
-  // sake.
+  // Phone layout stacks the panel below a tree taller than the screen, so a
+  // tap on the map would otherwise update something you can't see. Only map
+  // taps pan: the toggle and the picker set the selection too, and yanking the
+  // view from under those would be motion for its own sake.
   const panelRef = useRef<HTMLDivElement>(null);
   // Every selection remembers which half it was in, so the toggle and the
   // selection can't disagree: without this, selecting the trainee (which
@@ -444,13 +419,11 @@ export function DesignerPage({
   };
 
   useEffect(() => {
-    // All three fetches are page-scoped (catalog and the factor reference are
-    // static, the saved list is small) — refetching per visit keeps the shell
-    // out of it.
+    // Page-scoped: the catalog and factor reference are static and the saved
+    // list is small, so refetching per visit keeps the shell out of it.
     let cancelled = false;
     void (async () => {
-      // Read BEFORE the fetches start — see sparkListWrites for why this
-      // cannot fire today and why it is here anyway.
+      // Read BEFORE the fetches start — see sparkListWrites.
       const writes = sparkListWrites.current;
       const [cat, bps, factors, lists] = await Promise.allSettled([
         api.catalog(),
@@ -467,34 +440,30 @@ export function DesignerPage({
       if (lists.status === "fulfilled") {
         if (sparkListWrites.current === writes) setSparkLists(lists.value);
       }
-      // No toast for this one, unlike the reference below: the chooser is the
-      // only thing that reads them, and it says so itself at the moment you
-      // open it. A page-load toast about spark lists would fire for everyone
-      // who simply has none.
+      // No toast, unlike the reference below: the chooser is the only reader
+      // and says so itself when you open it.
       else setSparkListsFailed(true);
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
         onError("Couldn't load designer data — is uvicorn running?");
       } else if (factors.status === "rejected") {
-        // Said separately, because it fails differently: the designer works,
-        // but hand entry finds nothing and stored sparks show as keys. Left
-        // silent, that is indistinguishable from "no such spark exists".
+        // Said separately because it fails differently: the designer works,
+        // but hand entry finds nothing and stored sparks show as keys — which
+        // left silent is indistinguishable from "no such spark exists".
         onError("Couldn't load the spark reference — hand entry won't find anything.");
       }
       if (bps.status !== "fulfilled") return;
       setSaved(bps.value);
 
-      // Open something, always: the design the shell already holds (a route
-      // round-trip), else the one last open here, else the most recently
-      // touched, else a fresh row created on the spot. There is no
-      // "unsaved" state in this designer — a blueprint exists or you're
-      // not editing one.
+      // Open something, always: the design the shell already holds, else the
+      // one last open here, else the most recently touched, else a fresh row.
+      // There is no "unsaved" state in this designer — a blueprint exists or
+      // you're not editing one.
       if (bootstrapped.current) return;
       bootstrapped.current = true;
       // Never adopt over work in progress. The map and the spark editor are
       // usable before this fetch lands, and on a slow link people do start
-      // designing — a dirty design is one the autosave already owns, whether
-      // it has a row yet or not.
+      // designing.
       if (dirtyRef.current) return;
       const held = design.id === null ? null : bps.value.find((b) => b.id === design.id);
       if (held !== undefined && held !== null) return;
@@ -508,8 +477,8 @@ export function DesignerPage({
       }
       try {
         const bp = await bootstrapBlueprint();
-        // Remembered even if we've already unmounted: the row exists, so the
-        // next visit must reopen it rather than create a second blank one.
+        // Remembered even if we've unmounted: the row exists, so the next
+        // visit must reopen it rather than create a second blank one.
         writeOpenId(bp.id);
         if (cancelled) return;
         setSaved([bp]);
@@ -535,11 +504,10 @@ export function DesignerPage({
     () => new Map<number, CatalogCard>(catalog.flatMap((e) => e.cards.map((c) => [c.card_id, c]))),
     [catalog]
   );
-  // "Not known yet" and "not known" are different answers, and only the
-  // second deserves a numeric placeholder. The blueprint fetch regularly
-  // lands before the catalog, so a shared null made every reload flash
-  // "Chara 1006" across the map for a frame. Null here means "no name to
-  // show yet"; consumers hold the space instead of inventing one.
+  // "Not known yet" and "not known" are different answers, and only the second
+  // deserves a numeric placeholder — the blueprint fetch regularly lands
+  // before the catalog. Null means "no name to show yet"; consumers hold the
+  // space instead of inventing one.
   const charaName = useCallback(
     (charaId: number): string | null =>
       charaById.get(charaId)?.name ?? (catalogLoaded ? charaPlaceholder(charaId) : null),
@@ -553,19 +521,7 @@ export function DesignerPage({
     (cardId: number) => cardById.get(cardId)?.outfit ?? null,
     [cardById]
   );
-  // Who a card belongs to, as one label. The spark chooser needs it because
-  // a green's factor key IS a card_id, so "Shooting Star" on its own does
-  // not say whose spark it is — and on a node with nobody cast, that is the
-  // only thing distinguishing 137 otherwise-anonymous rows.
-  //
-  // Composed from the two indexes that already exist rather than a third
-  // full-catalog map: TreeMap and FocusPanel already name a card's owner as
-  // `charaName(deriveCharaId(card))`, and the derivation is the same one the
-  // green rule itself rests on (checked: it agrees with the catalog's own
-  // entry→cards join on all 95 released cards).
-  //
-  // One prop for the whole thing, not six — see SparkListStore. #27's watched
-  // block reads the same store from the same panel.
+  // One prop for the whole thing, not six — see SparkListStore.
   const sparkListStore = useMemo(
     (): SparkListStore => ({
       lists: sparkLists,
@@ -586,6 +542,14 @@ export function DesignerPage({
       reloadSparkLists,
     ]
   );
+  // Who a card belongs to, as one label. The chooser needs it because a
+  // green's factor key IS a card_id, so "Shooting Star" alone doesn't say
+  // whose spark it is.
+  //
+  // Composed from the two indexes that already exist rather than a third
+  // full-catalog map. Checked: `deriveCharaId` agrees with the catalog's own
+  // entry→cards join on all 95 released cards.
+  //
   // Null rather than a placeholder: the reference carries 42 uniques whose
   // card has not reached Global, and inventing "Card 104502" for them would
   // read as a name. The row shows the spark alone in that case.
@@ -595,21 +559,19 @@ export function DesignerPage({
       const name = charaById.get(deriveCharaId(cardId))?.name;
       if (card === undefined || name === undefined) return null;
       // The base card drops its outfit: 62 of the 95 greens with a card are
-      // [Original], so printing it spends width on the word that
-      // distinguishes nothing. A named outfit is kept, because WHICH card
-      // decides which of an uma's 1-3 uniques you get. Median label 23 → 14
-      // characters.
+      // [Original], so printing it spends width on the word that distinguishes
+      // nothing. A named outfit is kept — WHICH card decides which of an uma's
+      // 1-3 uniques you get.
       return card.outfit === "Original" ? name : `${name} [${card.outfit}]`;
     },
     [cardById, charaById]
   );
 
   // ---------- run affinity ----------
-  // Scoring threshold: a trainee plus at least one parent. Below that there
-  // is no pairing to score, and an empty request would come back as a
-  // confident zero. Keyed on the request JSON, so renaming the blueprint or
-  // typing a spark four generations down doesn't re-score — only the six
-  // slots and the trainee are in it.
+  // Scoring threshold: a trainee plus at least one parent. Below that there is
+  // no pairing to score, and an empty request would come back as a confident
+  // zero. Keyed on the request JSON, so renaming the blueprint or typing a
+  // spark four generations down doesn't re-score.
   const affinityKey = useMemo(() => {
     const request = toAffinityRequest(design);
     const scorable =
@@ -631,9 +593,9 @@ export function DesignerPage({
         })
         .catch(() => {
           // Aborts are ours (a newer edit superseded this request). Real
-          // failures clear the result — the old design's numbers must not
-          // keep masquerading as current — and report inline in the panel
-          // rather than toasting once per edit while the backend is down.
+          // failures clear the result, so the old design's numbers can't
+          // masquerade as current, and report inline in the panel rather than
+          // toasting once per edit while the backend is down.
           if (!ctrl.signal.aborted) {
             setAffinity(null);
             setScoreFailed(true);
@@ -661,9 +623,7 @@ export function DesignerPage({
   const applyPick = (pick: SlotPick) => {
     const target = pickerFor;
     // NOT closed yet: the roster branch below may still ask for confirmation,
-    // and cancelling that has to leave the picker exactly as it was — closing
-    // first would throw away the search and filters on the way to a dialog
-    // the user then declined.
+    // and cancelling that has to leave the picker exactly as it was.
     if (target === null || lockedBy(design, target) !== null) {
       setPickerFor(null);
       return;
@@ -674,12 +634,10 @@ export function DesignerPage({
     if (pick.kind === "catalog" && target >= NAMED_COUNT) {
       setPickerFor(null);
       setDesign((d) => {
-        // ...unless the node was itself pulled, in which case this is the
-        // same replace the named path does below and it takes the same
-        // cleanup: her gen-4 parents and her own pink go with her. Leaving
-        // them would hang her real ancestry under a hand-picked character
-        // who doesn't have it, unlocked because `lockedBy` no longer finds a
-        // roster node above it.
+        // ...unless the node was itself pulled, in which case this is the same
+        // replace the named path does below and takes the same cleanup: her
+        // gen-4 parents and her own pink go with her, or her real ancestry
+        // hangs under a hand-picked character who doesn't have it.
         if (sourceAt(d, target) !== "roster") return withDeepCard(d, target, pick.card_id);
         return withDeep(clearNodes(d, ownedBranch(d, target)), target, {
           card_id: pick.card_id,
@@ -692,24 +650,18 @@ export function DesignerPage({
       setPickerFor(null);
       setDesign((d) => {
         // Replacing a roster pick drops its branch, exactly as clearing it
-        // would — otherwise that veteran's ancestry would hang under a
-        // hand-picked character who doesn't have it, unlocked and unowned.
-        // Her pink goes with it: it was hers, not a plan for this slot.
+        // would. Her pink goes with it: it was hers, not a plan for this slot.
         const owned = ownedBranch(d, target);
         const wasPulled = sourceAt(d, target) === "roster";
-        // A re-pick otherwise keeps every spark the slot was given by hand —
-        // the pink AND the list feeding the proc estimates. They are plan
-        // inputs, not part of the card's identity, and re-typing a member's
-        // sparks after every outfit swap would be pure friction.
+        // A re-pick otherwise keeps every spark the slot was given by hand.
+        // They are plan inputs, not part of the card's identity.
         const spark = wasPulled ? null : (d.named[target]?.spark ?? null);
-        // ...except a green, which is bound to a CARD (DECISIONS.md #36) and
-        // so is part of the card's identity in a way the others are not. The
+        // ...except a green, which IS bound to a card (DECISIONS.md #36). The
         // chooser enforces that at offer time; a re-pick is the one path that
-        // can leave a foreign green behind it, and nothing downstream would
-        // notice — the Procs tab would keep estimating a spark this member
-        // cannot carry, the trainee's roll-up would include it, and the
-        // autosave would persist it. Whites, races and scenarios belong to
-        // anyone and stay.
+        // can leave a foreign green behind, and nothing downstream would catch
+        // it — the Procs tab would keep estimating a spark this member cannot
+        // carry, the trainee's roll-up would include it, and the autosave
+        // would persist it.
         const factors = wasPulled
           ? []
           : (d.named[target]?.factors ?? []).filter(
@@ -724,29 +676,25 @@ export function DesignerPage({
       select(target);
       return;
     }
-    // A roster pull replaces the node's whole branch, so unlike a catalog
-    // pick it can destroy work you didn't click on. Ask once, listing
-    // everything hand-authored that would go — never once per node, which
-    // would be a dialog per generation for one pick and teach people to
-    // dismiss blind. Empty and already-pulled nodes go in silence: neither
-    // was ever authored by hand, so there is nothing to lose.
+    // A roster pull replaces the node's whole branch, so unlike a catalog pick
+    // it can destroy work you didn't click on. Ask ONCE, listing everything
+    // hand-authored that would go — a dialog per node would be one per
+    // generation for a single pick, and teaches people to dismiss blind.
     //
-    // Planned against the design as it stands on screen rather than inside
-    // the setDesign updater: window.confirm blocks, and blocking inside a
-    // state updater (which React may run twice) would prompt twice.
+    // Planned against the design on screen rather than inside the setDesign
+    // updater: window.confirm blocks, and blocking inside a state updater
+    // (which React may run twice) would prompt twice.
     const plan = planPull(design, target, pick.veteran);
     if (plan.clobbers.length > 0) {
       const what = plan.clobbers.map(nodeLabel).join(", ");
       // "Your own picks", not "what you entered by hand": the list covers
-      // catalog picks, earlier roster picks and typed sparks alike, and the
-      // last two aren't typed at all.
+      // catalog picks and earlier roster picks too, neither of them typed.
       const ok = window.confirm(
         `Pulling ${pick.veteran.name} replaces ${nodeLabel(target)} and everything ` +
           `below it with its own pedigree.\n\nYour own picks at ${what} will be lost.` +
           `\n\nContinue?`
       );
-      // Cancel leaves the picker open on the list you were already looking
-      // at, so declining costs nothing but the click.
+      // Cancel leaves the picker open on the list you were looking at.
       if (!ok) return;
     }
     setPickerFor(null);
@@ -754,16 +702,13 @@ export function DesignerPage({
     select(target);
   };
 
-  // A hand-placed node clears alone — nothing below it belongs to it. A
-  // roster pick takes its whole branch: those nodes ARE that veteran's
-  // ancestry, so leaving them would hang a pedigree under nobody, and leave
-  // it unlocked now that the veteran enforcing the lock is gone. No confirm,
-  // because nothing hand-authored can be down there — the branch has been
-  // read-only since the pull.
+  // A hand-placed node clears alone — nothing below it belongs to it. A roster
+  // pick takes its whole branch, with no confirm, because nothing hand-authored
+  // can be down there: it has been read-only since the pull.
   //
-  // The lock is re-checked inside the updater, not just in the panel that
-  // hides the controls: it's a rule about the design, and a stale render or
-  // a keyboard path shouldn't be able to slip an edit past it.
+  // The lock is re-checked inside the updater, not just in the panel that hides
+  // the controls: it's a rule about the design, and a stale render or a
+  // keyboard path shouldn't be able to slip an edit past it.
   const clearSlot = (target: number) => {
     setDesign((d) =>
       lockedBy(d, target) !== null ? d : clearNodes(d, [target, ...ownedBranch(d, target)])
@@ -771,12 +716,8 @@ export function DesignerPage({
   };
 
   // Take the character off, keep the sparks — the way back to "spark set,
-  // character still open", which Clear can't give you because it empties the
-  // node outright. Closes the picker, like any other pick — No Character IS
-  // a pick.
-  // Re-checked against the design in the updater rather than trusting the
-  // caller, exactly as clearSlot is: it's a rule about the design, not about
-  // what happens to be on screen.
+  // character still open", which Clear can't give you. Re-checked in the
+  // updater for the same reason clearSlot is.
   const unselectSlot = (target: number) => {
     setPickerFor(null);
     setDesign((d) => (canUnselect(d, target) ? withoutCharacter(d, target) : d));
@@ -789,11 +730,10 @@ export function DesignerPage({
 
   // Same lock as the pink: inside a pulled branch (and on the roster pick
   // herself) these sparks are the horse's own, read off her dump.
-  // Takes an UPDATER, not the finished array. The chooser stays open across
-  // adds, so two clicks can resolve against one render — and with an array
-  // each would rebuild the list from the same stale base, the second write
-  // silently dropping the first spark before the autosave persisted the
-  // shorter list. Applied against the design as it is at write time instead.
+  //
+  // Takes an UPDATER, not the finished array: the chooser stays open across
+  // adds, so two clicks can resolve against one render and the second would
+  // rebuild from the same stale base, dropping the first spark.
   const setFactors = (
     target: number,
     update: (current: readonly SlotFactor[]) => SlotFactor[]
@@ -870,9 +810,8 @@ export function DesignerPage({
     }
   };
 
-  // Duplicate: the usual way to try a variant without risking the plan you
-  // already like. Copies the design as it stands on screen, not the last
-  // autosaved body, so an in-flight edit is included.
+  // Copies the design as it stands on screen, not the last autosaved body, so
+  // an in-flight edit is included.
   const onCopy = async () => {
     await write();
     setBusy(true);
@@ -972,8 +911,7 @@ export function DesignerPage({
         <div className={`bp-picker${menuOpen ? " open" : ""}`} ref={menuRef}>
           {/* The field itself is the name: renaming is typing where the name
               already is, and the edit rides out on the normal autosave. The
-              caret only opens the list of OTHER blueprints — the one you're
-              in is already in front of you. */}
+              caret lists only the OTHER blueprints. */}
           <div className="bp-field">
             <TraineeIcon card={design.named[0]?.card_id ?? null} iconIndex={iconIndex} />
             <input
@@ -984,14 +922,13 @@ export function DesignerPage({
               maxLength={80}
               value={design.name}
               disabled={busy}
-              // Focusing the field opens the list: reaching for the name and
-              // reaching for another blueprint start the same way, so the
-              // caret is a shortcut rather than the only door.
+              // Reaching for the name and reaching for another blueprint start
+              // the same way, so the caret is a shortcut, not the only door.
               onFocus={() => setMenuOpen(true)}
               onChange={(e) => setDesign((d) => ({ ...d, name: e.target.value }))}
-              // Blank saves as the placeholder, so the field is made to
-              // agree once you're done typing rather than showing an empty
-              // name for a blueprint the server calls "Untitled Blueprint".
+              // Blank saves as the placeholder, so the field is made to agree
+              // rather than showing an empty name for a blueprint the server
+              // calls "Untitled Blueprint".
               onBlur={() =>
                 setDesign((d) => (d.name.trim() === "" ? { ...d, name: UNTITLED } : d))
               }
@@ -1044,15 +981,11 @@ export function DesignerPage({
             </div>
           )}
         </div>
-        {/* There is no Save: the row exists from the moment you start, and
-            every edit autosaves. The status is the whole story — including
-            when it has nothing good to report, which is why the bar renders
-            even before a row exists rather than leaving a design that can't
-            say whether it's being kept. */}
-        {/* Whole-blueprint actions, out of the menu: they act on the one
-            you're in, which is what the bar is about. The status trails
-            them — it changes width as it flips, and between the picker
-            and the buttons that would shove the buttons around. */}
+        {/* There is no Save: the row exists from the moment you start and
+            every edit autosaves, so the status is the whole story — which is
+            why the bar renders even before a row exists. The status TRAILS the
+            buttons: it changes width as it flips, and between the picker and
+            the buttons that would shove them around. */}
         <button
           className="bar-icon"
           aria-label={`Duplicate ${design.name}`}

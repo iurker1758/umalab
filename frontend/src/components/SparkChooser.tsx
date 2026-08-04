@@ -19,64 +19,50 @@ import {
 } from "../sparks";
 
 // Hand entry for a member's non-pink sparks: a popout that BROWSES the 432
-// factors, with the ones you've favorited at the top of it.
-//
-// It replaces the inline search this file used to be (DECISIONS.md #35,
-// reversing #30's "an add-one affordance, not a browser"). That search worked
-// perfectly if you already knew a name and not at all otherwise — typing "s"
-// returned eight of 309 matches and a line reading "301 more". The popout
-// still holds a search box, so the typist's path survives one click behind a
-// button; what it adds is a way to find a spark you can't spell.
+// factors, with the ones you've favorited at the top (DECISIONS.md #35).
 //
 // ADDING is all it does, and adding includes the LEVEL — three buttons per
 // row, so a 3★ is one click at the moment you are choosing the spark
 // (DECISIONS.md #34). Nothing here can change a chance in the table behind it.
 //
-// FAVOURITING is a different act from adding, deliberately (#35): a filler
-// white you type onto every node must not land in #27's watched block, and a
-// row must not move under the pointer that just clicked it.
+// FAVOURITING is a different act from adding, deliberately: a filler white you
+// type onto every node must not land in #27's watched block, and a row must
+// not move under the pointer that just clicked it.
 //
 // The ★ OPENS A LIST PICKER rather than toggling one flag (DECISIONS.md #37).
 // A favorite is a spark in at least one of the user's named lists, so "star
-// this" has to say WHICH list — and since several lists can be active at
-// once, "the active one" names nothing unambiguous. The picker shows current
-// membership, which makes it the membership editor too: adding, moving and
-// removing are one control, and `New List` lives in it so a user with no
-// lists has a path that needs no separate settings surface.
+// this" has to say WHICH list — and with several lists active at once, "the
+// active one" names nothing unambiguous. The picker doubles as the membership
+// editor, and `New List` lives in it so a user with no lists needs no separate
+// settings surface.
 //
-// A roster or lineage pick never needs any of this — hers are decoded from
-// the dump — so it only appears on hand-built nodes, which is also why it is
-// not offered inside a locked branch.
+// A roster or lineage pick never needs any of this — hers are decoded from the
+// dump — so it only appears on hand-built nodes, and never inside a locked
+// branch.
 
-// The browse sections, in the same order the spark tables group by
-// (procs.ts), minus the pink the document doesn't hand-enter. Not "whites
-// first" despite whites being 256 of the 432: the sections are headed and
-// nothing is hidden, so the reader scrolls rather than losing rows off a cap
-// — which is the bias #30 caught, and it does not apply to a list with no
-// cap in it.
+// The browse sections, in the order the spark tables group by (procs.ts),
+// minus the pink the document doesn't hand-enter.
 const BROWSE_KINDS: SlotFactorKind[] = (
   ["white", "unique", "race", "scenario"] as SlotFactorKind[]
 ).sort((a, b) => SPARK_TYPE_ORDER[a] - SPARK_TYPE_ORDER[b]);
 
 // A green spark's factor key IS a card_id — `app/ingest.py` says so in its
-// header ("key is the source card_id"), the reference agrees (95 of the 97
-// released cards have a unique factor at their own id), and a real roster
-// agrees at n=1372: every veteran and lineage member carries at most ONE
-// green, and it is always her own card. A uma can LEARN another uma's unique
-// during a run; she can never carry the spark for one.
+// header, the reference agrees (95 of the 97 released cards have a unique
+// factor at their own id), and a real roster agrees at n=1372: every veteran
+// and lineage member carries at most ONE green, and it is always her own card.
+// A uma can LEARN another uma's unique during a run; she can never carry the
+// spark for one.
 //
-// So the green a node can hold is decided by who is cast in it, and offering
-// all 137 is offering 136 sparks that member cannot have — with a proc
-// estimate waiting behind each. One rule, three tiers (DECISIONS.md #36):
+// So the green a node can hold is decided by who is cast in it. One rule,
+// three tiers (DECISIONS.md #36):
 //
 //   card known      → her card's unique, which is one row or none
 //   chara only      → that character's 1–3 variants
 //   neither         → all 137, each named with the uma it belongs to
 //
-// The middle tier is for a slot carrying `chara_id` without `card_id`: the
-// picker always sets both, but the type allows it and a legacy row may not.
-// Only `unique` is card-bound — pink, race, white and scenario belong to
-// anyone.
+// The middle tier covers a slot carrying `chara_id` without `card_id`: the
+// picker always sets both, but the type allows it. Only `unique` is
+// card-bound — pink, race, white and scenario belong to anyone.
 const greenFilter =
   (cardId: number | null, charaId: number | null) =>
   (option: Option): boolean => {
@@ -89,8 +75,7 @@ const greenFilter =
 // A row the chooser can offer: a spark from the reference, or one the
 // reference doesn't know. List membership is deliberately not validated
 // against `app/data` (#37) — the reference is regenerated by hand and can run
-// behind a dump — so a favorite may resolve to no name and still be perfectly
-// addable, its kind being what decides the base rate.
+// behind a dump — so a favorite may resolve to no name and still be addable.
 type Option = { kind: SlotFactorKind; key: number; name: string };
 
 const optionOf = (ref: FactorRef): Option => ref;
@@ -108,10 +93,9 @@ const unknownOption = (spark: SparkRef): Option => ({
  * plus a field that makes a new one.
  *
  * Rendered UNDER the row rather than as a nested dialog — the popout is 358px
- * on a 390px phone and a dialog inside a dialog is a focus-trap problem for a
- * control this small. It takes the line the Hunting pill used to have, for
- * the reason that pill had it: the row already carries a ★, a kind tag, a
- * name and three add buttons.
+ * on a 390px phone, the row already carries a ★, a kind tag, a name and three
+ * add buttons, and a dialog inside a dialog is a focus-trap problem for a
+ * control this small.
  *
  * With no lists at all this is just the field, which is the zero-list first
  * run and the only place `New List` needs to exist.
@@ -143,9 +127,8 @@ function ListPicker({
   onCreateList: (listName: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState("");
-  // Cleared only once the list exists. Clearing on submit — which is what
-  // this did first — threw away the name at the moment it was refused, so
-  // correcting a collision meant retyping it from scratch.
+  // Cleared only once the list exists, so correcting a name collision doesn't
+  // mean retyping it from scratch.
   const submit = () => {
     const trimmed = draft.trim();
     if (trimmed === "") return;
@@ -169,10 +152,8 @@ function ListPicker({
             // differ only in case, and two whites both called "Pressure".
             data-list={list.id}
             data-spark={sparkId({ type: kind, key: factorKey })}
-            // Names the OUTCOME, not the list. A chip labelled with a name
-            // alone reads as a tag rather than a control — the removal path
-            // was there from the first cut and had to be asked about, which
-            // is the affordance failing rather than the behaviour.
+            // Names the OUTCOME, not the list: a chip labelled with a name
+            // alone reads as a tag rather than a control.
             aria-label={
               holds
                 ? `Remove ${name} from ${list.name}`
@@ -184,9 +165,8 @@ function ListPicker({
           >
             {list.name}
             {/* A glyph inside the button, never a nested one — a button in a
-                button is invalid, and two hit targets for one action is a
-                miss waiting to happen on a 358px popout. `aria-hidden`
-                because the label above already says which way this goes. */}
+                button is invalid, and two hit targets for one action is a miss
+                waiting to happen at 358px. */}
             <span className="spark-list-mark" aria-hidden="true">
               {holds ? "✕" : "+"}
             </span>
@@ -199,24 +179,17 @@ function ListPicker({
           type="text"
           aria-label={`New list for ${name}`}
           placeholder="New List…"
-          // Matches `SparkListName`'s bound, so the limit is felt as the
-          // field refusing a 41st character rather than as a save that fails
-          // afterwards. The server still enforces it — this is the same rule
-          // in both places, which is the designer's convention (the tree's
-          // grey-outs mirror `app/schemas.py` while the 422 is what actually
-          // protects the document).
+          // Matches `SparkListName`'s bound, so the limit is felt as the field
+          // refusing a 41st character rather than as a save that fails after.
+          // The server still enforces it.
           maxLength={40}
           value={draft}
           disabled={busy || listsFailed}
           onChange={(e) => setDraft(e.target.value)}
-          // Enter submits, because the field is one of a row of controls and
-          // reaching for a button after typing a name is the slower half of
-          // the interaction.
-          //
           // `isComposing` guards the IME: confirming a candidate in Japanese
-          // input is an Enter keydown too, and acting on it would create a
-          // list named with the pre-conversion kana — permanently, since
-          // nothing renames or deletes one yet.
+          // input is an Enter keydown too, and acting on it would create a list
+          // named with the pre-conversion kana — permanently, since nothing
+          // renames or deletes one yet.
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -277,30 +250,22 @@ function SparkRows({
         const picking = openPicker === id;
         return (
           <li key={id}>
-            {/* Favoriting is its own control, never a side effect of adding:
-                every filler white you type onto a grandparent would otherwise
-                land in #27's uncapped block, and the row would climb out from
-                under the pointer as the favorites re-sorted. Disabled rather
-                than hidden when the lists didn't load, so the chooser doesn't
-                silently change shape on a fetch failure.
-
-                It DISCLOSES the picker rather than writing anything: filled
-                means "in at least one list", and which list is the question
-                the picker below exists to ask (#37). */}
+            {/* Disabled rather than hidden when the lists didn't load, so the
+                chooser doesn't silently change shape on a fetch failure. It
+                DISCLOSES the picker rather than writing anything: filled means
+                "in at least one list", and which list is the question the
+                picker below exists to ask. */}
             <button
               className={fav ? "spark-fav active" : "spark-fav"}
               aria-expanded={picking}
-              // The identity on the control, like the add buttons carry it:
-              // the reference holds two distinct whites both called
-              // "Pressure", so anything driving this list by displayed name
-              // can star the wrong (kind, key).
+              // The identity on the control: the reference holds two distinct
+              // whites both called "Pressure", so anything driving this list
+              // by displayed name can hit the wrong (kind, key).
               data-spark={id}
-              // Names the STATE as well as the control. `aria-expanded`
-              // describes the picker below, not membership, and the
-              // `aria-pressed` this carried as a toggle went away with the
-              // toggle — leaving a filled ★ that only a sighted user could
-              // read. Without the count, every row announces identically
-              // whether or not the spark is in a list.
+              // Names the STATE as well as the control: `aria-expanded`
+              // describes the picker below, not membership, so without the
+              // count every row announces identically whether or not the spark
+              // is in a list.
               aria-label={
                 fav
                   ? `Lists for ${o.name} — in ${holders.length} of ${lists.length}`
@@ -312,18 +277,15 @@ function SparkRows({
               {fav ? "★" : "☆"}
             </button>
             <span className="spark-hit">
-              {/* The kind is part of the identity here, which is why it
-                  survives in the chooser after #30 cut it from the proc
-                  tables: you are picking BETWEEN kinds, and several race and
-                  scenario sparks share wording with skills. */}
+              {/* The kind is part of the identity here — you are picking
+                  BETWEEN kinds, and several race and scenario sparks share
+                  wording with skills. */}
               <span className={`proc-kind proc-kind-${o.kind}`}>
                 {SPARK_TYPE_LABELS[o.kind]}
               </span>
               {o.name}
-              {/* Whose green this is. Dimmed and after the name, because the
-                  spark is what you are picking and the uma is what tells two
-                  of them apart — 137 anonymous greens is a list you cannot
-                  navigate. Absent for the 42 uniques whose card has not
+              {/* Whose green this is — 137 anonymous greens is a list you
+                  cannot navigate. Absent for the 42 uniques whose card has not
                   reached Global. */}
               {o.kind === "unique" && cardOwner(o.key) !== null && (
                 <span className="spark-owner">{cardOwner(o.key)}</span>
@@ -332,8 +294,6 @@ function SparkRows({
             {held.has(id) ? (
               // Shown, marked, rather than filtered into silence: finding the
               // right name and getting nothing back reads as "no such spark".
-              // The level it was added at lives in the table behind this, with
-              // the ✕ that undoes it.
               <span className="spark-held">Added</span>
             ) : (
               // Not a `radiogroup`: these three don't hold a value between
@@ -345,11 +305,6 @@ function SparkRows({
                   <button
                     key={n}
                     className="seg"
-                    // The spark's identity on the button, so anything driving
-                    // this list picks by (kind, key) rather than by the
-                    // displayed name — several race and scenario sparks
-                    // contain a skill's name as a substring, and the reference
-                    // holds two distinct whites both called "Pressure".
                     data-spark={id}
                     data-stars={n}
                     aria-label={`Add ${o.name} at ${n}★`}
@@ -360,12 +315,8 @@ function SparkRows({
                 ))}
               </span>
             )}
-            {/* The picker, on its own line and only for the row whose ★ is
-                open. Its own line because the row already carries a star, a
-                kind tag, a name and three buttons, and at 358px (the popout
-                on a 390px phone) a fifth control on the line takes the name's
-                width — the measurement that put the Hunting pill here before
-                this replaced it. */}
+            {/* Only for the row whose ★ is open, and on its own line: at 358px
+                a fifth control on the line takes the name's width. */}
             {picking && (
               <ListPicker
                 lists={lists}
@@ -412,44 +363,27 @@ function ChooserPopout({
   const [busy, setBusy] = useState(false);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
   // WHICH sparks sit in the Favorites section, snapshotted for the life of
-  // this open. MEMBERSHIP is frozen; the ★ and the picker's pills stay live
-  // off the lists. Without the freeze, favoriting a row lifts it out of its kind
-  // section and the add buttons you were reaching for are somewhere else —
-  // the "row moves under the pointer that just clicked it" failure #34 spent
-  // an entry closing, arriving by another route.
+  // this open. MEMBERSHIP is frozen; the ★ and the picker's pills stay live off
+  // the lists. Without the freeze, favoriting a row lifts it out of its kind
+  // section and the add buttons you were reaching for move away under the
+  // pointer. It has to be MEMBERSHIP rather than `favorited ∩ snapshot`
+  // (DECISIONS.md #36): under the intersection, un-starring dropped a row out
+  // of Favorites while the frozen set still hid it from its kind section, so
+  // the spark left the popout entirely and could not be added until you closed
+  // and reopened. Frozen membership makes un-starring empty the star and move
+  // nothing.
   //
-  // It has to be membership rather than `watched ∩ snapshot`, which is what
-  // shipped first and was wrong in the mirror-image way: UN-starring a row
-  // dropped it out of Favorites while the frozen set still hid it from its
-  // kind section, so the spark vanished from the popout entirely and could
-  // not be added at all until you closed and reopened. Frozen membership
-  // means un-starring empties the star and moves nothing.
-  //
-  // Empty until the lists have SETTLED. Snapshotting during the mount fetch
-  // would leave this open with no Favorites section at all and the user's
-  // favorites scattered through the kind sections as filled stars — the exact
-  // "same spark, wrong place" state the freeze exists to avoid.
-  // Plain lazy state, taken once per mount. The caller REMOUNTS this popout
-  // when the lists settle (see the `key` below), which is what keeps the
-  // snapshot from freezing an empty union mid-fetch without needing an effect
-  // or a ref read during render.
-  //
-  // The union across every list, not one list's membership: Favorites is
-  // "everything you have anywhere" (#37), and a spark in two builds appears
-  // once.
+  // Taken once per mount, and the caller REMOUNTS this popout when the lists
+  // settle (see the `key` below) — which keeps the snapshot from freezing an
+  // empty union mid-fetch without needing an effect or a ref read at render.
   const [pinnedRows] = useState(() => unionOf(sparkLists.lists));
   const pinned = new Set(pinnedRows.map((w) => sparkId({ type: w.kind, key: w.key })));
 
-  // Escape closes UNCONDITIONALLY, including mid-write. Blocking it while
-  // `busy` was tried, to make `busy` a real one-write-at-a-time guard — and
-  // it silently swallows the keypress, so a user pressing Escape during a
-  // save gets nothing and has to press again. The e2e caught it within one
-  // run. Deferring the close until the write settles would fix that, and is
-  // more machinery of exactly the kind three reviews found defects in.
-  //
-  // What it leaves open: close mid-write, reopen, and the fresh popout has
-  // `busy` false, so a second whole-array PATCH can be built from state the
-  // first has not updated yet and land last. Filed rather than guarded.
+  // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
+  // `busy` silently swallows the keypress. What that leaves open — close
+  // mid-write, reopen, and the fresh popout has `busy` false, so a second
+  // whole-array PATCH can be built from state the first hasn't updated yet and
+  // land last — is filed rather than guarded.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -463,19 +397,13 @@ function ChooserPopout({
     refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name])
   );
   const q = query.trim().toLowerCase();
-  // Applied before anything else, and to the favorites too: a green you
-  // favorited is still a green this member cannot carry, so pinning it to
-  // the top of a node it does not belong to would be the one place the rule
-  // leaks.
+  // Applied to the favorites too: a green you favorited is still a green this
+  // member cannot carry, so pinning it to the top of a node it does not belong
+  // to would be the one place the rule leaks.
   const possible = greenFilter(cardId, charaId);
-  // One rule for every section: the query filters, the sections and their
-  // order never change, and hits rank by where the query lands in the name
-  // then alphabetically — which is a no-op when there is no query, the
-  // reference arriving sorted by (kind, name) already. Deliberately NOT the
-  // order the reference serves under a query: capping that order directly is
-  // what returned eight race sparks and hid every white match behind them
-  // (#30). Nothing is capped here, so the ranking only decides what you read
-  // first, but it decides it the same way.
+  // One rule for every section: hits rank by where the query lands in the name
+  // then alphabetically — a no-op with no query, the reference arriving sorted
+  // by (kind, name) already.
   const matching = (options: Option[]): Option[] => {
     const hits = options.filter((o) => possible(o) && o.name.toLowerCase().includes(q));
     if (q === "") return hits;
@@ -486,7 +414,6 @@ function ChooserPopout({
     );
   };
 
-  // List order then membership order, which is what the union gives (#37).
   // Built from the frozen snapshot, so a row stays put when you un-star it.
   const favorites = matching(
     pinnedRows.map((w) => {
@@ -494,12 +421,9 @@ function ChooserPopout({
       return name === undefined ? unknownOption(w) : { kind: w.kind, key: w.key, name };
     })
   );
-  // A favorite is in the Favorites section and NOWHERE ELSE. Rendering it
-  // in its kind section too is the same spark twice on one surface, in two
-  // idioms — the duplication #45 deleted the held list to remove, and it
-  // arrives here as "which of these two rows did I already star". The
-  // snapshot is what decides, so nothing disappears from under the pointer
-  // when you favorite it: it stays where it is until the next open.
+  // A favorite is in the Favorites section and NOWHERE ELSE — the same spark
+  // twice on one surface reads as "which of these two rows did I already
+  // star". The snapshot decides, so nothing disappears from under the pointer.
   const sections = BROWSE_KINDS.map((kind) => ({
     kind,
     options: matching(
@@ -514,22 +438,13 @@ function ChooserPopout({
   // Non-optimistic: `sparks.ts` returns the list the server ended up with, so
   // the star only moves once the row exists.
   //
-  // A failure is reported through the PAGE toast rather than a note inside
-  // this popout. Dismissing the popout while a PUT is in flight is one
-  // keystroke, and a note that unmounts with the surface it lives on reports
-  // nothing at all — the star silently reverts and #27's block is quietly
-  // missing a spark the user watched themselves mark. The toast is
-  // position-fixed and drawn over the backdrops, so it is readable with the
-  // popout open too.
+  // Failures go to the PAGE toast, not a note inside this popout: dismissing
+  // the popout mid-write is one keystroke, and a note that unmounts with its
+  // surface reports nothing at all.
   //
-  // The message is the CALLER's, because the two controls fail differently
-  // and this helper serves both. A failed list creation reported as "couldn't
-  // save that favorite" names an outcome that did not happen — and the sane
-  // reaction to it, re-clicking, makes a second list.
-  //
-  // It takes the error, not a fixed string: a 409 from the create is either a
-  // name collision or the 50-list cap, and telling someone at the cap to pick
-  // another name sends them renaming four times over.
+  // The message is the CALLER's — the two controls fail differently and this
+  // helper serves both — and it takes the error rather than a fixed string,
+  // since a 409 from the create is either a name collision or the 50-list cap.
   //
   // Returns whether it wrote, so the new-list field knows to keep the name it
   // was given when the server refused it.
@@ -545,13 +460,10 @@ function ChooserPopout({
       // Half of it landed — adopt that half, or the row exists server-side
       // and nowhere on screen. See sparks.ts PartialWrite.
       if (error instanceof PartialWrite) sparkLists.onChange(error.lists);
-      // A 404 means the list was deleted elsewhere and this copy is stale.
-      // NOT corrected here: a reload bumps `epoch`, which remounts the popout
-      // and discards the user's search and open picker, and the quieter
-      // variant that avoided that needed a fetch-generation guard, an
-      // adopted-rows rule and a `PartialWrite` interaction — each of which a
-      // review found broken. The dead pill survives until the popout is
-      // reopened, which is filed rather than patched again.
+      // A 404 means the list was deleted elsewhere and this copy is stale. NOT
+      // corrected here — a reload bumps `epoch`, which remounts the popout and
+      // discards the user's search and open picker. The dead pill survives
+      // until the popout is reopened.
       onError(failure(error));
       return { ok: false, error };
     } finally {
@@ -560,12 +472,9 @@ function ChooserPopout({
   };
 
   // The server's own words for a refusal it can explain — 409 for the name
-  // rules, 422 for everything `app/schemas.py` validates. Anything else is a
-  // blip and says so.
-  //
-  // Restricting this to 409 (which it did first) meant a name over 40
-  // characters reported "try again" forever: a permanent refusal, phrased as
-  // a transient one, with the reason sitting unread in the response.
+  // rules, 422 for everything `app/schemas.py` validates. 422 matters as much
+  // as 409: without it an over-long name reports "try again" forever, a
+  // permanent refusal phrased as a transient one. Anything else is a blip.
   const detailOr = (error: unknown, fallback: string): string =>
     error instanceof ApiError &&
     (error.status === 409 || error.status === 422) &&
@@ -579,9 +488,8 @@ function ChooserPopout({
     listsFailed: sparkLists.failed,
     busy,
     openPicker,
-    // The owner is only worth printing where the list is still ambiguous.
-    // Narrowed to one card, the panel above already names her, and a third
-    // repetition on the single row is the width #30 fought for.
+    // Only worth printing where the green list is still ambiguous — narrowed
+    // to one card, the panel above already names her.
     cardOwner: cardId === null ? cardOwner : () => null,
     onAdd,
     onOpenPicker: setOpenPicker,
@@ -590,17 +498,10 @@ function ChooserPopout({
         () => toggleMembership(sparkLists.lists, listId, o.kind, o.key),
         () => "Couldn't save that list change — try again."
       ),
-    // The name is trimmed and bounded server-side. Both refusals are 409s and
-    // only the server knows which, so its detail is what reaches the user —
-    // "you already have a list with that name, ignoring case" or "you already
-    // have 50 lists — delete one first". The field keeps the typed name until
-    // this resolves true, so a refused name can be corrected rather than
-    // retyped.
     // Resolves "did the NAME get consumed", which is not the same question as
-    // "did the write succeed". On a PartialWrite the list exists under that
-    // name, so keeping the draft would leave the obvious retry — press Add
-    // again — POSTing a name that now 409s against the row created seconds
-    // earlier. The two fixes each worked alone and contradicted each other.
+    // "did the write succeed" — see the PartialWrite case below. The field
+    // keeps the typed name until this resolves true, so a name the server
+    // refused can be corrected rather than retyped.
     onCreateList: async (o: Option, listName: string) => {
       const result = await write(
         () => createListWith(sparkLists.lists, listName, o.kind, o.key),
@@ -610,9 +511,8 @@ function ChooserPopout({
             : detailOr(error, "Couldn't make that list — try again.")
       );
       // A PartialWrite means the list EXISTS under that name — only its
-      // membership failed — so the name is spent and the field must clear.
-      // Keeping it would leave the obvious retry, pressing Add again, POSTing
-      // a name that now 409s against the row created seconds earlier.
+      // membership failed — so the name is spent and the field must clear, or
+      // the obvious retry POSTs a name that now 409s against it.
       return result.ok || result.error instanceof PartialWrite;
     },
   };
@@ -625,15 +525,12 @@ function ChooserPopout({
           same. */}
       <div className="uma-popout-backdrop" onMouseDown={onClose} />
       <div className="uma-popout spark-popout" role="dialog" aria-label="Add a Spark">
-        {/* Sticky, so the query stays reachable while you scroll 432 rows
-            past it — that is the difference between a browser and a list you
-            have to leave in order to re-query. */}
+        {/* Sticky, so the query stays reachable while you scroll 432 rows past
+            it. */}
         <div className="spark-search-band">
           <input
             className="uma-search"
             type="search"
-            // Kept as the label the inline search carried, so one box on the
-            // page still answers to this node.
             aria-label={`${label} spark search`}
             placeholder="Search Sparks…"
             value={query}
@@ -642,25 +539,18 @@ function ChooserPopout({
           />
         </div>
         {/* The reference is committed and works offline; the favorites are
-            server state behind Access. A chooser that can't be browsed
-            because a list of favorites didn't load would be the failure
-            doing the most damage, so the two are said separately and only the
-            favorites go away. */}
+            server state behind Access. Said separately so a failed list fetch
+            never costs you the browse. */}
         {sparkLists.failed && (
           <p className="spark-note">
             Couldn't load your lists — browsing still works.
           </p>
         )}
-        {/* Every section is the same element, Favorites included, and they
-            share a WRAPPER so "the first heading hugs the band above it" can
-            be written as `:first-child` against that wrapper alone.
-            Positional selectors against the popout kept matching the wrong
-            thing: `:first-of-type` matches on TAG, so every section being a
-            div made each KIND heading the first of its type and Favorites
-            never one; the adjacent-sibling rule that replaced it was in turn
-            defeated by the note above, which slides between the band and the
-            first section exactly when the fetch has failed. Nothing rendered
-            before this wrapper can reach inside it. */}
+        {/* The sections share a WRAPPER so "the first heading hugs the band
+            above it" can be written as `:first-child` against the wrapper
+            alone. Positional selectors against the popout itself get defeated
+            by the failure note above, which slides in between exactly when the
+            fetch has failed. */}
         <div className="spark-sections">
           {favorites.length > 0 && (
             <div className="spark-section">
@@ -694,16 +584,10 @@ export function SparkChooser({
   onChange,
   onError,
 }: {
-  // Distinguishes the choosers on one page for aria/testing, as the pink
-  // editor does.
+  // Distinguishes the choosers on one page for aria/testing.
   label: string;
   factors: readonly SlotFactor[];
   refs: readonly FactorRef[];
-  // The lists, their generation, and the writers — see SparkListStore.
-  // `onReload` matters because the load happens once at page mount, so a
-  // backend blip lasting one second would otherwise disable every ★ until a
-  // hard reload. Opening the chooser is the moment the lists are wanted, so
-  // it is the moment to try again.
   sparkLists: SparkListStore;
   // Who is cast in this node. A green's key IS a card_id, so these decide
   // which greens the node can hold at all — see greenFilter.
@@ -714,23 +598,15 @@ export function SparkChooser({
   onError: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // Adding does NOT touch the spark lists, in either direction — see the
-  // header. The blueprint edit is local and the autosave owns it; a list
-  // change is a round-trip, and coupling them means a spark add can fail
-  // because a PATCH did.
-  // An UPDATER, not an array. The popout stays open across adds, so adding
-  // three whites in a row is the ordinary flow — and two clicks resolved
-  // against the same render both computed `[...factors, x]` from one base,
-  // with the second replacing the first wholesale. The spark the user watched
-  // themselves click never reached the design, and the autosave persisted the
-  // shorter list.
+  // An UPDATER, not an array: the popout stays open across adds, so two clicks
+  // resolved against the same render would each compute `[...factors, x]` from
+  // one base and the second would drop the first.
   const add = (option: Option, stars: number) =>
     onChange((current) => [...current, { kind: option.kind, key: option.key, stars }]);
   return (
     <div className="spark-add">
       {/* No ellipsis: a button that opens a dialog doesn't take one, so the
-          mark keeps meaning "in flight" or "unresolved". The box inside keeps
-          its own. */}
+          mark keeps meaning "in flight" or "unresolved". */}
       <button
         className="spark-open"
         aria-haspopup="dialog"
@@ -747,22 +623,15 @@ export function SparkChooser({
       </button>
       {open && (
         <ChooserPopout
-          // Remounted per open, which is what re-snapshots the favorites'
-          // order and clears an abandoned query — the panel keeps its position
-          // in the tree when you click another ancestor, so a query left
-          // behind would follow you there.
-          //
-          // Also remounted whenever a FETCH of the lists lands, so a popout
-          // opened during the mount fetch re-snapshots instead of showing no
-          // Favorites section at all with the user's stars scattered through
-          // the kind sections. It costs a query typed inside that sub-second
-          // window.
+          // Remounts per open (re-snapshotting the favorites and clearing an
+          // abandoned query) and whenever a fetch of the lists LANDS, so a
+          // popout opened mid-fetch re-snapshots instead of showing no
+          // Favorites section at all.
           //
           // The generation, not a loaded/loading flag: the retry above fires
-          // precisely when loading is already over, so a boolean key never
-          // changes and the popout that triggered the retry would keep the
-          // empty snapshot it opened with — the same failure, reached the
-          // other way round.
+          // precisely when loading is already over, so a boolean key would
+          // never change and the popout that triggered the retry would keep
+          // the empty snapshot it opened with.
           key={sparkLists.epoch}
           label={label}
           factors={factors}

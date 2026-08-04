@@ -2147,20 +2147,56 @@ its three routes, and a client module — no UI of its own.
   argument for the port in miniature.
 
   **The re-read finding the row means write nothing.** "I want this
-  watched" is already true, so `toggle` returns the list it just read:
-  the star lands on and the row keeps its groups and its hunting bit.
-  The other reading — the row exists, so *remove* it, which is what the
-  word "toggle" says — was rejected: it deletes a row the user never
-  saw in order to correct a star they were looking at, which is a worse
-  outcome than the stale star. **The remove path needs no re-read**: the
-  DELETE route already treats an already-gone row as the outcome the
-  caller wanted, so a stale "watched" costs one 204 and nothing else.
+  watched" is already true, so `toggle` writes nothing at all: the star
+  lands on and the row keeps its groups and its hunting bit. The other
+  reading — the row exists, so *remove* it, which is what the word
+  "toggle" says — was rejected: it deletes a row the user never saw in
+  order to correct a star they were looking at, which is a worse
+  outcome than the stale star. The residual oddity is that a no-op add
+  looks exactly like a real one, so an immediate "undo" click deletes a
+  row that predated it — two clicks to the loss instead of one, which
+  is the best available answer and not a good one. #27 showing groups
+  is what will make it visible.
 
-  This is the price of the reads being pure over a caller-held list, and
-  it is still the right trade — a module-held cache would be a second
-  copy of server state with no way to know it had gone stale. But the
-  rule it buys is absolute: **no mutator may treat absence from that
-  list as absence from the server.**
+  **The remove path needs no re-read**: the DELETE route already treats
+  an already-gone row as the outcome the caller wanted, so a stale
+  "watched" costs one 204 and nothing else.
+
+  **A write folds in the ONE row it touched — never the whole re-read.**
+  All three mutators return the caller's list with that row replaced or
+  inserted by id. Handing back the fresh list instead looks like an
+  upgrade and is a bug: the chooser freezes its Favorites membership at
+  open and filters the kind sections against that snapshot (#35), so a
+  row the snapshot has never seen renders in its kind section as a
+  filled star — the "same spark, wrong place" state the freeze exists
+  to prevent, and one click from deleting a favorite added on another
+  device. Refreshing wholesale is `onReload`'s job, and it bumps
+  `epoch` precisely so the snapshot is retaken.
+
+  **The costs, both accepted deliberately.** A star-on now takes two
+  serialized round trips, and the chooser disables while it writes. And
+  because the write cannot be made safely without knowing, a failed
+  re-read **fails the whole click**: favoriting stops working while the
+  list endpoint is degraded even if the write endpoint is healthy. That
+  is worse availability in exchange for never silently destroying a
+  row, which is the right way round — the failure is a toast the user
+  can retry, the alternative is data loss they never see.
+
+  **What this does not fix**, stated so it is not mistaken for a
+  guarantee: a row created between the re-read and the PUT is still
+  full-replaced. The window is milliseconds instead of the lifetime of
+  a stale list, but it is not zero, and no amount of client re-reading
+  closes it. The real fix is a **partial-update PUT** — omitted fields
+  left untouched, so no client ever guesses or re-reads — which also
+  removes the extra GET and makes the rule unbreakable rather than
+  remembered by three call sites. Filed as #64; this entry is the
+  client-side interim.
+
+  This is the price of the reads being pure over a caller-held list,
+  and it is still the right trade — a module-held cache would be a
+  second copy of server state with no way to know it had gone stale.
+  The rule it buys, within the client: **no mutator may treat absence
+  from that list as absence from the server.**
 
   **No reconcile pass**, unlike `reconcileFilters`, and `key` is not
   validated against the factor reference. A watched spark missing from

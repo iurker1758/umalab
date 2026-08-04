@@ -127,13 +127,27 @@ describe("toggle", () => {
   });
 
   it("places an added row by id rather than appending it", async () => {
-    const server = [watched({ id: 1 }), watched({ id: 8 })];
     stubApi({
-      watchedSparks: () => Promise.resolve(server),
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 4, kind, key, ...body })),
     });
-    const next = await toggle([], "white", 4);
+    const rows = [watched({ id: 1 }), watched({ id: 8 })];
+    const next = await toggle(rows, "white", 4);
     expect(next.map((s) => s.id)).toEqual([1, 4, 8]);
+  });
+
+  // The re-read is for the ONE row this call is about. Handing the whole list
+  // back would put rows the chooser's frozen snapshot has never seen into its
+  // kind sections as filled stars (#35), one click from deleting a favorite
+  // added on another device.
+  it("folds in only the row it touched, never the rest of the re-read", async () => {
+    const server = [
+      watched({ id: 1, kind: "race", key: 11 }),
+      watched({ id: 2, kind: "white", key: 700, hunting: false, groups: ["Mile"] }),
+      watched({ id: 3, kind: "scenario", key: 12 }),
+    ];
+    stubApi({ watchedSparks: () => Promise.resolve(server) });
+    const next = await toggle([], "white", 700);
+    expect(next.map((s) => s.id)).toEqual([2]);
   });
 
   it("propagates a failed re-read instead of writing blind", async () => {
@@ -186,7 +200,7 @@ describe("setHunting", () => {
     });
   });
 
-  it("returns the re-read list with the saved row in it, not the stale one", async () => {
+  it("returns the caller's list with the saved row folded in, not the re-read", async () => {
     const server = [
       watched({ id: 9, kind: "white", key: 700, groups: ["Mile"] }),
       watched({ id: 12, kind: "race", key: 4 }),
@@ -196,8 +210,9 @@ describe("setHunting", () => {
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 9, kind, key, ...body })),
     });
     const next = await setHunting([], "white", 700, false);
-    expect(next.map((s) => s.id)).toEqual([9, 12]);
-    expect(next.find((s) => s.id === 9)).toMatchObject({ hunting: false, groups: ["Mile"] });
+    // id 12 was never in the caller's list and does not arrive in it.
+    expect(next.map((s) => s.id)).toEqual([9]);
+    expect(next[0]).toMatchObject({ hunting: false, groups: ["Mile"] });
   });
 });
 
@@ -252,22 +267,20 @@ describe("the returned list's order", () => {
   // id IS the insertion order the server sorts by, so a row this copy of the
   // list predates belongs where its id puts it, not at the end.
   it("inserts a row the local list predates by id, not by appending", async () => {
-    const server = [watched({ id: 1 }), watched({ id: 5 })];
     stubApi({
-      watchedSparks: () => Promise.resolve(server),
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 3, kind, key, ...body })),
     });
-    const next = await setHunting([], "white", 3, true);
+    const rows = [watched({ id: 1 }), watched({ id: 5 })];
+    const next = await setHunting(rows, "white", 3, true);
     expect(next.map((s) => s.id)).toEqual([1, 3, 5]);
   });
 
   it("appends when the new row is the newest", async () => {
-    const server = [watched({ id: 1 }), watched({ id: 2 })];
     stubApi({
-      watchedSparks: () => Promise.resolve(server),
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 7, kind, key, ...body })),
     });
-    const next = await setHunting([], "white", 7, true);
+    const rows = [watched({ id: 1 }), watched({ id: 2 })];
+    const next = await setHunting(rows, "white", 7, true);
     expect(next.map((s) => s.id)).toEqual([1, 2, 7]);
   });
 });

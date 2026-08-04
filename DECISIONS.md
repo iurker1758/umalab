@@ -1691,6 +1691,65 @@ Keep adding entries as the build evolves. This file is the interview.
   the affinity checks deliberately refuse to do — affinity has a tested
   server implementation to compare against, this has neither that nor a
   unit runner, so the suite is the only place the model is verified.
+  **— reversed, see the amendment below.**
+
+- **Amendment (2026-08-03, issue #48): the unit runner lands, on the
+  condition that reversed it.** The ruling above was right about the
+  cost and wrong about its own stability: "we can't test the new one
+  because the old one isn't tested" gets weaker every time a pure module
+  ships and never gets stronger, and #30 had already had to invoke it
+  once. Since it was written, `filters.ts` gained the legacy pool rule
+  and `reconcileFilters` (#31), and `sparks.ts` (#33) landed with no UI
+  at all until #35 gave it one.
+
+  What actually changed is not the argument for a runner — it is the
+  **condition**: the first PR **ports the existing modules**, it does not
+  merely wire up a runner. A runner covering only new code while the
+  older arithmetic stays browser-only is worse than none, because it
+  looks like coverage; that was #30's real worry and it is preserved as
+  the gate rather than overruled. Six modules went in together —
+  `aptitude`, `procs`, `filters`, `domain`, `blueprint` and `sparks` —
+  and the debt is cleared in the same commit that creates the ability to
+  incur it.
+
+  **vitest 4** (the major paired with vite 8), `environment: "node"`,
+  `include: ["src/**/*.test.ts"]`, and its own `vitest.config.ts` so the
+  React and PWA plugins are not loaded to run arithmetic. **No jsdom, no
+  Testing Library, no component rendering** — the two loaders that touch
+  `localStorage` stub it in ten lines, which is cheaper than a DOM
+  implementation for the whole run. Tests are **co-located** as
+  `src/*.test.ts`: `tsconfig.json` is a single config with
+  `"include": ["src"]`, so co-location gets them typechecked by
+  `tsc -b` for free, where a top-level `tests/` directory would need the
+  include list widened to get the same thing. `npm run test` is its own
+  script and **never** reaches `e2e/` — two runners behind one command is
+  how the slow one gets skipped. It runs as a step on the existing
+  `frontend` CI job, after `build`, so a fixture that has drifted from
+  the API types is reported as the type error it is.
+
+  **The e2e suite is untouched and stays required**, at the same
+  priority: it covers the autosave write queue, the persistence
+  narrative, the no-JS-errors sweep and the rendered UI, none of which a
+  unit test reaches. But the reimplemented proc formula named in the
+  paragraph above is now redundant — `procPct` in
+  `e2e/verify-deep-tree.mjs` is a second copy of the model that
+  `procs.test.ts` verifies directly, and those checks can go back to
+  asserting rendered output the way the affinity checks do. **Filed, not
+  done here**: shrinking the suite in the PR that introduces the runner
+  would mix the two arguments.
+
+  **What the port found**, since a port of 1,979 lines that turns up
+  nothing is itself a result: two live defects, both in the
+  "degrade rather than crash" guards rather than the arithmetic.
+  `gradeClass("")` passed its palette check — every string contains the
+  empty string — and then threw dereferencing the character it had just
+  established was absent. `readOpenId` coerced before checking, so a
+  stored `null`, `""` or `[]` read as blueprint id 0, pointing the page
+  at a row that cannot exist instead of falling back to "most recent" as
+  its own comment promises. Both are fixed here. The models themselves —
+  the bracket table, the proc rates, the union across carriers, the pull
+  bounds, the branch-emptying rule, the document parser — were correct
+  everywhere the tests could reach them.
 - **What would change my mind:** a post-2026-06-24 replication (every
   base rate behind this predates Global's rework, and unlike #29's
   composition rule these ARE constants, so a retune would invalidate the

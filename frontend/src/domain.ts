@@ -88,10 +88,14 @@ export const statGrade = (n: number): string =>
 
 // Letter → color-family class, shared by stat grades and aptitude letters
 // (SS/S gold, A orange, … G gray — same palette as the rank badges).
-export const gradeClass = (letter: string): string =>
-  "sabcdefgu".includes(letter[0]?.toLowerCase() ?? "")
-    ? `ltr-${letter[0].toLowerCase()}`
-    : "";
+// The empty string is a substring of every string, so the guard has to ask
+// for a first character before asking whether it's in the palette — without
+// that, `gradeClass("")` passed the check and then dereferenced the character
+// it had just established wasn't there.
+export const gradeClass = (letter: string): string => {
+  const first = letter[0]?.toLowerCase() ?? "";
+  return first !== "" && "sabcdefgu".includes(first) ? `ltr-${first}` : "";
+};
 
 // Affinity band symbol → color class, from the game's rank table
 // (relations.json): △ ≤50, ○ 51–150, ◎ ≥151. Here rather than in either

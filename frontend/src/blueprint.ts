@@ -988,8 +988,12 @@ export const DESIGN_STORE = "umalab.designer.open";
 export function readOpenId(): number | null {
   try {
     const raw = localStorage.getItem(DESIGN_STORE);
-    const id = raw === null ? NaN : Number(JSON.parse(raw));
-    return Number.isInteger(id) ? id : null;
+    // Checked as a number BEFORE coercing: Number() turns null, "" and []
+    // into 0, which is an integer and would read as a row id — one that no
+    // blueprint can have, so it points the page at a 404 instead of falling
+    // back to "most recent" the way this promises to.
+    const parsed: unknown = raw === null ? null : JSON.parse(raw);
+    return typeof parsed === "number" && Number.isInteger(parsed) ? parsed : null;
   } catch {
     // blocked storage or a hand-edited value — fall back to "most recent"
     return null;

@@ -151,3 +151,10 @@ Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
   ("Add a Spark…"). Always the `…` character, never three periods.
 - Every non-obvious tech/design choice gets a `DECISIONS.md` entry:
   Requirements → Choice → Alternatives rejected → What would change my mind.
+  **Those four bullets and nothing else — no `###` subsections, and about 40
+  lines.** Entries #1–25 average 30; the file's bulk is a dozen later ones
+  averaging 200, which is where per-review-round narration and quoted
+  conversation went. Record the decision and the trigger that would reverse
+  it, not how it was arrived at. An entry a later one supersedes gets cut to
+  a stub naming its replacement and whatever rules the code still cites (see
+  #33) — never deleted, since code comments reference entries by number.

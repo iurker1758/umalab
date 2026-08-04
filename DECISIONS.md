@@ -2058,255 +2058,42 @@ Access-identity scoping)"* — and this is that entry.
 
 ## 33. Watched sparks: one list, a hunting bit, and user-named groups
 
-Issue #39, built ahead of the two features that consume it. A table,
-its three routes, and a client module — no UI of its own.
+**Superseded by #37, which dropped `watched_sparks` and `hunting` entirely.**
+Kept as a stub because the code still cites this entry for the rules that
+outlived the table. The full text is in git history (issue #39; amendments for
+issues #62, #64).
 
-- **Requirements:** three features ask the same question — *which
-  sparks does this user care about*. #28's chooser wants the ones you
-  type often, so they can rise to the top of a 432-entry reference.
-  #27's watched block wants the ones you are breeding FOR, uncapped
-  and including the ones no ancestor carries. Hunted-skill scoring
-  wants that second set again. Those two sets genuinely differ: a
-  filler white you put on every node is worth saving to type and worth
-  nothing to highlight. And someone hunting a Front Runner build this
-  week and a Medium build next needs both around without one polluting
-  the other's reading. It has to span devices.
-
-- **Choice: one table, `watched_sparks`, holding `(kind, key,
-  hunting, groups)` per owner, in insertion order.** `kind`/`key` is
-  the identity — never a name, which is a localized string resolved at
-  render (#30) — one row per pair, matching the uniqueness rule the
-  blueprint `factors` document already uses. Both distinctions the
-  requirements name ride on the row rather than splitting the list:
-  `hunting` separates "keep this handy to type" from "I want this
-  outcome", and `groups` holds the user's own build names. A spark
-  that belongs to two builds is **one row in two groups**, which
-  separate lists can only express by duplicating it — and a duplicate
-  is a row you can edit in one place and not the other. The group
-  vocabulary is derived from the rows, so a group exists exactly as
-  long as a spark is in it and there is no registry to keep in sync.
-
-  **New rows default to `hunting: true`, and that default lives in the
-  CLIENT** — *the default stands, its home does not; see the amendment
-  below.* Adding is a deliberate two-step pick — the spark, then its
-  ★ level (#28's chooser) — which reads as "I want this outcome". The
-  alternative leaves #27's block empty on first use, which reads as
-  broken, and the bit that fills it is one the user has not seen.
-  Filler is one click off at the moment you add it.
-
-  The request model has **no defaults at all**: on a full-replace PUT a
-  default is not a convenience, it is a silent delete — `{"hunting":
-  false}` would erase every build label on the row with no error and no
-  way to tell it happened. The default belongs to whoever is *adding* a
-  spark, which is the client, and living in exactly one place there
-  means flipping it really is one constant. **— reversed, see the
-  amendment below.**
-
-  **Server-side, not `localStorage`.** It spans devices and it belongs
-  to a user, so it is a row. This shipped briefly as a client store
-  and was reversed before merging: the deciding argument was the
-  API's shape rather than the storage. A server-backed store cannot
-  answer `isWatched()` synchronously, so #28's chooser and #27's
-  block would have been built against a shape that had to change, and
-  built twice. The four view-state stores stay local for the reasons
-  in #32.
-
-  **Three routes, no partial updates** — *"no partial updates" reversed,
-  see the amendment below; the three routes stand.* `GET` lists; `PUT
-  /api/watched-sparks/{kind}/{key}` upserts the row's whole mutable
-  half; `DELETE` removes it and never 404s, because already gone is
-  the outcome the caller wanted. The client's three operations (add,
-  set the bit, set the groups) are all "this is the row I want", so an
-  add that 409'd on an existing row would only make every caller look
-  first. An upsert keeps the existing `id`, so re-hunting an old spark
-  does not move it to the end of the chooser.
-
-  **The row `id` is part of the payload**, because it IS the position:
-  the list orders by it, so a client whose copy predates a row can
-  place the row a PUT hands back instead of appending it and showing an
-  old spark last. And because the upsert is a read-then-insert, two
-  requests for the same `(kind, key)` — a double-clicked control — can
-  both find nothing and both insert; the loser catches the unique
-  violation and applies to the row that now exists, the same way
-  `auth.user_for_email` handles first-sight creation.
-
-  **A full-replace PUT means no mutator may guess the fields it isn't
-  changing** — *the premise is reversed and so is the remedy: there is
-  no full replace and no client re-read. See the amendment below. The
-  rule it states survives both, now enforced by the request's shape.* A
-  row can exist server-side and be missing from the
-  caller's list (another tab, another device, a list fetched before it
-  was added, a fetch that failed and left it empty), and guessing there
-  rewrites the user's own choice — `setGroups` assuming `hunting: true`
-  would re-hunt a spark they had deliberately marked as filler. On a
-  miss the client re-reads before writing, and only falls back to the
-  default if the spark really is new.
-
-  **Corrected 2026-08-03 (issue #62): `toggle` was exempt from that
-  rule, and shouldn't have been.** *The bug is real and the diagnosis
-  stands; the remedy — the re-read described in the four paragraphs
-  below — survived one day and is gone. The amendment replaced it.* It
-  decided "not watched" from the
-  caller's array alone and then PUT `{hunting: true, groups: []}`, so
-  starring a spark from a stale or failed-fetch list destroyed exactly
-  the two fields the paragraph above exists to protect. The entry
-  claimed the rule held for the client; it held for two of the three
-  mutators. Found by the unit port (#48) — the module's first tests
-  pinned the behaviour before anyone noticed it was wrong, which is the
-  argument for the port in miniature.
-
-  **The re-read finding the row means write nothing.** "I want this
-  watched" is already true, so `toggle` writes nothing at all: the star
-  lands on and the row keeps its groups and its hunting bit. The other
-  reading — the row exists, so *remove* it, which is what the word
-  "toggle" says — was rejected: it deletes a row the user never saw in
-  order to correct a star they were looking at, which is a worse
-  outcome than the stale star. The residual oddity is that a no-op add
-  looks exactly like a real one, so an immediate "undo" click deletes a
-  row that predated it — two clicks to the loss instead of one, which
-  is the best available answer and not a good one. #27 showing groups
-  is what will make it visible.
-
-  **The remove path needs no re-read**: the DELETE route already treats
-  an already-gone row as the outcome the caller wanted, so a stale
-  "watched" costs one 204 and nothing else.
-
-  **A write folds in the ONE row it touched — never the whole re-read.**
-  All three mutators return the caller's list with that row replaced or
-  inserted by id. Handing back the fresh list instead looks like an
-  upgrade and is a bug: the chooser freezes its Favorites membership at
-  open and filters the kind sections against that snapshot (#35), so a
-  row the snapshot has never seen renders in its kind section as a
-  filled star — the "same spark, wrong place" state the freeze exists
-  to prevent, and one click from deleting a favorite added on another
-  device. Refreshing wholesale is `onReload`'s job, and it bumps
-  `epoch` precisely so the snapshot is retaken.
-
-  **The costs, both accepted deliberately.** A star-on now takes two
-  serialized round trips, and the chooser disables while it writes. And
-  because the write cannot be made safely without knowing, a failed
-  re-read **fails the whole click**: favoriting stops working while the
-  list endpoint is degraded even if the write endpoint is healthy. That
-  is worse availability in exchange for never silently destroying a
-  row, which is the right way round — the failure is a toast the user
-  can retry, the alternative is data loss they never see.
-
-  **What this does not fix**, stated so it is not mistaken for a
-  guarantee: a row created between the re-read and the PUT is still
-  full-replaced. The window is milliseconds instead of the lifetime of
-  a stale list, but it is not zero, and no amount of client re-reading
-  closes it. The real fix is a **partial-update PUT** — omitted fields
-  left untouched, so no client ever guesses or re-reads — which also
-  removes the extra GET and makes the rule unbreakable rather than
-  remembered by three call sites. Filed as #64; this entry is the
-  client-side interim.
-
-  This is the price of the reads being pure over a caller-held list,
-  and it is still the right trade — a module-held cache would be a
-  second copy of server state with no way to know it had gone stale.
-  The rule it buys, within the client: **no mutator may treat absence
-  from that list as absence from the server.**
-
-  **Amendment (2026-08-03, issue #64): the PUT became a partial update,
-  and both rulings above went with it.** The correction directly above
-  was a client-side interim, and the review of it named the three costs
-  plainly enough to be worth paying down rather than living with: an
-  extra round trip before every write, favouriting broken whenever the
-  *list* endpoint is degraded even though the write endpoint is
-  healthy, and a residual window between the re-read and the PUT that
-  no amount of client re-reading closes.
-
-  `WatchedSparkIn` now takes both fields as optional, and **an omitted
-  field is left as it is** — absent and `null` alike; `groups: []` is
-  how you clear them, which is a different request from not mentioning
-  them. So `setHunting` sends `{hunting}`, `setGroups` sends
-  `{groups}`, and `toggle` sends `{}`, which reads as "make sure this
-  spark is watched" and is a complete request. `currentOrFresh` is
-  gone, and with it every re-read in the module.
-
-  **Both of this entry's original rulings were right about their own
-  route and wrong to treat the route as fixed.** "No partial updates —
-  a PATCH would buy nothing and would need its own 'absent means
-  unchanged' rules on a two-field object": the rules turned out to be
-  one line each, and what the full replace bought was #62. "No defaults
-  at all, because a default on a full replace is a silent delete": true,
-  and the answer is that a default only ever applies to a row being
-  *created*, where there is nothing to delete. It stays a PUT rather
-  than becoming a PATCH — this is still an upsert on an identity the
-  caller names.
-
-  **"New sparks are hunted" moved to the `hunting` column's default.**
-  It lived in the client because under a full replace only the client
-  knew whether it was adding; with an upsert that applies only what it
-  was sent, the row that does not exist yet is the server's to furnish.
-  `DEFAULT_HUNTING` is deleted rather than mirrored — two answers to a
-  question with one is how they drift.
-
-  What is genuinely better, not just tidier: the rule "never guess a
-  field you aren't changing" is now **enforced by the shape of the
-  request** instead of being remembered by every call site. #62 happened
-  because one of three call sites forgot; hunted-skill scoring would
-  have been the fourth chance. And two of the three mutators no longer
-  read-modify-write at all — `toggle` sends `{}` and `setHunting` sends
-  the boolean the user just chose, neither derived from a prior read.
-
-  **What it does not fix, stated so it is not mistaken for a guarantee
-  a second time.** An earlier draft of this amendment claimed the race
-  was "closed rather than narrowed". It is not: `_row` is a plain
-  SELECT, and `setGroups` still computes the whole group set from a
-  list the client read earlier, so two devices relabelling the same
-  spark within the same moment is still last-write-wins — #62's failure
-  mode at a much smaller window. Closing it needs add/remove group
-  semantics or a version on the row, neither of which is a docstring
-  change. Filed as **#66**. What this entry can honestly claim is the
-  removal of *cross-field* clobber, which was the common case and the
-  one that actually bit.
-
-  **No reconcile pass**, unlike `reconcileFilters`, and `key` is not
-  validated against the factor reference. A watched spark missing from
-  `app/data` is still a legitimate thing to want — the reference is
-  regenerated by hand and can run behind a dump, and #30 already rules
-  that unknown keys are accepted rather than rejected. The asymmetry
-  is deliberate: a filter naming a spark no veteran carries hides the
-  roster with nothing on screen to explain why, and a watched spark
-  nobody carries is *the most useful row on #27's block*. `kind` IS
-  closed, because it decides the proc base rate.
-
-  **Its own router and its own client module** (`app/routers/sparks.py`,
-  `frontend/src/sparks.ts`). Three features read this and only one of
-  them is the designer's blueprint CRUD; on the client, both existing
-  store pairs hold roster-page state and this is read by designer
-  surfaces. Putting it in `filters.ts` would also invite a reconcile
-  pass by proximity.
-
-  **The roster-mark idiom does not fit**, and it is worth writing down
-  so it is not re-asked. Marks are a **fixed vocabulary of server-known
-  ids applied to veterans** — `tag_icons.json`, `MARK_IDS`, keyed by
-  `trained_chara_id`, and the set only changes when the game adds one.
-  Watched sparks are an **open, user-authored set over a 432-entry
-  reference**, keyed by `(kind, key)`. They share the word "favourite"
-  and nothing else; reusing the mark machinery would mean a migration
-  every time a user invents a group name.
-
-- **Alternatives rejected:** *three list-shaped stores split by intent*
-  (favourites / hunting / scoring) — "which of my lists is this in?"
-  becomes a question the user holds in their head, it cannot express a
-  spark in two builds without duplicating it, and the number of builds
-  anyone cares about is not fixed at three. *One undifferentiated
-  list* — rejected for the opposite reason: it collapses "quick to
-  type" into "hunting this", sending every filler white into #27's
-  uncapped block and drowning the rows that block exists for. *A
-  `stars` field on the row* — the list records which sparks you care
-  about, not what level you last typed; the chooser carries the level
-  into the slot document, which is where a level means something. *A
-  `PATCH` beside the `PUT`* — two endpoints and an "absent means
-  unchanged" rule for a two-field object the client already holds.
-
-- **What would change my mind:** groups proving to be the primary axis
-  rather than a filter — if users live in one build at a time and want
-  the whole app scoped to it, an "active group" belongs in the store
-  rather than in each caller's argument. Or `hunting: true` by default
-  filling #27's block with filler in practice.
+- **What it was:** one table per owner, `(kind, key, hunting, groups)`, with
+  `hunting` separating "keep this handy to type" from "I want this outcome",
+  and `groups` holding the user's build names as a filter over that bit. The
+  group vocabulary was *derived* from the rows — a group existed exactly as
+  long as a spark was in it, so there was no registry to keep in sync. The
+  routes were an **upsert-by-identity PUT** on `(kind, key)`: the client could
+  always name the row it wanted, because the caller supplied the identity.
+  #37's lists cannot do that — a list's identity is a server-assigned id — so
+  they take an ordinary POST/PATCH instead.
+- **Why it was wrong:** the axis is inverted. What varies per session is which
+  build you are working on, and `hunting` stored that **per spark**, so
+  switching weeks meant flipping the bit across dozens of rows. Derived
+  vocabulary cannot represent an empty list, silently destroys one when its
+  last spark leaves, and forks `Front Runner` from `Front runner`. #37 holds
+  the full argument. The bit had zero readers when this was found, which is
+  the only reason the correction was free.
+- **Rules that survived into #37 and are still cited from code:**
+  - *No `stars` on a membership row.* The list records WHICH sparks you want,
+    not what level you last typed; the level belongs to the slot document.
+  - *An omitted field is left as it is* — absent and `null` alike, `[]` is how
+    you clear. Arrived at in this entry's issue-#64 amendment, after a
+    full-replace PUT let one of three call sites silently clobber a field it
+    wasn't changing (issue #62). #37 keeps it: the rule is enforced by the
+    request's shape rather than remembered at each call site.
+  - *A spark in two builds renders once.* This shape got it free by having one
+    row in two groups; #37 pays for it with a dedupe at read time.
+  - *Keys are not validated against the factor reference* — it is regenerated
+    by hand and can run behind a dump. `kind` IS closed: it decides the proc
+    base rate.
+- **What changed my mind:** exactly the trigger this entry named — "groups
+  proving to be the primary axis rather than a filter."
 
 ## 34. The spark tables sort, and the level moves to the add
 

@@ -264,6 +264,23 @@ export function withFactors(design: Design, i: number, factors: SlotFactor[]): D
   return withNamed(design, i, { ...slot, factors });
 }
 
+// Which of a slot's hand-typed sparks survive a re-pick onto `cardId`. Whites,
+// races and scenarios are plan inputs and belong to the slot; a green is bound
+// to a card (DECISIONS.md #36), so re-picking the face takes any green that
+// isn't this card's own with it. Nothing downstream would catch a foreign one
+// left behind — the Procs tab would keep estimating a spark this member cannot
+// carry, the trainee's roll-up would include it, and the autosave would
+// persist it.
+//
+// The chooser already refuses to OFFER a foreign green; this covers the one
+// path that can strand an already-placed one.
+export function factorsSurviving(
+  factors: readonly SlotFactor[],
+  cardId: number
+): SlotFactor[] {
+  return factors.filter((f) => f.kind !== "unique" || f.key === cardId);
+}
+
 export function withDeep(design: Design, i: number, slot: DeepSlot | null): Design {
   const sparks = design.sparks.slice();
   sparks[i - NAMED_COUNT] = slot;

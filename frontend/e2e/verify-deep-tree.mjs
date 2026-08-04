@@ -455,13 +455,13 @@ const closePicker = async () => {
 // Autosave is debounced; every mutation settles through this. "Saved" alone
 // isn't settled — it also reads Saved in the moment before a create or a
 // switch lands — so a blueprint has to actually be open too.
-const settled = () =>
+const settled = (ms = 5000) =>
   page.waitForFunction(
     () =>
       document.querySelector(".designer-autosave")?.textContent === "Saved" &&
       (document.querySelector(".bp-field .designer-name")?.value ?? "") !== "",
     null,
-    { timeout: 5000 }
+    { timeout: ms }
   );
 // Poll the API for a state the page reaches on its own (a debounced write,
 // a retry) rather than sleeping a guessed interval.
@@ -503,43 +503,49 @@ const switchTo = async (label) => {
   await page.locator(".bp-menu button.bp-row", { hasText: label }).first().click();
   await page.waitForSelector(".bp-menu", { state: "detached" });
 };
+// A miss anywhere in here stops the run rather than carrying on: whatever is
+// open at that point may be a baseline row this run doesn't own, and every
+// caller's next step is to rename and edit it. The named check lands in the
+// summary and the results file before the throw.
 const newBlueprint = async () => {
   // `settled` doubles as the hydration gate: straight after a reload the bar
   // renders before the open blueprint has arrived, so `before` would read
-  // as "" and the menu could re-render under the click.
-  const ready = await settled().then(() => true, () => false);
-  const before = ready ? await pickerLabel() : "";
-  if (ready) await switchTo("+ New Blueprint");
+  // as "" and the menu could re-render under the click. A double budget —
+  // a reload's remount refetches everything before it can settle.
+  const ready = await settled(10000).then(() => true, () => false);
+  if (!ready) {
+    check("+ New Blueprint landed on a fresh blank row", false, "designer never settled");
+    throw new Error("+ New Blueprint didn't land — stopping before touching a row this run doesn't own");
+  }
+  const before = await pickerLabel();
+  await switchTo("+ New Blueprint");
   // The new row's identity, not "the name changed" — a late hydration also
   // changes the name without the create having landed (issue #71). The
   // blank tree renders in the same commit as the untitled name, so the
   // 31-count belongs to the same condition.
-  const opened =
-    ready &&
-    (await page
-      .waitForFunction(
-        (n) => {
-          const v = document.querySelector(".bp-field .designer-name")?.value ?? "";
-          return (
-            v !== n &&
-            v.startsWith("Untitled Blueprint") &&
-            document.querySelectorAll(".vped .vnode.pick").length === 31
-          );
-        },
-        before,
-        { timeout: 5000 }
-      )
-      .then(() => true, () => false));
+  const opened = await page
+    .waitForFunction(
+      (n) => {
+        const v = document.querySelector(".bp-field .designer-name")?.value ?? "";
+        return (
+          v !== n &&
+          v.startsWith("Untitled Blueprint") &&
+          document.querySelectorAll(".vped .vnode.pick").length === 31
+        );
+      },
+      before,
+      { timeout: 5000 }
+    )
+    .then(() => true, () => false);
+  // Claim BEFORE any bail-out: the click can have created the row even when
+  // the wait missed it, and an unclaimed untitled row is exactly what the
+  // cleanup sweep refuses to delete.
+  await claimNew();
   check("+ New Blueprint landed on a fresh blank row", opened,
-    ready ? await pickerLabel() : "designer never settled");
-  // A miss stops the run rather than carrying on: whatever is open now may
-  // be a baseline row this run doesn't own, and every caller's next step is
-  // to rename and edit it. The check above names the failure in the summary
-  // and the results file first.
+    opened ? "" : await pickerLabel().catch(() => "(name field unreadable)"));
   if (!opened) {
     throw new Error("+ New Blueprint didn't land — stopping before touching a row this run doesn't own");
   }
-  await claimNew();
 };
 const barButton = (action) => page.locator(`.designer-save button[aria-label^="${action}"]`);
 const aptRow = (label) =>

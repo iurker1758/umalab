@@ -352,6 +352,11 @@ export function DesignerPage({
   // unreachable, so anything still queued for it has to be on the wire.
   const adopt = useCallback(
     (bp: Blueprint) => {
+      // A deliberate open settles the bootstrap. A row created or opened
+      // while the mount fetch is still in flight postdates its snapshot, so
+      // the "open something" fallback below can't find it and would reopen
+      // the previous blueprint right over it (issue #71's e2e flake).
+      bootstrapped.current = true;
       try {
         const d = fromApi(bp);
         setDesign(d);
@@ -454,7 +459,12 @@ export function DesignerPage({
         onError("Couldn't load the spark reference — hand entry won't find anything.");
       }
       if (bps.status !== "fulfilled") return;
-      setSaved(bps.value);
+      // Merged, not replaced: a row created while this fetch was in flight
+      // isn't in the snapshot, and replacing would drop it from the picker.
+      setSaved((prev) => [
+        ...prev.filter((b) => bps.value.every((n) => n.id !== b.id)),
+        ...bps.value,
+      ]);
 
       // Open something, always: the design the shell already holds, else the
       // one last open here, else the most recently touched, else a fresh row.

@@ -504,13 +504,32 @@ const switchTo = async (label) => {
   await page.waitForSelector(".bp-menu", { state: "detached" });
 };
 const newBlueprint = async () => {
+  // `settled` doubles as the hydration gate: straight after a reload the bar
+  // renders before the open blueprint has arrived, so `before` would read
+  // as "" and the menu could re-render under the click.
+  await settled();
   const before = await pickerLabel();
   await switchTo("+ New Blueprint");
-  await page.waitForFunction(
-    (n) => document.querySelector(".bp-field .designer-name")?.value !== n,
-    before,
-    { timeout: 5000 }
-  );
+  // The new row's identity, not "the name changed" — a late hydration also
+  // changes the name without the create having landed (issue #71). The
+  // blank tree renders in the same commit as the untitled name, so the
+  // 31-count belongs to the same condition. A miss is a named failure, not
+  // an uncaught TimeoutError that aborts the run.
+  const opened = await page
+    .waitForFunction(
+      (n) => {
+        const v = document.querySelector(".bp-field .designer-name")?.value ?? "";
+        return (
+          v !== n &&
+          v.startsWith("Untitled Blueprint") &&
+          document.querySelectorAll(".vped .vnode.pick").length === 31
+        );
+      },
+      before,
+      { timeout: 5000 }
+    )
+    .then(() => true, () => false);
+  if (!opened) check("+ New Blueprint landed on a fresh blank row", false, await pickerLabel());
   await claimNew();
 };
 const barButton = (action) => page.locator(`.designer-save button[aria-label^="${action}"]`);
@@ -1594,7 +1613,6 @@ try {
   // Switch away and back, so the design comes from the server rather than
   // from the page's own state.
   await newBlueprint();
-  await page.waitForFunction(() => document.querySelectorAll(".vped .vnode.pick").length === 31);
   const scratchName = await pickerLabel();
   check("+ New Blueprint opens a blank, server-backed row",
     scratchName.startsWith("Untitled Blueprint") &&
@@ -1727,7 +1745,6 @@ try {
   await page.reload();
   await page.waitForSelector(".designer-autosave", { timeout: 5000 });
   await newBlueprint();
-  await page.waitForFunction(() => document.querySelectorAll(".vped .vnode.pick").length === 31);
   await switchTo(`${bpName} sparks-first`);
   const sparkRoundTripped = await page
     .waitForFunction(
@@ -2058,7 +2075,6 @@ try {
     // page's own state. Polled, not sampled: `.designer` re-renders before
     // the fetch lands (the PR #20 hydration race).
     await newBlueprint();
-    await page.waitForFunction(() => document.querySelectorAll(".vped .vnode.pick").length === 31);
     await switchTo(`${bpName} roster`);
     check("a pulled design round-trips through the API",
       await until(async () =>

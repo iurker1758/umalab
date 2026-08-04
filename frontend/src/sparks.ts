@@ -18,6 +18,37 @@ import { api, type SlotFactorKind, type WatchedSpark } from "./api";
 
 export type { WatchedSpark } from "./api";
 
+// The list plus everything a consumer needs to render and write it, as ONE
+// prop. The chooser sits three levels below the page that owns the fetch
+// (DesignerPage → FocusPanel → NodeProcs → SparkChooser), and passing the
+// five pieces separately meant declaring, typing and forwarding five props
+// at every level for a leaf that reads them — four files touched to add one
+// field. #27's watched block is the next consumer of the same list and would
+// have repeated the edit.
+export type WatchedStore = {
+  list: WatchedSpark[];
+  // Which generation of `list` this is. Zero until the first fetch SETTLES,
+  // then bumped by every fetch that lands, INCLUDING a retry — which an
+  // "already loaded" boolean cannot express, because a retry only ever
+  // happens once loading is over.
+  //
+  // The chooser keys its popout on this, so a retry that succeeds while the
+  // popout is open re-snapshots its Favorites section instead of leaving it
+  // frozen empty. Writes deliberately do NOT bump it: the frozen membership
+  // is what keeps a row from moving out from under the pointer that starred
+  // it.
+  epoch: number;
+  // Whether the LAST attempt rejected, which an empty list cannot say — a
+  // user with no favorites yet and a user whose fetch failed hold the same
+  // array, and only one of them has a reason to see the controls disabled.
+  failed: boolean;
+  // Hand back the list the server ended up with. Non-optimistic by design:
+  // the mutators in this module return it, so a star only moves once the row
+  // exists.
+  onChange: (next: WatchedSpark[]) => void;
+  onReload: () => void;
+};
+
 // A newly added spark is hunted. Adding is a deliberate pick — the spark,
 // then its star level — which reads as "I want this outcome"; defaulting to
 // false would leave #27's watched block empty on first use, with the bit

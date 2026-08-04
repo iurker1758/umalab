@@ -5,8 +5,8 @@ import type {
   FactorRef,
   PinkSpark,
   SlotFactor,
-  WatchedSpark,
 } from "../api";
+import type { WatchedStore } from "../sparks";
 import { APTITUDE_LABELS, aptitudeRows, letterModeOf, undroppableSpark } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -160,12 +160,12 @@ export function FocusPanel({
   affinityPending,
   factorRefs,
   watched,
-  watchedFailed,
+  cardOwner,
   onOpenPicker,
   onClear,
   onSetSpark,
   onSetFactors,
-  onWatched,
+  onError,
 }: {
   design: Design;
   index: number;
@@ -184,17 +184,19 @@ export function FocusPanel({
   // stored sparks by key — every CHANCE on the Procs tab reads the design,
   // not this.
   factorRefs: FactorRef[];
-  // The sparks this user has favourited, and whether the fetch that would
-  // have filled them failed. Only the chooser reads them: the reference is
-  // committed and works offline, so a favourites list that didn't load costs
-  // an ordering and nothing else.
-  watched: WatchedSpark[];
-  watchedFailed: boolean;
+  // The sparks this user has favorited, as one store — the list, its
+  // generation, whether the fetch failed, and the two writers. Forwarded
+  // untouched: only the chooser reads it, and the reference is committed and
+  // works offline, so a favorites list that didn't load costs an ordering
+  // and nothing else.
+  watched: WatchedStore;
+  // Names the uma a green spark belongs to, for the chooser's green rows.
+  cardOwner: (cardId: number) => string | null;
   onOpenPicker: (i: number) => void;
   onClear: (i: number) => void;
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
-  onSetFactors: (i: number, factors: SlotFactor[]) => void;
-  onWatched: (next: WatchedSpark[]) => void;
+  onSetFactors: (i: number, update: (current: readonly SlotFactor[]) => SlotFactor[]) => void;
+  onError: (message: string) => void;
 }) {
   // Which tab, kept across node switches on purpose: comparing the same view
   // between two ancestors is the common move, and resetting to Details every
@@ -342,12 +344,12 @@ export function FocusPanel({
                 sparkNames={sparkNames}
                 factorRefs={factorRefs}
                 watched={watched}
-                watchedFailed={watchedFailed}
+                cardOwner={cardOwner}
                 locked={false}
                 sort={ancestorSort}
                 onSort={setAncestorSort}
                 onSetFactors={onSetFactors}
-                onWatched={onWatched}
+                onError={onError}
               />
             ) : (
               <>
@@ -437,12 +439,12 @@ export function FocusPanel({
             sparkNames={sparkNames}
             factorRefs={factorRefs}
             watched={watched}
-            watchedFailed={watchedFailed}
+            cardOwner={cardOwner}
             locked={pinkFixed}
             sort={ancestorSort}
             onSort={setAncestorSort}
             onSetFactors={onSetFactors}
-            onWatched={onWatched}
+            onError={onError}
           />
         )
       ) : (

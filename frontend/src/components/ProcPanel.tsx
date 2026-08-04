@@ -4,8 +4,8 @@ import type {
   FactorRef,
   SlotFactor,
   SlotFactorKind,
-  WatchedSpark,
 } from "../api";
+import type { WatchedStore } from "../sparks";
 import { APTITUDE_LABELS } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -206,31 +206,35 @@ export function NodeProcs({
   sparkNames,
   factorRefs,
   watched,
-  watchedFailed,
+  cardOwner,
   locked,
   sort,
   onSort,
   onSetFactors,
-  onWatched,
+  onError,
 }: {
   design: Design;
   affinity: AffinityResult | null;
   index: number;
   sparkNames: Map<string, string>;
   factorRefs: FactorRef[];
-  // The sparks this user has favourited (#33). Read by the chooser only —
-  // nothing on the table below reads it yet; #27's watched block is what
-  // brings it into the table.
-  watched: WatchedSpark[];
-  watchedFailed: boolean;
+  // The sparks this user has favorited (#33), as one store. Read by the
+  // chooser only — nothing on the table below reads it yet; #27's watched
+  // block is what brings it into the table, off this same prop.
+  watched: WatchedStore;
+  // Names the uma a green spark belongs to — its factor key IS a card_id.
+  cardOwner: (cardId: number) => string | null;
   // Inside a pulled branch: these sparks are the horse's own, read off her
   // dump, so they are shown rather than edited — the same rule her pink
   // follows. This path renders the plain two-column readout unchanged.
   locked: boolean;
   sort: SparkSort;
   onSort: (s: SparkSort) => void;
-  onSetFactors: (i: number, factors: SlotFactor[]) => void;
-  onWatched: (next: WatchedSpark[]) => void;
+  // An UPDATER rather than an array: two edits resolved against the same
+  // render would otherwise each rebuild the list from one stale base, and the
+  // later write would drop the earlier spark (DECISIONS.md #36).
+  onSetFactors: (i: number, update: (current: readonly SlotFactor[]) => SlotFactor[]) => void;
+  onError: (message: string) => void;
 }) {
   const id = affinitySlotOf(index);
   const share = id === null || affinity === null ? null : affinity[`${id}_affinity`];
@@ -238,7 +242,9 @@ export function NodeProcs({
   const factors = slot?.factors ?? [];
   const rows = sortSparks(memberSparks(sparkAt(design, index), factors, share), sort);
   const drop = (kind: SlotFactorKind, key: number) =>
-    onSetFactors(index, factors.filter((x) => !(x.kind === kind && x.key === key)));
+    onSetFactors(index, (current) =>
+      current.filter((x) => !(x.kind === kind && x.key === key))
+    );
   return (
     <>
       {/* The modifier buys the level column its width back off the chance
@@ -293,9 +299,14 @@ export function NodeProcs({
           factors={factors}
           refs={factorRefs}
           watched={watched}
-          watchedFailed={watchedFailed}
-          onChange={(next) => onSetFactors(index, next)}
-          onWatched={onWatched}
+          // Which greens this node can hold at all. A green's key is a
+          // card_id, so a cast node has exactly one and offering the other
+          // 136 offers sparks she can never carry.
+          cardId={slot?.card_id ?? null}
+          charaId={slot?.chara_id ?? null}
+          cardOwner={cardOwner}
+          onChange={(update) => onSetFactors(index, update)}
+          onError={onError}
         />
       )}
     </>

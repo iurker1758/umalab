@@ -23,7 +23,7 @@ import {
   type Veteran,
   type WatchedSpark,
 } from "../api";
-import { loadWatched } from "../sparks";
+import { loadWatched, type WatchedStore } from "../sparks";
 import { FocusPanel } from "../components/FocusPanel";
 import { CopyIcon, TrashIcon } from "../components/icons";
 import { SlotPicker, type SlotPick } from "../components/SlotPicker";
@@ -37,6 +37,7 @@ import {
   catalogSlot,
   clearNodes,
   copyName,
+  deriveCharaId,
   emptyDesign,
   fromApi,
   halfOf,
@@ -150,16 +151,59 @@ export function DesignerPage({
   // stored sparks as "Unknown (key)", but every proc estimate reads the
   // design and keeps working.
   const [factorRefs, setFactorRefs] = useState<FactorRef[]>([]);
-  // The sparks this user has favourited (#33). Fetched beside the reference
+  // The sparks this user has favorited (#33). Fetched beside the reference
   // and the saved list, and allowed to fail on its own: the reference is
-  // committed and works offline, the favourites are server state behind
+  // committed and works offline, the favorites are server state behind
   // Access, so a chooser that couldn't be browsed because a list of
-  // favourites didn't load would be the failure doing the most damage.
+  // favorites didn't load would be the failure doing the most damage.
   const [watched, setWatched] = useState<WatchedSpark[]>([]);
   // Whether that fetch REJECTED, which an empty list can't say — a user with
-  // no favourites yet and a user whose fetch failed hold the same array, and
+  // no favorites yet and a user whose fetch failed hold the same array, and
   // only one of them has a reason to see the controls disabled.
   const [watchedFailed, setWatchedFailed] = useState(false);
+  // Which generation of the list is in `watched` — see WatchedStore. Zero
+  // until the first fetch settles; a settle counts even when it failed, so
+  // the popout that opened over a failure remounts when a retry lands.
+  const [watchedEpoch, setWatchedEpoch] = useState(0);
+  // How many writes have come back from the chooser. A fetch that was already
+  // in flight when one landed is stale BY DEFINITION — the server handed the
+  // newer list to the write as its response — and applying the older one would
+  // empty a star the user just filled while the row still existed server-side,
+  // so the obvious response (click again) would re-PUT it as if new and reset
+  // its hunting bit and groups.
+  //
+  // NOT REACHABLE TODAY, and worth saying so rather than implying otherwise:
+  // there are two windows where a GET is in flight, and a ★ is clickable in
+  // neither. During the mount fetch the four requests settle TOGETHER, so the
+  // factor reference arrives with the watched list and the popout has no rows
+  // to star (measured: 0 rows, 0 stars). During a retry `failed` is still
+  // true, which disables every ★ (measured: 432 stars, 0 enabled). Both are
+  // incidental — the first is one `Promise.allSettled` away from being split
+  // for a faster first paint, the second one refinement away from keeping the
+  // stars live while a retry runs — and #27 adds a second reader of this list.
+  // Eight lines to make the invariant hold on its own rather than by accident.
+  const watchedWrites = useRef(0);
+  const onWatchedChange = useCallback((next: WatchedSpark[]) => {
+    watchedWrites.current += 1;
+    setWatched(next);
+  }, []);
+  // Re-fetch on demand. The load runs once at mount, so without this a
+  // one-second blip disabled every ★ for the session — the flag had one
+  // writer and no retry. The chooser calls it when it opens after a failure.
+  const reloadWatched = useCallback(() => {
+    void (async () => {
+      const writes = watchedWrites.current;
+      try {
+        const rows = await loadWatched();
+        if (watchedWrites.current === writes) setWatched(rows);
+        setWatchedFailed(false);
+      } catch {
+        setWatchedFailed(true);
+      } finally {
+        setWatchedEpoch((n) => n + 1);
+      }
+    })();
+  }, []);
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
@@ -393,6 +437,9 @@ export function DesignerPage({
     // out of it.
     let cancelled = false;
     void (async () => {
+      // Read BEFORE the fetches start — see watchedWrites for why this cannot
+      // fire today and why it is here anyway.
+      const writes = watchedWrites.current;
       const [cat, bps, factors, watch] = await Promise.allSettled([
         api.catalog(),
         api.blueprints(),
@@ -402,10 +449,15 @@ export function DesignerPage({
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
       if (factors.status === "fulfilled") setFactorRefs(factors.value);
-      if (watch.status === "fulfilled") setWatched(watch.value);
+      setWatchedEpoch((n) => n + 1);
+      // Dropped rather than applied when a write beat it home — the write's
+      // response IS the newer list, and it is already in state.
+      if (watch.status === "fulfilled") {
+        if (watchedWrites.current === writes) setWatched(watch.value);
+      }
       // No toast for this one, unlike the reference below: the chooser is the
       // only thing that reads it, and it says so itself at the moment you open
-      // it. A page-load toast about favourites would fire for everyone whose
+      // it. A page-load toast about favorites would fire for everyone whose
       // list is simply empty of consequence.
       else setWatchedFailed(true);
       setCatalogLoaded(true);
@@ -488,6 +540,46 @@ export function DesignerPage({
   const outfitFor = useCallback(
     (cardId: number) => cardById.get(cardId)?.outfit ?? null,
     [cardById]
+  );
+  // Who a card belongs to, as one label. The spark chooser needs it because
+  // a green's factor key IS a card_id, so "Shooting Star" on its own does
+  // not say whose spark it is — and on a node with nobody cast, that is the
+  // only thing distinguishing 137 otherwise-anonymous rows.
+  //
+  // Composed from the two indexes that already exist rather than a third
+  // full-catalog map: TreeMap and FocusPanel already name a card's owner as
+  // `charaName(deriveCharaId(card))`, and the derivation is the same one the
+  // green rule itself rests on (checked: it agrees with the catalog's own
+  // entry→cards join on all 95 released cards).
+  //
+  // One prop for the whole list, not five — see WatchedStore. #27's watched
+  // block reads the same store from the same panel.
+  const watchedStore = useMemo(
+    (): WatchedStore => ({
+      list: watched,
+      epoch: watchedEpoch,
+      failed: watchedFailed,
+      onChange: onWatchedChange,
+      onReload: reloadWatched,
+    }),
+    [watched, watchedEpoch, watchedFailed, onWatchedChange, reloadWatched]
+  );
+  // Null rather than a placeholder: the reference carries 42 uniques whose
+  // card has not reached Global, and inventing "Card 104502" for them would
+  // read as a name. The row shows the spark alone in that case.
+  const cardOwner = useCallback(
+    (cardId: number): string | null => {
+      const card = cardById.get(cardId);
+      const name = charaById.get(deriveCharaId(cardId))?.name;
+      if (card === undefined || name === undefined) return null;
+      // The base card drops its outfit: 62 of the 95 greens with a card are
+      // [Original], so printing it spends width on the word that
+      // distinguishes nothing. A named outfit is kept, because WHICH card
+      // decides which of an uma's 1-3 uniques you get. Median label 23 → 14
+      // characters.
+      return card.outfit === "Original" ? name : `${name} [${card.outfit}]`;
+    },
+    [cardById, charaById]
   );
 
   // ---------- run affinity ----------
@@ -588,7 +680,19 @@ export function DesignerPage({
         // inputs, not part of the card's identity, and re-typing a member's
         // sparks after every outfit swap would be pure friction.
         const spark = wasPulled ? null : (d.named[target]?.spark ?? null);
-        const factors = wasPulled ? [] : (d.named[target]?.factors ?? []);
+        // ...except a green, which is bound to a CARD (DECISIONS.md #36) and
+        // so is part of the card's identity in a way the others are not. The
+        // chooser enforces that at offer time; a re-pick is the one path that
+        // can leave a foreign green behind it, and nothing downstream would
+        // notice — the Procs tab would keep estimating a spark this member
+        // cannot carry, the trainee's roll-up would include it, and the
+        // autosave would persist it. Whites, races and scenarios belong to
+        // anyone and stay.
+        const factors = wasPulled
+          ? []
+          : (d.named[target]?.factors ?? []).filter(
+              (f) => f.kind !== "unique" || f.key === pick.card_id
+            );
         return withNamed(
           clearNodes(d, owned),
           target,
@@ -663,8 +767,18 @@ export function DesignerPage({
 
   // Same lock as the pink: inside a pulled branch (and on the roster pick
   // herself) these sparks are the horse's own, read off her dump.
-  const setFactors = (target: number, factors: SlotFactor[]) => {
-    setDesign((d) => (sparkLocked(d, target) ? d : withFactors(d, target, factors)));
+  // Takes an UPDATER, not the finished array. The chooser stays open across
+  // adds, so two clicks can resolve against one render — and with an array
+  // each would rebuild the list from the same stale base, the second write
+  // silently dropping the first spark before the autosave persisted the
+  // shorter list. Applied against the design as it is at write time instead.
+  const setFactors = (
+    target: number,
+    update: (current: readonly SlotFactor[]) => SlotFactor[]
+  ) => {
+    setDesign((d) =>
+      sparkLocked(d, target) ? d : withFactors(d, target, update(d.named[target]?.factors ?? []))
+    );
   };
 
   // Every edit autosaves. Queued immediately (so nothing depends on this
@@ -998,13 +1112,13 @@ export function DesignerPage({
             affinityFailed={shownScoreFailed}
             affinityPending={affinityPending}
             factorRefs={factorRefs}
-            watched={watched}
-            watchedFailed={watchedFailed}
+            cardOwner={cardOwner}
+            watched={watchedStore}
             onOpenPicker={setPickerFor}
             onClear={clearSlot}
             onSetSpark={setSpark}
             onSetFactors={setFactors}
-            onWatched={setWatched}
+            onError={onError}
           />
         </div>
       </div>

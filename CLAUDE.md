@@ -19,10 +19,12 @@ the shared watched-spark list (issue #39) — a `watched_sparks` table plus
 `GET`/`PUT`/`DELETE` under `/api/watched-sparks` and an async client module,
 with no UI of its own (DECISIONS.md #33). That closes #50. The design-pass
 queue (#41 → #45+#29 → #28 → #27) has since delivered #28 — spark entry is a
-popout browser with your favourites on top, replacing the inline search and
+popout browser with your favorites on top, replacing the inline search and
 reversing #30's "an add-one affordance, not a browser" in writing
-(DECISIONS.md #35). It is the watched list's first consumer; **#27 is next**
-and is the second.
+(DECISIONS.md #35), corrected in #36 — a green spark's factor key IS a
+`card_id`, so a cast node is offered only her own green. It is the watched
+list's first consumer; **#27 is next** and is the second. Issue #58 holds
+the server half of the green rule.
 
 Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation

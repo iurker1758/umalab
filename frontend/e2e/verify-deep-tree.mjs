@@ -82,10 +82,12 @@ const postJson = async (path, body) => {
 
 const catalog = await getJson("/api/catalog");
 const baselineIds = new Set((await getJson("/api/blueprints")).map((b) => b.id));
-// The watched sparks this run favourites, tracked at creation rather than
-// diffed at the end — a `(kind, key)` this run touched may also be one you
+// The watched sparks this run favorites, tracked BEFORE the click rather
+// than after it — a `(kind, key)` this run touched may also be one you
 // already had, and a diff can't tell "I added this" from "it was already
-// there and I flipped its bit". Anything already watched is left alone.
+// there and I flipped its bit". Recorded before, because the click writes a
+// real row immediately and anything awaited after it can throw: a timeout
+// between the two would leave that row in the user's list forever.
 const baselineWatched = new Set(
   (await getJson("/api/watched-sparks")).map((w) => `${w.kind}:${w.key}`)
 );
@@ -100,12 +102,19 @@ const owned = new Set();
 
 // Cast: base cards only (picked by exact chip label), chosen so every
 // assertion is reachable regardless of which dump/reference is loaded.
+// A green spark's factor key IS a card_id, so the green a node can hold is
+// decided by who is cast in it (DECISIONS.md #36). Fetched up here because
+// G11's cast now has to satisfy that: she is the node this suite types a
+// green onto, so she has to be a card the reference HAS one for.
+const factorRef = await getJson("/api/factors");
+const greenOf = (cardId) =>
+  factorRef.find((f) => f.kind === "unique" && f.key === cardId);
 const used = new Set();
 const pickCard = (what, pred) => {
   for (const e of catalog) {
     if (used.has(e.chara_id)) continue;
     const c = e.cards[0];
-    if (c.aptitudes !== null && pred(c.aptitudes)) {
+    if (c.aptitudes !== null && pred(c.aptitudes, c)) {
       used.add(e.chara_id);
       return { entry: e, card: c, apt: c.aptitudes };
     }
@@ -115,7 +124,10 @@ const pickCard = (what, pred) => {
 };
 // Trainee + G11: a visible mile boost needs base mile ≤ C (C+2 < A).
 const T = pickCard("trainee", (a) => idx(a.mile) >= 0 && idx(a.mile) <= idx("C"));
-const G11 = pickCard("g11", (a) => idx(a.mile) >= 0 && idx(a.mile) <= idx("C"));
+const G11 = pickCard(
+  "g11",
+  (a, c) => idx(a.mile) >= 0 && idx(a.mile) <= idx("C") && greenOf(c.card_id) !== undefined
+);
 // P1: mile below A (the 10★ +4 must move it) plus an A aptitude ≠ mile for
 // the past-cap info note.
 const P1 = pickCard(
@@ -789,7 +801,6 @@ try {
   // numbers, unlike the pink, which bumps the letters on the Details tab.
   // Driven off the served reference rather than hardcoded names, the same way
   // this suite derives its cast from /api/catalog.
-  const factorRef = await (await fetch(`${BASE}/api/factors`)).json();
   const pickOf = (kind) => factorRef.find((f) => f.kind === kind);
   // By id, never by displayed name: race and scenario sparks routinely
   // contain a skill's name as a substring, so a `hasText` match would click a
@@ -824,10 +835,20 @@ try {
   };
   const added = [];
   for (const kind of ["white", "unique", "race", "scenario"]) {
-    const ref = pickOf(kind);
+    // The green is HERS, not an arbitrary one: a unique's key is a card_id,
+    // so the chooser offers this node exactly one and the other 136 are
+    // sparks she can never carry (DECISIONS.md #36).
+    const ref = kind === "unique" ? greenOf(G11.card.card_id) : pickOf(kind);
     await addSpark("G1-1", ref);
     added.push(ref);
   }
+  // The rule itself, on screen: one green offered on a cast node, not 137.
+  await openChooser("G1-1");
+  const greensOffered = await page.locator(".spark-popout .proc-kind-unique").count();
+  check("a cast node is offered only her own green, which she now holds",
+    greensOffered === 1 &&
+    (await page.locator(`.spark-popout li:has(.proc-kind-unique) .spark-held`).count()) === 1);
+  await closeChooser();
   // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
   // 1/2/3, scenario 3/6/9 — so a 1★ of each at one affinity must produce
   // three distinct numbers, not one repeated.
@@ -993,53 +1014,84 @@ try {
     (await until(async () => (await page.locator(".spark-held").count()) === 1)) &&
     (await page.locator(".spark-matches li", { hasText: spare.name })
       .locator(".seg").count()) === 0);
-  // Favouriting is a separate control from adding, and adding never writes
+  // Favoriting is a separate control from adding, and adding never writes
   // one: a filler white typed onto every node must not reach #27's uncapped
   // watched block (DECISIONS.md #35).
-  check("and adding a spark did not favourite it",
-    (await page.locator(`.spark-fav[aria-label="Favourite ${spare.name}"]`)
+  check("and adding a spark did not favorite it",
+    (await page.locator(`.spark-fav[data-spark="${spare.kind}:${spare.key}"]`)
       .getAttribute("aria-pressed")) === "false");
 
-  // ---------- favourites ----------
+  // ---------- favorites ----------
   // Server state behind Access, unlike everything else this tab writes — so
   // it is read back from the API, and the row is tracked for cleanup at
   // creation rather than diffed at the end.
   //
   // Deliberately NOT a spark you already watch: the control is a toggle, so
-  // running this against an existing favourite would delete one of yours and
+  // running this against an existing favorite would delete one of yours and
   // then assert on the wrong direction. 432 factors, so there is always one.
+  //
+  // And never a GREEN: this runs on G1-1, which is cast, and a cast node
+  // offers only its own card's unique — so a green target would simply not be
+  // in the popout and the click below would hang for 30s and abort the run
+  // before the cleanup that keeps this suite baseline-relative. Reachable
+  // only on a database where every race and scenario spark is already
+  // favorited, which is why it isn't what fails today.
   const favTarget = factorRef.find(
-    (f) => !baselineWatched.has(`${f.kind}:${f.key}`)
+    (f) => f.kind !== "unique" && !baselineWatched.has(`${f.kind}:${f.key}`)
   );
+  const favSel = `${favTarget.kind}:${favTarget.key}`;
   await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(favTarget.name);
-  await page.locator(`.spark-fav[aria-label="Favourite ${favTarget.name}"]`).first().click();
-  await page.waitForSelector(`.spark-hunt[aria-label="Hunting ${favTarget.name}"]`);
-  watchedOwned.add(`${favTarget.kind}:${favTarget.key}`);
+  // Recorded first: the click PUTs a real row, and the wait below can time
+  // out — which would jump to `finally` with nothing to clean up.
+  watchedOwned.add(favSel);
+  // By id, never by the displayed name: the reference holds distinct factors
+  // that share one, so a name-matched star writes the wrong (kind, key) and
+  // cleanup then deletes a row that was never created.
+  await page.locator(`.spark-fav[data-spark="${favSel}"]`).click();
+  await page.waitForSelector(`.spark-hunt[data-spark="${favSel}"]`);
   const watchedRow = async () =>
     (await getJson("/api/watched-sparks")).find(
       (w) => w.kind === favTarget.kind && w.key === favTarget.key
     );
   // #33 defaults a new row to hunting, and the default lives in the CLIENT —
   // so this is a check on the chooser, not on the route.
-  check("favouriting writes a watched row, hunted by default",
+  check("favoriting writes a watched row, hunted by default",
     (await watchedRow())?.hunting === true);
   // "Filler you keep handy to type" is the case the bit exists for, and #33
   // puts it "one click off at the moment you add it" — which is here.
-  await page.locator(`.spark-hunt[aria-label="Hunting ${favTarget.name}"]`).click();
+  await page.locator(`.spark-hunt[data-spark="${favSel}"]`).click();
   check("and one click marks it filler rather than removing it",
     await until(async () => {
       const row = await watchedRow();
       return row !== undefined && row.hunting === false;
     }));
   await closeChooser();
-  // Favourites lift to their own section on the next open — and appear there
+  // Favorites lift to their own section on the next open — and appear there
   // ONLY, never also in their kind's section: the same spark twice on one
   // surface is the duplication #45 deleted the held list to remove.
   await openChooser("G1-1");
-  check("a favourite leads the chooser on the next open, and only once",
-    (await page.locator(".spark-popout .spark-group").first().textContent()) === "Favourites" &&
-    (await page.locator(`.spark-popout .spark-fav[aria-label="Favourite ${favTarget.name}"]`)
-      .count()) === 1);
+  check("a favorite leads the chooser on the next open, and only once",
+    (await page.locator(".spark-popout .spark-section-head").first().textContent()) === "Favorites" &&
+    (await page.locator(`.spark-popout .spark-fav[data-spark="${favSel}"]`).count()) === 1);
+  // Un-starring must not make the row disappear: membership in the Favorites
+  // section is frozen for the life of the popout, so the star empties and
+  // nothing moves. It used to vanish from both sections at once, leaving the
+  // spark unaddable until the popout was reopened.
+  const favStar = `.spark-popout .spark-fav[data-spark="${favSel}"]`;
+  await page.locator(favStar).click();
+  // It stays in the Favorites SECTION, not merely somewhere on screen: the
+  // frozen membership is the whole point, and a row that fell back to its
+  // kind section would have moved under the pointer that just clicked it.
+  check("and un-starring it empties the star without removing the row",
+    (await until(async () =>
+      (await page.locator(favStar).getAttribute("aria-pressed")) === "false")) &&
+    (await page.locator(favStar).count()) === 1 &&
+    (await page.locator(".spark-popout .spark-section").first()
+      .locator(`.spark-fav[data-spark="${favSel}"]`).count()) === 1 &&
+    (await page.locator(`.spark-popout .spark-hunt[data-spark="${favSel}"]`).count()) === 0);
+  // Put it back, so the cleanup below has the row it expects to delete.
+  await page.locator(`.spark-popout .spark-fav[data-spark="${favSel}"]`).click();
+  await page.waitForSelector(`.spark-hunt[data-spark="${favSel}"]`);
   await closeChooser();
   // Guarded: clicking unconditionally after a failed `until` aborts the run
   // and skips every assertion below it.
@@ -1188,7 +1240,7 @@ try {
   await openChooser("G2-1");
   check("and an abandoned search doesn't follow you there",
     (await page.locator('.spark-popout input[aria-label="G2-1 spark search"]').inputValue()) === "" &&
-    (await page.locator(".spark-popout .spark-group").count()) > 0);
+    (await page.locator(".spark-popout .spark-section-head").count()) > 0);
   await closeChooser();
   await selectNode("Trainee");
 
@@ -2292,7 +2344,7 @@ try {
   } catch (e) {
     console.log(`  cleanup: FAILED to restore (${e}) — check for leftover "${bpName}" rows`);
   }
-  // The favourites this run created, by the ids it tracked at creation —
+  // The favorites this run created, by the ids it tracked before clicking —
   // never "everything watched that wasn't there before", which would delete a
   // spark you starred in another tab mid-run.
   try {

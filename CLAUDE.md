@@ -14,17 +14,28 @@ work starts.
 Current milestone: **multi-user** (issue #50, DECISIONS.md #32) — Cloudflare
 Access is the login, a verified `Cf-Access-Jwt-Assertion` JWT is the identity,
 and every roster/blueprint/mark row carries an `owner_id`. Shipped: the
-`users` table, owner scoping across both routers, the backfill migration, and
-the shared watched-spark list (issue #39) — a `watched_sparks` table plus
-`GET`/`PUT`/`DELETE` under `/api/watched-sparks` and an async client module,
-with no UI of its own (DECISIONS.md #33). That closes #50. The design-pass
-queue (#41 → #45+#29 → #28 → #27) has since delivered #28 — spark entry is a
-popout browser with your favorites on top, replacing the inline search and
-reversing #30's "an add-one affordance, not a browser" in writing
-(DECISIONS.md #35), corrected in #36 — a green spark's factor key IS a
-`card_id`, so a cast node is offered only her own green. It is the watched
-list's first consumer; **#27 is next** and is the second. Issue #58 holds
-the server half of the green rule.
+`users` table, owner scoping across both routers, and the backfill migration.
+That closes #50. The design-pass queue (#41 → #45+#29 → #28 → #27) has since
+delivered #28 — spark entry is a popout browser with your favorites on top,
+replacing the inline search and reversing #30's "an add-one affordance, not a
+browser" in writing (DECISIONS.md #35), corrected in #36 — a green spark's
+factor key IS a `card_id`, so a cast node is offered only her own green.
+Issue #58 holds the server half of the green rule.
+
+**Spark lists (issue #39, DECISIONS.md #37) replaced the watched-spark list
+of #33, which had the axis backwards.** A `hunting` bit stored per spark what
+actually varies per session — which build you are working on this week, and
+it can be more than one at a time. `watched_sparks` and `hunting` are dropped.
+What replaced them is one table, `spark_lists`, holding `(name, position,
+sparks)` per owner, with `GET`/`POST`/`PATCH`/`DELETE` under
+`/api/spark-lists`. Names are unique per owner **ignoring case** (an
+expression index; stored as typed). Favorites in the chooser is the **union**
+of the lists, and which lists are *active* is a device-local `localStorage`
+view, not a column. The chooser's ★ opens a picker of your lists rather than
+toggling one flag — that is the only list UI so far, and it can only
+**create**. Rename, delete and bulk editing are #70's management page;
+choosing the active lists is #67. **#27 is the first consumer that makes the
+active selection mean anything**, so it and #67 may want to land together.
 
 Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation

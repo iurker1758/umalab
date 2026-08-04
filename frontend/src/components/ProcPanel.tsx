@@ -5,7 +5,7 @@ import type {
   SlotFactor,
   SlotFactorKind,
 } from "../api";
-import type { WatchedStore } from "../sparks";
+import type { SparkListStore } from "../sparks";
 import { APTITUDE_LABELS } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -205,7 +205,7 @@ export function NodeProcs({
   index,
   sparkNames,
   factorRefs,
-  watched,
+  sparkLists,
   cardOwner,
   locked,
   sort,
@@ -218,10 +218,10 @@ export function NodeProcs({
   index: number;
   sparkNames: Map<string, string>;
   factorRefs: FactorRef[];
-  // The sparks this user has favorited (#33), as one store. Read by the
-  // chooser only — nothing on the table below reads it yet; #27's watched
-  // block is what brings it into the table, off this same prop.
-  watched: WatchedStore;
+  // This user's named spark lists (#37), as one store. Read by the chooser
+  // only — nothing on the table below reads them yet; #27's watched block is
+  // what brings them into the table, off this same prop.
+  sparkLists: SparkListStore;
   // Names the uma a green spark belongs to — its factor key IS a card_id.
   cardOwner: (cardId: number) => string | null;
   // Inside a pulled branch: these sparks are the horse's own, read off her
@@ -298,7 +298,7 @@ export function NodeProcs({
           label={NAMED_SHORT[index]}
           factors={factors}
           refs={factorRefs}
-          watched={watched}
+          sparkLists={sparkLists}
           // Which greens this node can hold at all. A green's key is a
           // card_id, so a cast node has exactly one and offering the other
           // 136 offers sparks she can never carry.

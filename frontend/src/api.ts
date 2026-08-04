@@ -236,38 +236,37 @@ export interface Blueprint extends BlueprintIn {
   updated_at: string;
 }
 
-// ---------- watched sparks ----------
+// ---------- spark lists ----------
 
-// The mutable half of a watched spark — (kind, key) is the identity and
-// travels in the path, so it never appears in a request body.
-export interface WatchedSparkEdit {
-  // "keep this handy to type" (false) vs "I want this outcome" (true).
-  hunting: boolean;
-  // The user's own build names ("Front Runner", "Medium"). Empty means
-  // ungrouped, which is every row until something writes a group.
-  groups: string[];
-}
-
-// What a write SENDS, which is not the same shape as what a row HOLDS: only
-// the fields it means to change. An omitted one is left as it is, and on a
-// row being created takes the server's column default (#64). `{}` is a
-// complete request — "make sure this spark is watched" — which is what lets
-// the client add one without first finding out whether it already exists.
+// One membership entry. The identity every spark surface uses, and never a
+// name — names are localized strings resolved at render time.
 //
-// `groups: []` clears them; omitting `groups` does not. That distinction is
-// the whole point of the shape, so it is a Partial rather than a type with
-// nullable fields — `undefined` is unsendable in JSON, which is exactly the
-// "absent" the route wants.
-export type WatchedSparkPatch = Partial<WatchedSparkEdit>;
-
-export interface WatchedSpark extends WatchedSparkEdit {
-  // The row id, and therefore its place in the list — the server orders by
-  // it. Carried so a client whose copy predates a row can place the row a
-  // PUT hands back instead of appending it.
-  id: number;
+// No `stars`: a list records WHICH sparks you want, not what level you last
+// typed. The level belongs to the slot document (DECISIONS.md #37).
+export interface SparkRef {
   kind: SlotFactorKind;
   key: number;
 }
+
+export interface SparkList {
+  id: number;
+  // The user's own build name ("Front Runner", "Medium"), unique per user.
+  name: string;
+  // Their curated order. The server sorts on it and breaks ties on `id`.
+  position: number;
+  // Membership, in the order it was added. Deduped server-side.
+  sparks: SparkRef[];
+}
+
+// What a write SENDS, which is not what a list HOLDS: only the fields it
+// means to change. An omitted one is left as it is, so the picker can send
+// `sparks` without knowing or guessing the list's current name.
+//
+// `sparks: []` empties the list; omitting `sparks` does not. That
+// distinction is the whole point of the shape, so it is a Partial rather
+// than a type with nullable fields — `undefined` is unsendable in JSON,
+// which is exactly the "absent" the route wants.
+export type SparkListPatch = Partial<Omit<SparkList, "id">>;
 
 // Carries the status so a caller can tell "this row is gone" (404) from
 // "the backend is down" — the designer's autosave recovers from the first
@@ -362,20 +361,26 @@ export const api = {
       // Already gone is the outcome the caller wanted.
       if (!r.ok && r.status !== 404) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
     }),
-  watchedSparks: () =>
-    fetch("/api/watched-sparks").then((r) => json<WatchedSpark[]>(r)),
-  // Upsert: adds the spark, or changes whichever fields the body carries on
-  // the row already there. An existing row keeps its position in the list,
-  // and returns whatever it holds — so this is also how a caller finds out
-  // what a row it had never seen actually contains.
-  watchSpark: (kind: SlotFactorKind, key: number, body: WatchedSparkPatch) =>
-    fetch(`/api/watched-sparks/${kind}/${key}`, {
-      method: "PUT",
+  sparkLists: () => fetch("/api/spark-lists").then((r) => json<SparkList[]>(r)),
+  // 409 if the name is taken — surfaced rather than swallowed, because the
+  // picker's `New List` has a field the user can correct.
+  createSparkList: (name: string) =>
+    fetch("/api/spark-lists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then((r) => json<SparkList>(r)),
+  // Rename, reorder, or set membership — whichever the body carries. Returns
+  // the list the server ended up with, which is what the caller stores.
+  updateSparkList: (id: number, body: SparkListPatch) =>
+    fetch(`/api/spark-lists/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).then((r) => json<WatchedSpark>(r)),
-  unwatchSpark: (kind: SlotFactorKind, key: number) =>
-    fetch(`/api/watched-sparks/${kind}/${key}`, { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
+    }).then((r) => json<SparkList>(r)),
+  deleteSparkList: (id: number) =>
+    fetch(`/api/spark-lists/${id}`, { method: "DELETE" }).then((r) => {
+      // Already gone is the outcome the caller wanted.
+      if (!r.ok && r.status !== 404) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
     }),
 };

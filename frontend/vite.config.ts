@@ -23,6 +23,14 @@ export default defineConfig({
     })
   ],
   server: {
-    proxy: { "/api": "http://localhost:8000" }
+    // IPv4 explicitly, at BOTH ends, because `localhost` is ambiguous on
+    // Windows and the two servers resolved it differently: vite bound `::1`
+    // while uvicorn bound `127.0.0.1`. Firefox then spent ~2s per new
+    // connection trying IPv4 before falling back to IPv6, and vite's proxy
+    // paid ~33ms on its first connection failing over the other way.
+    // Chromium's fail-over is fast enough to hide both, which is why this
+    // only showed up in one browser.
+    host: "127.0.0.1",
+    proxy: { "/api": "http://127.0.0.1:8000" }
   }
 });

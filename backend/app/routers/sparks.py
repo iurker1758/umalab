@@ -1,152 +1,208 @@
-"""Watched-spark routes: the one list of sparks a user cares about
-(DECISIONS.md #33, issue #39).
+"""Spark-list routes: the user's named lists of sparks they want
+(DECISIONS.md #37, issue #39).
 
 Its own router rather than a section of designer.py for the same reason the
-frontend gives it its own module: three features read it — the spark chooser
-(#28), the proc tables' watched block (#27) and hunted-skill scoring — and
-only one of them is the designer's blueprint CRUD.
+frontend gives it its own module: three features read these — the spark
+chooser's Favorites section (#28), the proc tables' watched block (#27) and
+hunted-skill scoring — and only one of them is the designer's blueprint CRUD.
 
-Three routes. (kind, key) is the identity and travels in the path; the body
-carries whichever of the two mutable fields the caller means to change, and
-an omitted one is left as it is (issue #64, reversing this entry's original
-"no partial updates" — DECISIONS.md #33's amendment holds why). It stays a
-PUT rather than becoming a PATCH: this is still an upsert on an identity the
-caller names, which is what PUT is for.
+Four routes, and an ordinary REST shape rather than #33's upsert-by-identity
+PUT: a list's identity is a server-assigned id, so the client cannot name a
+row that does not exist yet. Creating and editing are therefore different
+requests, which is what POST/PATCH is for.
+
+Membership is a field on the list, so adding or removing a spark is a PATCH
+carrying the whole `sparks` array. That makes concurrent edits to one list
+last-write-wins — accepted rather than solved, and #37 says why and what
+closing it would cost.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import current_user
 from ..database import get_session
-from ..models import User, WatchedSpark
-from ..schemas import SlotFactorKind, WatchedSparkIn, WatchedSparkOut
+from ..models import SparkList, User
+from ..schemas import (
+    MAX_LISTS_PER_OWNER,
+    SparkListCreate,
+    SparkListOut,
+    SparkListPatch,
+)
 
 router = APIRouter(prefix="/api")
 
+# Both are 409s and the client shows whichever it is given, so they have to
+# say different things — "the name may already be in use" in front of a user
+# who has hit the list cap sends them to rename a list four times over.
+# "ignoring case" because the index folds it: two visibly different names can
+# collide, and a message that doesn't say so reads as a bug.
+_DUPLICATE_NAME = "you already have a list with that name, ignoring case"
+_AT_CAP = f"you already have {MAX_LISTS_PER_OWNER} lists — delete one first"
+# The unique expression index, by the name the migration gives it. Postgres
+# reports it in the violation, which is the only thing distinguishing "that
+# name is taken" from every other integrity failure.
+_NAME_INDEX = "uq_spark_list_owner_lower_name"
 
-def _apply(row: WatchedSpark, body: WatchedSparkIn) -> None:
-    """Set only what the body carried — absent (or null) leaves the field.
 
-    On a row being created, "left alone" means the column default takes it,
-    which is where "new sparks are hunted" is stated. Applied in both arms of
-    the insert race below, so the loser of that race lands on the same rules
-    as the winner.
+def _duplicate_name(exc: IntegrityError) -> bool:
+    """Whether this violation is the name index, rather than some other
+    constraint wearing its error message.
+
+    Every IntegrityError used to become "you already have a list with that
+    name", which sends the user renaming over a foreign-key or not-null
+    failure that renaming cannot fix.
     """
-    if body.hunting is not None:
-        row.hunting = body.hunting
-    if body.groups is not None:
-        row.groups = body.groups
+    return _NAME_INDEX in str(getattr(exc, "orig", exc))
 
 
-async def _row(
-    session: AsyncSession, user: User, kind: SlotFactorKind, key: int
-) -> WatchedSpark | None:
+async def _owned(session: AsyncSession, user: User, list_id: int) -> SparkList | None:
+    """The caller's list, or None. Never another owner's — a wrong id and
+    someone else's id give the same answer, so these routes cannot be used
+    to probe for rows that exist."""
     return await session.scalar(
-        select(WatchedSpark).where(
-            WatchedSpark.owner_id == user.id,
-            WatchedSpark.kind == kind,
-            WatchedSpark.key == key,
+        select(SparkList).where(
+            SparkList.id == list_id, SparkList.owner_id == user.id
         )
     )
 
 
-@router.get("/watched-sparks", response_model=list[WatchedSparkOut])
-async def list_watched(
+@router.get("/spark-lists", response_model=list[SparkListOut])
+async def list_spark_lists(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Insertion order, oldest first — the order the chooser lists them in.
+    """Every list this user has, in the order they curate.
 
-    Never filtered against the factor reference: a watched spark missing from
-    `app/data` is still a legitimate thing to want, and dropping it here would
-    be the reconcile pass #39 rules out.
+    Ties break on `id` so the order is total — two lists created without an
+    explicit position both sit at the default until something reorders them,
+    and a list must not jump around between reads.
+
+    Never filtered against the factor reference: a spark missing from
+    `app/data` is still a legitimate thing to want, and dropping it here
+    would be the reconcile pass #37 rules out.
     """
     return (
         await session.scalars(
-            select(WatchedSpark)
-            .where(WatchedSpark.owner_id == user.id)
-            .order_by(WatchedSpark.id)
+            select(SparkList)
+            .where(SparkList.owner_id == user.id)
+            .order_by(SparkList.position, SparkList.id)
         )
     ).all()
 
 
-@router.put("/watched-sparks/{kind}/{key}", response_model=WatchedSparkOut)
-async def watch(
-    kind: SlotFactorKind,
-    key: int,
-    body: WatchedSparkIn,
+@router.post("/spark-lists", response_model=SparkListOut, status_code=201)
+async def create_spark_list(
+    body: SparkListCreate,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Add the spark, or change whichever fields the body carries on the one
-    already there. Upsert rather than POST-then-PATCH: the client's three
-    operations (add, set hunting, set groups) are all "this is the row I
-    want", and an add that 409s on an existing row would just make every
-    caller do a lookup first.
+    """Create an empty list, appended to the end of the user's order.
 
-    An empty body is therefore a complete request: "make sure this spark is
-    watched, and leave it as it is if it already was". That is exactly what
-    the client's `toggle` means, and it can now say it without first finding
-    out whether the row exists.
-
-    An existing row keeps its `id`, so re-hunting a spark does not move it to
-    the end of the list. A row being created takes its defaults from the
-    columns, so "new sparks are hunted" is stated once (models.WatchedSpark)
-    rather than guessed by whoever is adding.
-
-    NOT serializable against a concurrent write to the same field: `_row` is
-    a plain SELECT, so two group edits landing together are last-write-wins.
-    What the partial body removes is a client *guessing* a field it isn't
-    changing (#62); `setGroups` still computes the whole set from a list it
-    read earlier, which is issue #66.
+    Empty is the normal case and the reason this table exists: the picker's
+    `New List` is reached while starring a spark, so the list is created and
+    then filled by the PATCH that follows. #33's derived group vocabulary
+    could not express this state at all.
     """
-    created = False
-    row = await _row(session, user, kind, key)
-    if row is None:
-        row = WatchedSpark(owner_id=user.id, kind=kind, key=key)
-        session.add(row)
-        created = True
-    _apply(row, body)
+    # Serializes concurrent creates FOR THIS OWNER, and nothing else. The
+    # count below is a check-then-act: without this, two requests can both
+    # read 49, both pass the test, and both insert, leaving 51 rows on a cap
+    # that is supposed to bound the table.
+    #
+    # An advisory lock rather than SERIALIZABLE (which needs retry logic on
+    # every caller), a `FOR UPDATE` on `users` (which makes an unrelated table
+    # the gate), or a slot column with a CHECK (which is declarative but
+    # leaves holes on delete and makes every create hunt for a free index).
+    # Transaction-scoped, so it goes at commit or rollback with no unlock to
+    # forget. Creates are rare and this is keyed on the owner, so the only
+    # thing that ever waits is one user creating two lists at once.
+    await session.execute(select(func.pg_advisory_xact_lock(user.id)))
+    # Owner-scoped, which `test_the_cap_is_per_owner` pins.
+    count = await session.scalar(
+        select(func.count())
+        .select_from(SparkList)
+        .where(SparkList.owner_id == user.id)
+    )
+    if (count or 0) >= MAX_LISTS_PER_OWNER:
+        raise HTTPException(409, _AT_CAP)
+    # Append: one past the current maximum, so a new list never lands in the
+    # middle of an order the user arranged. `None` on the very first list.
+    last = await session.scalar(
+        select(func.max(SparkList.position)).where(SparkList.owner_id == user.id)
+    )
+    row = SparkList(
+        owner_id=user.id, name=body.name, position=0 if last is None else last + 1
+    )
+    session.add(row)
     try:
         await session.commit()
-    except IntegrityError:
-        # Read-then-insert: two requests for the same (kind, key) — a
-        # double-clicked control, or a chooser click and a hunting toggle in
-        # the same tick — can both find nothing and both insert, and the
-        # loser hits uq_watched_spark_owner_kind_key. The row it wanted now
-        # exists, so apply to that one rather than 500ing.
-        # `auth.user_for_email` handles the same race the same way.
+    except IntegrityError as exc:
+        # The name index. Two tabs creating "Front Runner" at once, or — far
+        # likelier — the user forgetting they already have one. Anything
+        # else is a real fault, re-raised rather than dressed up as a name
+        # the user can change.
         await session.rollback()
-        existing = await _row(session, user, kind, key)
-        if existing is None:
+        if not _duplicate_name(exc):
             raise
-        _apply(existing, body)
-        await session.commit()
-        row = existing
-        created = False
-    if created:
-        # Only a created row has anything unloaded — the column defaults this
-        # route now leans on are Postgres's to supply. `SessionLocal` sets
-        # `expire_on_commit=False`, so refreshing an existing row would be a
-        # third round trip on every star click that returns what we hold.
-        await session.refresh(row)
+        raise HTTPException(409, _DUPLICATE_NAME) from None
+    await session.refresh(row)
     return row
 
 
-@router.delete("/watched-sparks/{kind}/{key}", status_code=204)
-async def unwatch(
-    kind: SlotFactorKind,
-    key: int,
+@router.patch("/spark-lists/{list_id}", response_model=SparkListOut)
+async def update_spark_list(
+    list_id: int,
+    body: SparkListPatch,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """Rename it, reorder it, or set its membership — whichever the body
+    carries. An omitted field is left alone, so the picker sends `sparks`
+    without having to know or guess the list's current name.
+
+    404 rather than DELETE's silent success when the list is gone: "make
+    this list hold these sparks" is not satisfied by the list not existing,
+    and a client told it succeeded would show membership nothing stored.
+    """
+    row = await _owned(session, user, list_id)
+    if row is None:
+        raise HTTPException(404, "no such list")
+    if body.name is not None:
+        row.name = body.name
+    if body.position is not None:
+        row.position = body.position
+    if body.sparks is not None:
+        # JSONB wants plain data. Dumped from the validated models, so what
+        # lands in the column is exactly what SparkRef allows.
+        row.sparks = [spark.model_dump() for spark in body.sparks]
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        if not _duplicate_name(exc):
+            raise
+        raise HTTPException(409, _DUPLICATE_NAME) from None
+    return row
+
+
+@router.delete("/spark-lists/{list_id}", status_code=204)
+async def delete_spark_list(
+    list_id: int,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
     """Already gone is the outcome the caller wanted, so this never 404s —
-    the same rule the blueprint delete follows on the client side."""
-    row = await _row(session, user, kind, key)
+    the same rule the blueprint delete follows on the client side.
+
+    Deleting a list deletes its membership, because the membership is a
+    column on it. That is the whole argument for this shape over the two
+    that keep membership on the spark (DECISIONS.md #37): nothing is left
+    behind to sweep.
+    """
+    row = await _owned(session, user, list_id)
     if row is not None:
         await session.delete(row)
         await session.commit()

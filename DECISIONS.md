@@ -2983,3 +2983,287 @@ third full-catalog index for a label the existing two already compose.
   lookup table. Or the uncast list proving to be how people actually
   pick greens, which would argue for sorting it by uma rather than by
   spark name.
+
+## 37. Spark lists replace watched sparks: one table, and #33's premise
+
+Entry #33 shipped a watched-spark list whose primary axis was a `hunting`
+bit, with user-named `groups` as a filter over it. The axis is the other
+way round. Asked whether the bit was needed, Jason: *"My original idea
+is that users can create multiple lists of skills that they want because
+sometimes they might want to search for Front Runner skills, or Medium
+skills, both, or other skills. What they're hunting at a particular time
+is not always the same."*
+
+This supersedes #33 rather than amending it a third time. The mechanics
+in that entry were repeatedly right about their own routes; what changed
+is the thing underneath them, so its amendments stand as a record of a
+shape that was being refined in the wrong direction.
+
+- **Requirements:** the three consumers are unchanged — the chooser's
+  Favorites section (#28, the only one shipped), #27's watched block, and
+  hunted-skill scoring. What changed is the reading of *which sparks does
+  this user care about*. It is not one set with a bit on each row. It is
+  **several named sets, of which some subset is interesting right now**,
+  and that subset changes week to week and is frequently more than one:
+  Front Runner this week, Medium next, sometimes both at once.
+
+  A `hunting` column cannot express that. It stores **per spark** the
+  thing that actually varies **per session** — so switching from a Front
+  Runner week to a Medium week would mean flipping the bit across dozens
+  of rows and flipping them all back later. The bit had zero readers when
+  this was found, which is the only reason the correction was free.
+
+  Lists therefore have to be first-class objects: created before they
+  contain anything, renamed, deleted. #33's derived vocabulary — *"a
+  group exists exactly as long as a spark is in it and there is no
+  registry to keep in sync"* — is exactly wrong for an object the user
+  manages by hand. It cannot represent an empty list, silently destroys
+  one when its last spark leaves, and forks `Front Runner` from `Front
+  runner` with no way to notice.
+
+- **Choice: one table, `spark_lists`, holding `(name, position, sparks)`
+  per owner.** `sparks` is a JSONB array of `{kind, key}` — the same
+  identity every other spark surface uses, never a name (#30). `name` is
+  unique per owner. `watched_sparks` is dropped entirely, and `hunting`
+  with it.
+
+  **Favorites is the union of the lists, deduped.** There is no
+  watched-but-ungrouped state, which is the one thing the old shape had
+  that this does not. It was there to hold filler — the white you type on
+  every grandparent, worth having handy and worth nothing to highlight.
+  That case is served by *making a list for it*, which the user was going
+  to do anyway under the new axis, and paying for it with a whole second
+  table plus the integrity between them was not worth the one click it
+  saves at the moment you star something.
+
+  **Membership lives on the list, not on the spark.** The alternatives
+  are laid out below; what decides it is that a list is now the object
+  with a lifecycle, so deleting one should be deleting a row and nothing
+  else. Both shapes that put membership on the spark leave dangling ids
+  behind on a delete, to be swept or filtered forever.
+
+  **Order within a list is the array's order**, free, and #33's ruling
+  that the list records *which* sparks and not *what level* survives
+  untouched — the ★ level belongs to the slot document, where it means
+  something.
+
+  **The active selection is device-local and multi-select** —
+  `localStorage`, beside the four view-state stores of #32. Jason:
+  *"Active selection should be device only for now."* It is a view, not
+  a fact about the user's roster, and the phone being on a different
+  build from the desktop is a feature rather than drift. **Nothing
+  selected shows everything**, because every user starts with no lists
+  and an empty Favorites section on first use reads as broken — the same
+  argument #33 used to default `hunting` to true, which is the one piece
+  of that entry's reasoning that outlived its mechanism.
+
+  **The star opens a multi-select picker** listing every list with the
+  spark's current membership checked. Jason's call, over "add to the
+  active list", on the grounds that *"there could be multiple active
+  lists"* — with several active the phrase has no unambiguous referent,
+  so the shortcut would apply only in the rare single-active case and be
+  inconsistent the rest of the time. Because the picker shows current
+  membership it is also the **membership editor**: adding, moving and
+  removing are one control, and the star reads as "in at least one list".
+  It is where `New List` lives, which gives the zero-list first run a
+  path that needs no separate settings surface — and it is the only list
+  UI: creation only, with rename and delete going to #70's page.
+
+  `New List` is **two round trips**, a `POST` then a `PATCH`, because
+  creating and filling are two routes. Worth it over a "create with
+  members" body: the create is rare, and one shape for membership means
+  the picker's pill and its new-list field cannot drift. Measured at 45ms
+  end to end locally, 26ms of it network — invisible. Over the tunnel to a
+  Pi it doubles a round trip that is no longer free, which is **#69**,
+  filed to be revisited *after* deploying rather than argued from local
+  numbers that cannot settle it. The same issue holds the case for
+  optimistic writes, which this deliberately does not do: a pill lights
+  once the row says so.
+
+  **The migration drops `watched_sparks` without carrying its rows.**
+  Jason's call: the app is unreleased, everything in it is test data he can
+  recreate, and there is no deployment to protect. He said so early and it
+  was argued past on the grounds that a backfill was already written —
+  which was true and beside the point, since the table turned out to be
+  empty anyway.
+
+  What the backfill cost, before it was deleted: a chunking pass to keep
+  each migrated list under the spark cap, a bug in that pass which landed
+  the first chunk exactly AT the cap so it could never accept another
+  spark, and an oversized-key cast that could abort the downgrade partway.
+  Three defects in service of data nobody wanted. If this ever ships and a
+  later migration has to move real rows, write the backfill then, against
+  a cap that cannot bind.
+
+  **Last-write-wins is accepted, on the list row.** A membership change
+  rewrites the whole array, so two devices editing the same list within
+  the same moment lose one edit — #66's failure mode, relocated from the
+  spark to the list and onto a row that is touched more often. Stated
+  plainly because #33 twice claimed a race was closed when it was
+  narrowed: this one is neither. It is *tolerated*, because the app has
+  one user on two devices and the damage is a spark you re-add. Closing
+  it needs add/remove routes over a membership table, which is the shape
+  rejected below and the shape to reach for if this ever bites.
+
+- **Alternatives rejected:** *keeping `hunting` and deciding its default
+  at #27* — the position this entry started from, and wrong: the bit's
+  default was never the problem, its subject was. *A registry table plus
+  `groups: int[]` on the spark row* — fixes empty lists, rename and
+  typos, but deleting a list leaves dangling ids in every spark that held
+  it, and membership is still a whole-array replace, so it buys a table
+  and closes nothing. *A registry plus a membership join table* — the
+  only shape that closes the race and keeps integrity in both directions,
+  and the one to adopt if concurrency ever stops being hypothetical;
+  rejected now as two tables and a route group bought for a failure mode
+  a single user does not have. *Keeping `watched_sparks` beside the
+  lists* — see the union above. *The star adding to the active list, or
+  doing so only when exactly one is active* — Jason's reasoning, recorded
+  above. *A server-side active selection* — it is view state; #32's line
+  holds.
+
+- **Corrected by the review, 2026-08-04 (all-Opus, xhigh, 15 findings).**
+  Four of them were this entry describing something the code did not do.
+
+  **"Created before they contain anything, renamed, deleted" is one third
+  shipped.** Creation exists, in the picker. `renameList` and `deleteList`
+  are written, tested and wired to nothing. That is not a slip in the
+  reasoning — a list *is* the object with a lifecycle, and the argument
+  above stands — but the sentence described an app that does not exist. The
+  surface for the other two is **#70**, a management page: viewing your
+  lists, renaming, deleting, and bulk-adding sparks, which the per-spark
+  picker is the wrong shape for. Jason: *"Rename/delete UI should be on a
+  page where the user can view the lists of skills they have made and add
+  skills in bulk there."* Until it lands, a mistyped name is permanent.
+
+  **The active selection has no reader either.** `activeSparks`,
+  `toggleActive` and the `localStorage` store are built and unit-tested;
+  nothing renders a control, so the selection is always empty and every
+  consumer sees every list. Filed as **#67**. It is not dead code — #27 is
+  the first thing that makes an active selection *mean* anything, and this
+  entry's rules had to be decided before #27 could be designed against
+  them — but "is device-local and multi-select" above describes the model,
+  not the app.
+
+  **Names are folded now, which is what this entry already claimed.** The
+  argument for first-class lists cites #33 forking `Front Runner` from
+  `Front runner` "with no way to notice" — and the first cut shipped a
+  byte-exact `UniqueConstraint`, so it forked them just the same, while
+  `ListPicker`'s own comment conceded "two lists whose names differ only in
+  case". It is a unique expression index on `(owner_id, lower(name))`,
+  stored as typed and compared folded. Jason had no preference and asked
+  which was better for the user; the deciding argument is that this is a
+  phone-first PWA and mobile keyboards autocapitalise, so the duplicate
+  arrives by itself rather than as a mistake anyone notices — and with no
+  rename UI it is currently unfixable in the app.
+
+  **Membership is unbounded, and the spark cap is gone.** It was 200,
+  described in its own comment as "far above real use". It was not: there
+  are 256 whites alone, so one "whites I care about" list could pass it,
+  and the old `watched_sparks` had no cap at all so nothing bounded what a
+  user already had. Jason: *"the number of skills in the future can grow.
+  Does it really matter if we put a cap if our cap is higher than what
+  could possibly go in it?"* — and the answer is that it does not, because
+  the chooser adds from the factor reference, so the reachable maximum IS
+  the reference size, and that grows with the game. Any constant either
+  binds too early or ages into binding too early; raising 200 to 500 would
+  only have postponed the same bug.
+
+  What bounds it instead: `_dedupe` collapses to distinct `(kind, key)`
+  pairs, so what is stored cannot exceed the distinct pairs the caller sent.
+  An earlier draft of this paragraph went on to say body size bounds that in
+  turn — **it does not**; nothing configures a request-body limit, and a
+  review caught the claim. Membership is genuinely unbounded, which is
+  accepted rather than overlooked: a real bound belongs at the transport,
+  applying to every route, not as a constant here that ages against a
+  reference the game keeps growing. `MAX_LISTS_PER_OWNER` stays — 50
+  named builds has no reference deciding a ceiling, so it bounds rows
+  rather than sitting in the path of legitimate use.
+
+  This was the root of a whole cluster: the chunking, the chunk landing at
+  the cap, and a 422 that the client reported as "try again" forever.
+  Removing the cap deleted all three rather than patching each.
+
+  **Two smaller things the entry implied and the code did not do.** The
+  create's failure path discarded a list the server had *committed*, so the
+  row existed, appeared nowhere, and 409'd forever on retry — the recovery
+  this entry describes ("the caller reports it and the next click finishes
+  the job") needed the created list to be handed back, which is what
+  `PartialWrite` now does. And the ★ lost `aria-pressed` when it became a
+  disclosure, leaving membership legible only as a CSS class; the label
+  carries it again.
+
+  **The list cap takes an advisory lock** (`pg_advisory_xact_lock` on the
+  owner) rather than staying a bare check-then-act. The race was reachable
+  only by one owner creating two lists in the same instant at exactly the
+  cap, and the damage was 51 rows instead of 50 — but "the cap is not
+  really a cap" is a half-truth that costs someone an afternoon, and the
+  lock is one statement with no retry logic. Its test asserts the outcome
+  and is **not** the guard: measured, it still passes with the lock
+  removed, because the test client drives concurrent requests through one
+  connection.
+
+- **A second review, and what it says about fixing under pressure.** The
+  branch was reviewed again before merging, and **five of its six worst
+  findings were defects in the previous round's fixes** — not things the
+  first review had missed. Chunking the backfill at exactly the cap. A
+  `detailOr` scoped to 409 so every 422 still said "try again". A 404
+  reload defeated by the write-count guard next to it, and bumping the
+  `epoch` that keys the popout so it remounted mid-interaction and threw
+  away the user's search. A draft-retention fix that contradicted the
+  partial-write fix, so the obvious retry 409'd. A guard that let the next
+  statement crash anyway.
+
+  Each was a shallow read of the symptom reported rather than of what the
+  fix touched. Recorded here because the pattern is the lesson: a round of
+  fixes is new, unreviewed code written faster than the code it corrects,
+  and it deserves the same suspicion. The e2e restructure in that round
+  also turned out to destabilise the suite — measured, two aborts in two
+  runs against zero in two on the committed baseline — and was replaced by
+  a three-line guard that ran clean three times.
+
+- **A third review, and the decision to stop patching.** The second round of
+  fixes was reviewed too, and **at least eight of its fifteen findings were
+  defects in that round's own fixes** — worse than the round before. The
+  clearest was a lenient response model written to stop one unparseable
+  entry failing the whole list read: because membership is a whole-array
+  PATCH, an entry it dropped on the way out was **deleted from the database
+  by the client's next write**. A loud, lossless failure had been turned
+  into a silent, destructive one. In the same round, a focus-restore effect
+  never worked (it captured `document.body`, the state it was written to
+  repair), two fixes contradicted each other again, and this entry asserted
+  a request-body bound that nothing configures.
+
+  Every recurring defect sat in the same place: **speculative recovery for
+  multi-device conflicts that cannot happen to one user on an unreleased
+  app.** `PartialWrite`'s interaction with a corrective reload, the reload's
+  remount flag and fetch-generation guard, the lenient read, the focus
+  restore. Each needed its own correctness argument, and each argument was
+  wrong in a way only the next review found.
+
+  **So the machinery was deleted rather than fixed again.** The corrective
+  reload, its flag and its guard are gone; `onReload` does one thing. The
+  lenient read is gone and the strict one is documented as the deliberate
+  choice, because loud beats silent when data is at stake. The focus restore
+  is gone. What survived is what is simple and checkable: the folded name
+  index, the removed cap, the two distinguishable 409s, the IME guard, the
+  advisory lock, a three-line e2e guard. Everything removed is filed —
+  #73, #74, #75, #76 — so none of it reads as an oversight.
+
+  One more attempted fix in the same round is worth recording because it
+  proves the rule: blocking Escape while a write was in flight, to make
+  `busy` a genuine one-write-at-a-time guard. It silently swallowed the
+  keypress, and the e2e caught it hanging within one run. Reverted. The
+  correct fix for that whole class is not a guard at all — it is membership
+  as its own rows (#66), where a stale copy cannot delete anything.
+
+- **What would change my mind:** genuine concurrent use — a second person
+  on the account, or one person editing the same list on two devices
+  often enough to notice a lost spark — which turns the join table from
+  over-engineering into the right answer. A favourite that belongs in no
+  build proving to be a real want after all, which brings back a
+  standalone watched set and with it the second table. The active
+  selection needing to follow between devices, which makes it a user
+  setting rather than a view. Or lists growing attributes of their own
+  beyond a name and an order — a colour, a note, a default — which is
+  fine on this shape, and only argues for normalising the membership if
+  the *membership* is what grows attributes.

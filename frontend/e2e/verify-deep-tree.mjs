@@ -507,29 +507,38 @@ const newBlueprint = async () => {
   // `settled` doubles as the hydration gate: straight after a reload the bar
   // renders before the open blueprint has arrived, so `before` would read
   // as "" and the menu could re-render under the click.
-  await settled();
-  const before = await pickerLabel();
-  await switchTo("+ New Blueprint");
+  const ready = await settled().then(() => true, () => false);
+  const before = ready ? await pickerLabel() : "";
+  if (ready) await switchTo("+ New Blueprint");
   // The new row's identity, not "the name changed" — a late hydration also
   // changes the name without the create having landed (issue #71). The
   // blank tree renders in the same commit as the untitled name, so the
-  // 31-count belongs to the same condition. A miss is a named failure, not
-  // an uncaught TimeoutError that aborts the run.
-  const opened = await page
-    .waitForFunction(
-      (n) => {
-        const v = document.querySelector(".bp-field .designer-name")?.value ?? "";
-        return (
-          v !== n &&
-          v.startsWith("Untitled Blueprint") &&
-          document.querySelectorAll(".vped .vnode.pick").length === 31
-        );
-      },
-      before,
-      { timeout: 5000 }
-    )
-    .then(() => true, () => false);
-  if (!opened) check("+ New Blueprint landed on a fresh blank row", false, await pickerLabel());
+  // 31-count belongs to the same condition.
+  const opened =
+    ready &&
+    (await page
+      .waitForFunction(
+        (n) => {
+          const v = document.querySelector(".bp-field .designer-name")?.value ?? "";
+          return (
+            v !== n &&
+            v.startsWith("Untitled Blueprint") &&
+            document.querySelectorAll(".vped .vnode.pick").length === 31
+          );
+        },
+        before,
+        { timeout: 5000 }
+      )
+      .then(() => true, () => false));
+  check("+ New Blueprint landed on a fresh blank row", opened,
+    ready ? await pickerLabel() : "designer never settled");
+  // A miss stops the run rather than carrying on: whatever is open now may
+  // be a baseline row this run doesn't own, and every caller's next step is
+  // to rename and edit it. The check above names the failure in the summary
+  // and the results file first.
+  if (!opened) {
+    throw new Error("+ New Blueprint didn't land — stopping before touching a row this run doesn't own");
+  }
   await claimNew();
 };
 const barButton = (action) => page.locator(`.designer-save button[aria-label^="${action}"]`);
@@ -1743,7 +1752,6 @@ try {
   // It has to survive the API, not just the client.
   await settled();
   await page.reload();
-  await page.waitForSelector(".designer-autosave", { timeout: 5000 });
   await newBlueprint();
   await switchTo(`${bpName} sparks-first`);
   const sparkRoundTripped = await page
@@ -2353,7 +2361,6 @@ try {
   // Deleting inside the debounce window must not resurrect the blueprint:
   // the queued body would 404 and the re-create recovery would bring back
   // exactly what the user just threw away.
-  await settled();
   await newBlueprint();
   await rename(`${bpName} doomed`);
   const idDoomed = (await rows()).find((b) => b.name === `${bpName} doomed`).id;

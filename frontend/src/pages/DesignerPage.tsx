@@ -284,6 +284,9 @@ export function DesignerPage({
           if (bp.id !== id) {
             setDesign((d) => ({ ...d, id: bp.id }));
             writeOpenId(bp.id);
+            // Ahead of the mirroring effect, as in adopt: the created row
+            // must be visible to the mount effect's fallback guard at once.
+            openRow.current = bp.id;
           }
           setSavedJson(JSON.stringify(body));
         }
@@ -352,16 +355,15 @@ export function DesignerPage({
   // unreachable, so anything still queued for it has to be on the wire.
   const adopt = useCallback(
     (bp: Blueprint) => {
-      // A deliberate open settles the bootstrap. A row created or opened
-      // while the mount fetch is still in flight postdates its snapshot, so
-      // the "open something" fallback below can't find it and would reopen
-      // the previous blueprint right over it (issue #71's e2e flake).
-      bootstrapped.current = true;
       try {
         const d = fromApi(bp);
         setDesign(d);
         setSavedJson(JSON.stringify(bodyOf(d)));
         writeOpenId(bp.id);
+        // Ahead of the mirroring effect, which waits on the commit: the
+        // mount effect's fallback guards on this ref from async
+        // continuations that can run inside that window (issue #71).
+        openRow.current = bp.id;
         setSelected(0);
         // The score belongs to the blueprint you just left. Keyed on the
         // request payload alone it would survive the switch, and the incoming
@@ -461,9 +463,12 @@ export function DesignerPage({
       if (bps.status !== "fulfilled") return;
       // Merged, not replaced: a row created while this fetch was in flight
       // isn't in the snapshot, and replacing would drop it from the picker.
+      // Rows this page already deleted stay deleted — the snapshot can
+      // predate the DELETE, and re-listing one offers a dead row whose
+      // edits the 404 recovery deliberately refuses to resurrect.
       setSaved((prev) => [
         ...prev.filter((b) => bps.value.every((n) => n.id !== b.id)),
-        ...bps.value,
+        ...bps.value.filter((n) => !deleted.current.has(n.id)),
       ]);
 
       // Open something, always: the design the shell already holds, else the
@@ -476,8 +481,12 @@ export function DesignerPage({
       // usable before this fetch lands, and on a slow link people do start
       // designing.
       if (dirtyRef.current) return;
-      const held = design.id === null ? null : bps.value.find((b) => b.id === design.id);
-      if (held !== undefined && held !== null) return;
+      // Nor over any design already open — shell-held, adopted from the
+      // picker, or created by the autosave while the fetch was in flight.
+      // The ref, not the `design` closure: this continuation runs long after
+      // mount, and a mid-flight row postdates the snapshot anyway, so no
+      // lookup below could find it (issue #71).
+      if (openRow.current !== null) return;
       const lastOpen = readOpenId();
       const target =
         bps.value.find((b) => b.id === lastOpen) ??
@@ -489,10 +498,13 @@ export function DesignerPage({
       try {
         const bp = await bootstrapBlueprint();
         // Remembered even if we've unmounted: the row exists, so the next
-        // visit must reopen it rather than create a second blank one.
-        writeOpenId(bp.id);
+        // visit must reopen it rather than create a second blank one. But a
+        // row opened or created while this create was in flight keeps the
+        // session — the blank must not steal lastOpen or the screen from it.
+        if (openRow.current === null) writeOpenId(bp.id);
         if (cancelled) return;
-        setSaved([bp]);
+        setSaved((prev) => (prev.some((b) => b.id === bp.id) ? prev : [bp, ...prev]));
+        if (openRow.current !== null) return;
         adopt(bp);
       } catch {
         // Recoverable: with no row, the first edit creates one.
@@ -502,8 +514,7 @@ export function DesignerPage({
     return () => {
       cancelled = true;
     };
-    // Runs once: `design` is read only to notice a shell-held blueprint, and
-    // re-running on every edit would fight the autosave.
+    // Runs once: re-running on every edit would fight the autosave.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onError]);
 

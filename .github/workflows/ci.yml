@@ -85,7 +85,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      # Before the unit suite because `build` is what typechecks it — the
+      # runner transpiles without checking, so a test whose fixture has
+      # drifted from the API types should be reported as the type error it is.
       - run: npm run build
+      # The pure modules (DECISIONS.md #30). A step on this job rather than a
+      # job of its own: it needs nothing the job doesn't already have, and the
+      # e2e suite below is the one that needs a database.
+      - run: npm run test
 
   e2e:
     runs-on: ubuntu-latest

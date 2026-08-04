@@ -988,8 +988,14 @@ export const DESIGN_STORE = "umalab.designer.open";
 export function readOpenId(): number | null {
   try {
     const raw = localStorage.getItem(DESIGN_STORE);
-    const id = raw === null ? NaN : Number(JSON.parse(raw));
-    return Number.isInteger(id) ? id : null;
+    // Checked as a number BEFORE coercing: Number() turns null, "" and []
+    // into 0, which is an integer and so was returned as a row id no
+    // blueprint can have. Harmless today only because the one caller looks
+    // the id up in a list it already holds and falls back to "most recent"
+    // on a miss — this returns the fallback outright rather than relying on
+    // that.
+    const parsed: unknown = raw === null ? null : JSON.parse(raw);
+    return typeof parsed === "number" && Number.isInteger(parsed) ? parsed : null;
   } catch {
     // blocked storage or a hand-edited value — fall back to "most recent"
     return null;

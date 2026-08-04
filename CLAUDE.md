@@ -78,6 +78,10 @@ Frontend (from `frontend/`):
 
 - `npm run dev` (proxies `/api` to `:8000`) · `npm run build` (typechecks via
   `tsc -b`) · `npm run lint` (ESLint incl. react-hooks rules)
+- Unit tests: `npm run test` (vitest, `environment: node`). **Pure modules
+  only** — co-located `src/*.test.ts`, no jsdom and no component rendering
+  (DECISIONS.md #30's amendment). It never reaches `e2e/`; the two runners
+  stay two commands. `src/testing.ts` holds the fixture builders
 - End-to-end: `npx playwright install chromium` once per clone (`npm ci` does
   not download browsers), then `npm run e2e` (Playwright, `frontend/e2e/`) —
   needs the backend and `npm run dev` already running. Baseline-relative and

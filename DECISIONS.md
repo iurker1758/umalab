@@ -2087,7 +2087,8 @@ its three routes, and a client module — no UI of its own.
   long as a spark is in it and there is no registry to keep in sync.
 
   **New rows default to `hunting: true`, and that default lives in the
-  CLIENT.** Adding is a deliberate two-step pick — the spark, then its
+  CLIENT** — *the default stands, its home does not; see the amendment
+  below.* Adding is a deliberate two-step pick — the spark, then its
   ★ level (#28's chooser) — which reads as "I want this outcome". The
   alternative leaves #27's block empty on first use, which reads as
   broken, and the bit that fills it is one the user has not seen.
@@ -2098,7 +2099,8 @@ its three routes, and a client module — no UI of its own.
   false}` would erase every build label on the row with no error and no
   way to tell it happened. The default belongs to whoever is *adding* a
   spark, which is the client, and living in exactly one place there
-  means flipping it really is one constant.
+  means flipping it really is one constant. **— reversed, see the
+  amendment below.**
 
   **Server-side, not `localStorage`.** It spans devices and it belongs
   to a user, so it is a row. This shipped briefly as a client store
@@ -2109,7 +2111,8 @@ its three routes, and a client module — no UI of its own.
   built twice. The four view-state stores stay local for the reasons
   in #32.
 
-  **Three routes, no partial updates.** `GET` lists; `PUT
+  **Three routes, no partial updates** — *"no partial updates" reversed,
+  see the amendment below; the three routes stand.* `GET` lists; `PUT
   /api/watched-sparks/{kind}/{key}` upserts the row's whole mutable
   half; `DELETE` removes it and never 404s, because already gone is
   the outcome the caller wanted. The client's three operations (add,
@@ -2128,7 +2131,10 @@ its three routes, and a client module — no UI of its own.
   `auth.user_for_email` handles first-sight creation.
 
   **A full-replace PUT means no mutator may guess the fields it isn't
-  changing.** A row can exist server-side and be missing from the
+  changing** — *the premise is reversed and so is the remedy: there is
+  no full replace and no client re-read. See the amendment below. The
+  rule it states survives both, now enforced by the request's shape.* A
+  row can exist server-side and be missing from the
   caller's list (another tab, another device, a list fetched before it
   was added, a fetch that failed and left it empty), and guessing there
   rewrites the user's own choice — `setGroups` assuming `hunting: true`
@@ -2137,7 +2143,10 @@ its three routes, and a client module — no UI of its own.
   default if the spark really is new.
 
   **Corrected 2026-08-03 (issue #62): `toggle` was exempt from that
-  rule, and shouldn't have been.** It decided "not watched" from the
+  rule, and shouldn't have been.** *The bug is real and the diagnosis
+  stands; the remedy — the re-read described in the four paragraphs
+  below — survived one day and is gone. The amendment replaced it.* It
+  decided "not watched" from the
   caller's array alone and then PUT `{hunting: true, groups: []}`, so
   starring a spark from a stale or failed-fetch list destroyed exactly
   the two fields the paragraph above exists to protect. The entry
@@ -2197,6 +2206,61 @@ its three routes, and a client module — no UI of its own.
   second copy of server state with no way to know it had gone stale.
   The rule it buys, within the client: **no mutator may treat absence
   from that list as absence from the server.**
+
+  **Amendment (2026-08-03, issue #64): the PUT became a partial update,
+  and both rulings above went with it.** The correction directly above
+  was a client-side interim, and the review of it named the three costs
+  plainly enough to be worth paying down rather than living with: an
+  extra round trip before every write, favouriting broken whenever the
+  *list* endpoint is degraded even though the write endpoint is
+  healthy, and a residual window between the re-read and the PUT that
+  no amount of client re-reading closes.
+
+  `WatchedSparkIn` now takes both fields as optional, and **an omitted
+  field is left as it is** — absent and `null` alike; `groups: []` is
+  how you clear them, which is a different request from not mentioning
+  them. So `setHunting` sends `{hunting}`, `setGroups` sends
+  `{groups}`, and `toggle` sends `{}`, which reads as "make sure this
+  spark is watched" and is a complete request. `currentOrFresh` is
+  gone, and with it every re-read in the module.
+
+  **Both of this entry's original rulings were right about their own
+  route and wrong to treat the route as fixed.** "No partial updates —
+  a PATCH would buy nothing and would need its own 'absent means
+  unchanged' rules on a two-field object": the rules turned out to be
+  one line each, and what the full replace bought was #62. "No defaults
+  at all, because a default on a full replace is a silent delete": true,
+  and the answer is that a default only ever applies to a row being
+  *created*, where there is nothing to delete. It stays a PUT rather
+  than becoming a PATCH — this is still an upsert on an identity the
+  caller names.
+
+  **"New sparks are hunted" moved to the `hunting` column's default.**
+  It lived in the client because under a full replace only the client
+  knew whether it was adding; with an upsert that applies only what it
+  was sent, the row that does not exist yet is the server's to furnish.
+  `DEFAULT_HUNTING` is deleted rather than mirrored — two answers to a
+  question with one is how they drift.
+
+  What is genuinely better, not just tidier: the rule "never guess a
+  field you aren't changing" is now **enforced by the shape of the
+  request** instead of being remembered by every call site. #62 happened
+  because one of three call sites forgot; hunted-skill scoring would
+  have been the fourth chance. And two of the three mutators no longer
+  read-modify-write at all — `toggle` sends `{}` and `setHunting` sends
+  the boolean the user just chose, neither derived from a prior read.
+
+  **What it does not fix, stated so it is not mistaken for a guarantee
+  a second time.** An earlier draft of this amendment claimed the race
+  was "closed rather than narrowed". It is not: `_row` is a plain
+  SELECT, and `setGroups` still computes the whole group set from a
+  list the client read earlier, so two devices relabelling the same
+  spark within the same moment is still last-write-wins — #62's failure
+  mode at a much smaller window. Closing it needs add/remove group
+  semantics or a version on the row, neither of which is a docstring
+  change. Filed as **#66**. What this entry can honestly claim is the
+  removal of *cross-field* clobber, which was the common case and the
+  one that actually bit.
 
   **No reconcile pass**, unlike `reconcileFilters`, and `key` is not
   validated against the factor reference. A watched spark missing from

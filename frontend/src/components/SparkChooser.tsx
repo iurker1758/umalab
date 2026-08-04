@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { FactorRef, SlotFactor, SlotFactorKind, WatchedSpark } from "../api";
 import { deriveCharaId } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
-// `toggle` is what applies DEFAULT_HUNTING — the default lives in one place
-// in the store (#33), and the chooser must not restate it.
+// `toggle` adds with an empty body, so "a new spark is hunted" is applied by
+// the `hunting` column's default (#64) — one place, and not this one.
 import { isWatched, setHunting, toggle, type WatchedStore } from "../sparks";
 
 // Hand entry for a member's non-pink sparks: a popout that BROWSES the 432

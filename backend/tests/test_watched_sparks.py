@@ -54,20 +54,104 @@ async def test_a_watched_spark_round_trips(client: Any, users: list[User]):
     assert await listing(client, a) == [response.json()]
 
 
-@pytest.mark.parametrize(
-    "body", [{}, {"hunting": False}, {"groups": ["Front Runner"]}]
-)
-async def test_a_partial_body_is_refused(
-    client: Any, users: list[User], body: dict[str, Any]
+# ---------- partial updates (issue #64) ----------
+# These reverse the original "a partial body is refused" rule, which was right
+# for a full-replace route and wrong about which half to fix (DECISIONS.md #33's
+# amendment). What they pin is the distinction the shape rests on: absent and
+# null leave a field, `groups: []` clears it.
+
+
+async def test_an_empty_body_creates_a_hunted_ungrouped_row(
+    client: Any, users: list[User]
 ):
-    """The PUT is a full replace, so a default on either field would be a
-    silent delete — {"hunting": false} would erase every build label on the
-    row with no error. Adding a spark supplies both; the "new sparks are
-    hunted" default lives in the client, which is the thing doing the adding.
-    """
+    """"Make sure this spark is watched" is a complete request. It is what the
+    client's `toggle` means, and it can now say it without first finding out
+    whether the row exists."""
     a, _ = users
     async with client(a) as http:
-        assert (await http.put(f"{WATCHED}/race/40", json=body)).status_code == 422
+        response = await http.put(f"{WATCHED}/race/40", json={})
+    assert response.status_code == 200
+    assert without_id(response.json()) == {
+        "kind": "race",
+        "key": 40,
+        "hunting": True,
+        "groups": [],
+    }
+
+
+async def test_an_empty_body_leaves_an_existing_row_exactly_as_it_was(
+    client: Any, users: list[User]
+):
+    """Issue #62, closed at the route: the request that used to arrive as
+    "replace this with the defaults" now cannot overwrite anything."""
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=False, groups=["Mile", "Front"])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={})
+    assert response.status_code == 200
+    assert without_id(response.json()) == {
+        "kind": "white",
+        "key": 2010,
+        "hunting": False,
+        "groups": ["Mile", "Front"],
+    }
+
+
+async def test_setting_the_bit_leaves_the_groups(client: Any, users: list[User]):
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=True, groups=["Front Runner"])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={"hunting": False})
+    assert response.json()["hunting"] is False
+    assert response.json()["groups"] == ["Front Runner"]
+
+
+async def test_setting_the_groups_leaves_the_bit(client: Any, users: list[User]):
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=False, groups=[])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={"groups": ["Medium"]})
+    assert response.json()["groups"] == ["Medium"]
+    assert response.json()["hunting"] is False
+
+
+@pytest.mark.parametrize("field", ["hunting", "groups"])
+async def test_an_explicit_null_leaves_the_field_alone(
+    client: Any, users: list[User], field: str
+):
+    """Absent and null mean the same thing, so a client serializing an
+    unset field as null gets the same answer as one omitting it."""
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=False, groups=["Mile"])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={field: None})
+    assert response.json()["hunting"] is False
+    assert response.json()["groups"] == ["Mile"]
+
+
+async def test_an_empty_group_list_clears_them(client: Any, users: list[User]):
+    """`[]` is how you clear; omitting the key is not. That distinction is the
+    whole of what the shape rests on."""
+    a, _ = users
+    await put(client, a, "white", 2010, groups=["Mile"])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={"groups": []})
+    assert response.json()["groups"] == []
+
+
+async def test_a_mis_keyed_body_is_refused(client: Any, users: list[User]):
+    """The one thing making both fields optional could have cost: without
+    `extra="forbid"` a typo parses as all-absent, so the route answers 200
+    having written nothing and the user's failed save looks like a saved one.
+    """
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=True, groups=["Mile"])
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={"hunted": False})
+    assert response.status_code == 422
+    assert [without_id(row) for row in await listing(client, a)] == [
+        {"kind": "white", "key": 2010, "hunting": True, "groups": ["Mile"]}
+    ]
 
 
 async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
@@ -233,6 +317,43 @@ async def test_the_upsert_recovers_when_it_loses_the_insert_race(
     assert response.status_code == 200, response.text
     assert lookups >= 2, "the retry never re-read the row"
     # One row, carrying what the losing request asked for.
+    assert [without_id(row) for row in await listing(client, a)] == [
+        {"kind": "white", "key": 2010, "hunting": False, "groups": ["Medium"]}
+    ]
+
+
+async def test_the_upsert_loses_the_insert_race_to_an_empty_body(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
+):
+    """The same forced collision, with the body that will actually lose it.
+
+    A double-clicked ★ fires two `{}` PUTs, so the empty body is the one most
+    likely to reach the retry arm — and the one the arm's partial-apply is
+    for. Assigning the body's fields unconditionally there (what this route
+    did before #64) would put `None` in a NOT NULL column and 500, and the
+    full-body test above would still pass.
+    """
+    a, _ = users
+    await put(client, a, "white", 2010, hunting=False, groups=["Medium"])
+
+    real_row = sparks_router._row  # pyright: ignore[reportPrivateUsage]
+    lookups = 0
+
+    async def blind_once(*args: Any, **kwargs: Any) -> Any:
+        nonlocal lookups
+        lookups += 1
+        if lookups == 1:
+            return None
+        return await real_row(*args, **kwargs)
+
+    monkeypatch.setattr(sparks_router, "_row", blind_once)
+
+    async with client(a) as http:
+        response = await http.put(f"{WATCHED}/white/2010", json={})
+
+    assert response.status_code == 200, response.text
+    assert lookups >= 2, "the retry never re-read the row"
+    # The loser asked for nothing, so the row it found keeps everything.
     assert [without_id(row) for row in await listing(client, a)] == [
         {"kind": "white", "key": 2010, "hunting": False, "groups": ["Medium"]}
     ]

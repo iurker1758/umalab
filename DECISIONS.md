@@ -3063,3 +3063,40 @@ shape that was being refined in the wrong direction.
   beyond a name and an order — a colour, a note, a default — which is
   fine on this shape, and only argues for normalising the membership if
   the *membership* is what grows attributes.
+
+## 38. Guards proven able to fail: migration drift, and the lock's ordering
+
+Issue #76: two tests asserted less than they read. Everything below was
+settled by mutation — each guard was shown to fail against the fault it
+watches before being trusted.
+
+- **Requirements:** the DB suite builds its schema with `create_all`, so
+  migration-vs-models drift never reached `pytest` — CI's `alembic check`
+  step covers it, but merges don't wait for CI here, so the local run is
+  the gate that counts. And the concurrent-creates test passed with
+  `pg_advisory_xact_lock` deleted: each of its five gathered requests
+  waited on NEW connection establishment from a cold pool, which staggered
+  them into running one at a time. Confirmed by warming the pool — the
+  lock-less route then lands five 201s, three runs of three.
+- **Choice:** `tests/test_migrations.py` runs the real `alembic upgrade
+  head` in a subprocess against the test database, then asserts alembic's
+  `compare_metadata` comes back empty, with `compare_server_default` on
+  (`alembic check` leaves it off). A subprocess because
+  `app.config.settings` is a module-level singleton — in-process, env.py
+  would read the app's own DATABASE_URL. The concurrency test warms the
+  pool before racing, and a second, deterministic guard holds the owner's
+  advisory lock from another transaction, fills the owner to the cap
+  mid-hold, and asserts the blocked create answers the cap 409 — which
+  fails both when the lock is deleted and when it slides below the count
+  it protects.
+- **Alternatives rejected:** building the suite's schema through
+  migrations — closes the drift class more thoroughly, deferred as a
+  rework this didn't need. Asserting only "the create blocks" — passes
+  with the lock moved below the count; the ordering is the invariant.
+  Invoking `alembic check` from the test — it runs env.py, whose URL is
+  the singleton's.
+- **What would change my mind:** the suite moving onto migrations-built
+  schema, which retires test_migrations.py whole. Settings becoming
+  injectable, which retires the subprocess. The test engine growing pool
+  settings of its own, which reopens the warm-up's coupling to the
+  default pool_size that `CONCURRENT_CREATES` documents.

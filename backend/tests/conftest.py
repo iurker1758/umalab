@@ -1,4 +1,5 @@
-"""Fixtures for the database-backed modules (test_isolation, test_spark_lists).
+"""Fixtures for the database-backed modules (test_isolation, test_spark_lists;
+test_migrations shares the URL and skip rules but builds its own schema).
 
 Most of this suite is pure-module and touches none of these — fixtures are
 lazy, so they cost those tests nothing. What needs them needs a real

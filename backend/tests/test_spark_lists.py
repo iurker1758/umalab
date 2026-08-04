@@ -19,8 +19,16 @@ from fastapi.exceptions import ResponseValidationError
 from sqlalchemy import func, select, text
 
 from app.models import User
+from app.schemas import MAX_LISTS_PER_OWNER
 
 LISTS = "/api/spark-lists"
+
+# How many simultaneous requests the concurrency tests race — and therefore
+# how many pooled connections their warm-up must establish first. Must stay
+# at or below conftest's engine default pool_size (5): a surplus request
+# waits on a NEW connection, and connection establishment staggers the field
+# back into the accidental serialization measured in #76.
+CONCURRENT_CREATES = 5
 
 
 async def create(as_user: Any, user: User, name: str):
@@ -480,49 +488,77 @@ async def test_concurrent_creates_cannot_exceed_the_cap(
     while the warmed version landed [201, 201, 201, 201, 201], three runs
     out of three each way. Genuine interleaving still isn't guaranteed, so
     the lock itself is pinned deterministically by
-    `test_a_create_waits_for_the_owner_advisory_lock` below.
+    `test_the_cap_check_runs_under_the_advisory_lock` below.
     """
     a, _ = users
     for n in range(49):
         assert (await create(client, a, f"build {n}")).status_code == 201
     async with client(a) as http:
-        await asyncio.gather(*(http.get(LISTS) for _ in range(5)))
+        await asyncio.gather(
+            *(http.get(LISTS) for _ in range(CONCURRENT_CREATES))
+        )
         responses = await asyncio.gather(
-            *(http.post(LISTS, json={"name": f"race {n}"}) for n in range(5))
+            *(
+                http.post(LISTS, json={"name": f"race {n}"})
+                for n in range(CONCURRENT_CREATES)
+            )
         )
     codes = sorted(r.status_code for r in responses)
     assert codes == [201, 409, 409, 409, 409], codes
     assert len(await listing(client, a)) == 50
 
 
-async def test_a_create_waits_for_the_owner_advisory_lock(
+async def test_the_cap_check_runs_under_the_advisory_lock(
     client: Any, users: list[User], sessions: Any
 ):
-    """The guard on the lock itself, where the outcome test above is a race
-    that could accidentally serialize: a create must block while another
-    transaction holds this owner's advisory lock, and complete once it is
-    released. Deleting `pg_advisory_xact_lock` from the route fails this
-    deterministically — the create sails through mid-hold (measured).
+    """The deterministic guard on the lock, where the race above could still
+    accidentally serialize — this cannot pass by timing.
 
-    Half a second of "still blocked" is the margin between an insert that
-    is waiting and one that is merely slow; the whole suite's requests
-    finish in milliseconds.
+    A second transaction holds the owner's advisory lock while a create is
+    fired, fills the owner to the cap, then releases. A create that takes
+    the lock BEFORE counting blocks through all of that and answers the cap
+    409. So this fails if the lock is deleted — the create finishes
+    mid-hold — AND if it slides below the count it protects: the create
+    would count an empty table before blocking, then insert a 51st list on
+    release. Both measured, three runs of three.
+
+    Half a second of "still blocked" is the margin between a create that is
+    waiting and one that is merely slow; the suite's requests finish in
+    milliseconds, and the pool is warmed so none of the window is spent
+    establishing a connection.
     """
     a, _ = users
-    async with sessions() as holder:
-        await holder.execute(select(func.pg_advisory_xact_lock(a.id)))
-        async with client(a) as http:
+    async with client(a) as http:
+        # Two concurrent checkouts force two real connections: one for the
+        # holder, one for the create under test.
+        await asyncio.gather(http.get(LISTS), http.get(LISTS))
+        async with sessions() as holder:
+            await holder.execute(select(func.pg_advisory_xact_lock(a.id)))
             request = asyncio.ensure_future(
                 http.post(LISTS, json={"name": "Front Runner"})
             )
             done, _ = await asyncio.wait([request], timeout=0.5)
-            assert not done, "the create finished while the lock was held"
-            # Rollback ends the holder's transaction, which IS the release —
-            # the lock is transaction-scoped.
-            await holder.rollback()
+            if done:
+                # Retrieved, so a POST that raised reports its own
+                # traceback rather than a missing lock.
+                pytest.fail(
+                    "the create finished while the lock was held: "
+                    f"{request.exception() or request.result()!r}"
+                )
+            await holder.execute(
+                text(
+                    "INSERT INTO spark_lists (owner_id, name)"
+                    " SELECT :o, 'bulk ' || n FROM generate_series(1, :cap) n"
+                ).bindparams(o=a.id, cap=MAX_LISTS_PER_OWNER)
+            )
+            # Commit ends the holder's transaction, which IS the release —
+            # the lock is transaction-scoped. Only now may the create
+            # proceed, and what it must find is a full owner.
+            await holder.commit()
             response = await asyncio.wait_for(request, timeout=5)
-    assert response.status_code == 201, response.text
-    assert [row["name"] for row in await listing(client, a)] == ["Front Runner"]
+    assert response.status_code == 409, response.text
+    assert "50 lists" in response.json()["detail"]
+    assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
 
 
 async def test_the_cap_is_per_owner(client: Any, users: list[User]):

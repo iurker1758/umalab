@@ -248,6 +248,18 @@ export interface WatchedSparkEdit {
   groups: string[];
 }
 
+// What a write SENDS, which is not the same shape as what a row HOLDS: only
+// the fields it means to change. An omitted one is left as it is, and on a
+// row being created takes the server's column default (#64). `{}` is a
+// complete request — "make sure this spark is watched" — which is what lets
+// the client add one without first finding out whether it already exists.
+//
+// `groups: []` clears them; omitting `groups` does not. That distinction is
+// the whole point of the shape, so it is a Partial rather than a type with
+// nullable fields — `undefined` is unsendable in JSON, which is exactly the
+// "absent" the route wants.
+export type WatchedSparkPatch = Partial<WatchedSparkEdit>;
+
 export interface WatchedSpark extends WatchedSparkEdit {
   // The row id, and therefore its place in the list — the server orders by
   // it. Carried so a client whose copy predates a row can place the row a
@@ -352,9 +364,11 @@ export const api = {
     }),
   watchedSparks: () =>
     fetch("/api/watched-sparks").then((r) => json<WatchedSpark[]>(r)),
-  // Upsert: adds the spark, or replaces the bit and the groups on the row
-  // already there. An existing row keeps its position in the list.
-  watchSpark: (kind: SlotFactorKind, key: number, body: WatchedSparkEdit) =>
+  // Upsert: adds the spark, or changes whichever fields the body carries on
+  // the row already there. An existing row keeps its position in the list,
+  // and returns whatever it holds — so this is also how a caller finds out
+  // what a row it had never seen actually contains.
+  watchSpark: (kind: SlotFactorKind, key: number, body: WatchedSparkPatch) =>
     fetch(`/api/watched-sparks/${kind}/${key}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

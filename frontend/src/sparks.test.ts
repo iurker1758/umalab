@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type SlotFactorKind, type WatchedSpark, type WatchedSparkEdit } from "./api";
+import { api, type SlotFactorKind, type WatchedSpark, type WatchedSparkPatch } from "./api";
 import {
-  DEFAULT_HUNTING,
   groupNames,
   groupsOf,
   isHunting,
@@ -26,7 +25,7 @@ const watched = (over: Partial<WatchedSpark> & Pick<WatchedSpark, "id">): Watche
 // the whole point of the write tests: the argument threading is the rule.
 const stubApi = (over: {
   watchedSparks?: () => Promise<WatchedSpark[]>;
-  watchSpark?: (k: SlotFactorKind, key: number, body: WatchedSparkEdit) => Promise<WatchedSpark>;
+  watchSpark?: (k: SlotFactorKind, key: number, body: WatchedSparkPatch) => Promise<WatchedSpark>;
   unwatchSpark?: (k: SlotFactorKind, key: number) => Promise<void>;
 }) => {
   const calls = {
@@ -35,7 +34,7 @@ const stubApi = (over: {
       .mockImplementation(over.watchedSparks ?? (() => Promise.resolve([] as WatchedSpark[]))),
     watchSpark: vi.spyOn(api, "watchSpark").mockImplementation(
       over.watchSpark ??
-        ((kind: SlotFactorKind, key: number, body: WatchedSparkEdit) =>
+        ((kind: SlotFactorKind, key: number, body: WatchedSparkPatch) =>
           Promise.resolve(watched({ id: key, kind, key, ...body })))
     ),
     unwatchSpark: vi
@@ -86,32 +85,39 @@ describe("reads over the caller's list", () => {
   });
 });
 
+
+// ---------- writes ----------
+// Every one of these asserts that NOTHING re-reads the list. That is the
+// point of #64: a mutator sends the field it is changing and nothing else, so
+// it never has to know — or fetch — the field it isn't touching.
+
 describe("toggle", () => {
-  it("adds a spark the server doesn't have either, as hunted", async () => {
+  it("adds with an empty body, letting the server furnish a new row", async () => {
     const calls = stubApi({});
     const next = await toggle([], "white", 700);
-    expect(calls.watchedSparks).toHaveBeenCalledOnce();
-    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
-      hunting: DEFAULT_HUNTING,
-      groups: [],
-    });
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {});
+    expect(calls.watchedSparks).not.toHaveBeenCalled();
     expect(next.map((s) => s.key)).toEqual([700]);
   });
 
-  // Issue #62. The list is the caller's, so absence from it is not absence
-  // from the server — another tab, another device, or a fetch that failed and
-  // left it empty. Writing the defaults here destroyed both fields.
-  it("does not clobber a row that is only missing from THIS copy of the list", async () => {
-    const server = [
-      watched({ id: 9, kind: "white", key: 700, hunting: false, groups: ["Mile", "Front"] }),
-    ];
-    const calls = stubApi({ watchedSparks: () => Promise.resolve(server) });
+  // Issue #62, and the reason #64 closed it at the route rather than in the
+  // client: the empty body cannot overwrite anything, so a row watched on
+  // another device comes back untouched instead of being replaced with
+  // defaults. There is no window to race, either — the old fix re-read first
+  // and could still be beaten between the read and the write.
+  it("cannot clobber a row that is only missing from this copy of the list", async () => {
+    const server = watched({
+      id: 9,
+      kind: "white",
+      key: 700,
+      hunting: false,
+      groups: ["Mile", "Front"],
+    });
+    const calls = stubApi({ watchSpark: () => Promise.resolve(server) });
     const next = await toggle([], "white", 700);
-    expect(calls.watchSpark).not.toHaveBeenCalled();
-    expect(calls.unwatchSpark).not.toHaveBeenCalled();
-    // The star lands on, which is what the click asked for, and the row keeps
-    // the filler bit and the groups it already had.
-    expect(next).toEqual(server);
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {});
+    // The star lands on, and the row keeps the filler bit and the groups.
+    expect(next).toEqual([server]);
   });
 
   it("removes a watched one, and only that one", async () => {
@@ -120,40 +126,10 @@ describe("toggle", () => {
     const next = await toggle(rows, "white", 700);
     expect(calls.unwatchSpark).toHaveBeenCalledWith("white", 700);
     expect(calls.watchSpark).not.toHaveBeenCalled();
-    // The remove path needs no re-read: the DELETE route treats an
-    // already-gone row as success, so a stale "watched" costs one 204.
+    // The DELETE route treats an already-gone row as success, so a stale
+    // "watched" costs one 204 and needs no lookup.
     expect(calls.watchedSparks).not.toHaveBeenCalled();
     expect(next.map((s) => s.key)).toEqual([800]);
-  });
-
-  it("places an added row by id rather than appending it", async () => {
-    stubApi({
-      watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 4, kind, key, ...body })),
-    });
-    const rows = [watched({ id: 1 }), watched({ id: 8 })];
-    const next = await toggle(rows, "white", 4);
-    expect(next.map((s) => s.id)).toEqual([1, 4, 8]);
-  });
-
-  // The re-read is for the ONE row this call is about. Handing the whole list
-  // back would put rows the chooser's frozen snapshot has never seen into its
-  // kind sections as filled stars (#35), one click from deleting a favorite
-  // added on another device.
-  it("folds in only the row it touched, never the rest of the re-read", async () => {
-    const server = [
-      watched({ id: 1, kind: "race", key: 11 }),
-      watched({ id: 2, kind: "white", key: 700, hunting: false, groups: ["Mile"] }),
-      watched({ id: 3, kind: "scenario", key: 12 }),
-    ];
-    stubApi({ watchedSparks: () => Promise.resolve(server) });
-    const next = await toggle([], "white", 700);
-    expect(next.map((s) => s.id)).toEqual([2]);
-  });
-
-  it("propagates a failed re-read instead of writing blind", async () => {
-    const calls = stubApi({ watchedSparks: () => Promise.reject(new Error("offline")) });
-    await expect(toggle([], "white", 700)).rejects.toThrow("offline");
-    expect(calls.watchSpark).not.toHaveBeenCalled();
   });
 
   it("does not mutate the list it was handed", async () => {
@@ -165,91 +141,60 @@ describe("toggle", () => {
 });
 
 describe("setHunting", () => {
-  it("sends the row's existing groups back unchanged", async () => {
+  it("sends the bit and nothing else, so the groups are never named", async () => {
     const calls = stubApi({});
     const rows = [watched({ id: 1, kind: "white", key: 700, hunting: true, groups: ["Front"] })];
     await setHunting(rows, "white", 700, false);
-    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
-      hunting: false,
-      groups: ["Front"],
-    });
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, { hunting: false });
     expect(calls.watchedSparks).not.toHaveBeenCalled();
   });
 
-  it("adds a spark that isn't watched yet, with empty groups", async () => {
+  it("adds a spark that isn't watched yet — the route is an upsert", async () => {
     const calls = stubApi({});
     const next = await setHunting([], "unique", 100_101, true);
-    expect(calls.watchSpark).toHaveBeenCalledWith("unique", 100_101, {
-      hunting: true,
-      groups: [],
-    });
+    expect(calls.watchSpark).toHaveBeenCalledWith("unique", 100_101, { hunting: true });
     expect(next).toHaveLength(1);
   });
 
-  // The rule the PUT's full-replace shape forces: a row can exist server-side
-  // and be missing from this copy of the list, and guessing its other fields
-  // there silently rewrites the user's own choice.
-  it("re-reads before writing when the row is missing from this copy", async () => {
-    const server = [watched({ id: 9, kind: "white", key: 700, hunting: true, groups: ["Mile"] })];
-    const calls = stubApi({ watchedSparks: () => Promise.resolve(server) });
-    await setHunting([], "white", 700, false);
-    expect(calls.watchedSparks).toHaveBeenCalledOnce();
-    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
-      hunting: false,
-      groups: ["Mile"],
-    });
-  });
-
-  it("returns the caller's list with the saved row folded in, not the re-read", async () => {
-    const server = [
-      watched({ id: 9, kind: "white", key: 700, groups: ["Mile"] }),
-      watched({ id: 12, kind: "race", key: 4 }),
-    ];
-    stubApi({
-      watchedSparks: () => Promise.resolve(server),
-      watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 9, kind, key, ...body })),
-    });
+  // What #62 was: a row can exist server-side and be missing from this copy
+  // of the list, and a mutator that named the field it wasn't changing would
+  // rewrite the user's own choice. Now it cannot name it.
+  it("leaves the groups of a row it has never seen alone", async () => {
+    const server = watched({ id: 9, kind: "white", key: 700, groups: ["Mile"] });
+    const calls = stubApi({ watchSpark: () => Promise.resolve(server) });
     const next = await setHunting([], "white", 700, false);
-    // id 12 was never in the caller's list and does not arrive in it.
-    expect(next.map((s) => s.id)).toEqual([9]);
-    expect(next[0]).toMatchObject({ hunting: false, groups: ["Mile"] });
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, { hunting: false });
+    expect(next[0].groups).toEqual(["Mile"]);
   });
 });
 
 describe("setGroups", () => {
-  it("sends the row's existing hunting bit back unchanged", async () => {
+  it("sends the groups and nothing else, so the bit is never named", async () => {
     const calls = stubApi({});
     const rows = [watched({ id: 1, kind: "white", key: 700, hunting: false, groups: [] })];
     await setGroups(rows, "white", 700, ["Front"]);
-    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
-      hunting: false,
-      groups: ["Front"],
-    });
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, { groups: ["Front"] });
+    expect(calls.watchedSparks).not.toHaveBeenCalled();
   });
 
-  // The case the re-read exists for: guessing DEFAULT_HUNTING here would
-  // re-hunt a spark the user had deliberately marked as filler on another tab.
-  it("re-reads rather than guessing the bit, and does not re-hunt filler", async () => {
-    const server = [watched({ id: 9, kind: "white", key: 700, hunting: false, groups: [] })];
-    const calls = stubApi({ watchedSparks: () => Promise.resolve(server) });
-    await setGroups([], "white", 700, ["Front"]);
-    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
-      hunting: false,
-      groups: ["Front"],
-    });
+  // The case that used to need a re-read: guessing the bit here would
+  // re-hunt a spark deliberately marked as filler on another tab.
+  it("does not re-hunt filler it has never seen", async () => {
+    const server = watched({ id: 9, kind: "white", key: 700, hunting: false, groups: ["Front"] });
+    const calls = stubApi({ watchSpark: () => Promise.resolve(server) });
+    const next = await setGroups([], "white", 700, ["Front"]);
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, { groups: ["Front"] });
+    expect(next[0].hunting).toBe(false);
   });
 
-  it("falls back to the default only when the spark really is new", async () => {
-    const calls = stubApi({ watchedSparks: () => Promise.resolve([]) });
-    await setGroups([], "white", 700, ["Front"]);
-    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, {
-      hunting: DEFAULT_HUNTING,
-      groups: ["Front"],
-    });
+  it("clears them with an empty list, which is a different request from omitting", async () => {
+    const calls = stubApi({});
+    await setGroups([], "white", 700, []);
+    expect(calls.watchSpark).toHaveBeenCalledWith("white", 700, { groups: [] });
   });
 });
 
-describe("the returned list's order", () => {
+describe("the returned list", () => {
   it("replaces a row in place rather than moving it", async () => {
     stubApi({
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 2, kind, key, ...body })),
@@ -271,8 +216,7 @@ describe("the returned list's order", () => {
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 3, kind, key, ...body })),
     });
     const rows = [watched({ id: 1 }), watched({ id: 5 })];
-    const next = await setHunting(rows, "white", 3, true);
-    expect(next.map((s) => s.id)).toEqual([1, 3, 5]);
+    expect((await setHunting(rows, "white", 3, true)).map((s) => s.id)).toEqual([1, 3, 5]);
   });
 
   it("appends when the new row is the newest", async () => {
@@ -280,7 +224,6 @@ describe("the returned list's order", () => {
       watchSpark: (kind, key, body) => Promise.resolve(watched({ id: 7, kind, key, ...body })),
     });
     const rows = [watched({ id: 1 }), watched({ id: 2 })];
-    const next = await setHunting(rows, "white", 7, true);
-    expect(next.map((s) => s.id)).toEqual([1, 2, 7]);
+    expect((await setHunting(rows, "white", 7, true)).map((s) => s.id)).toEqual([1, 2, 7]);
   });
 });

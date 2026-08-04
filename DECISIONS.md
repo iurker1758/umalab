@@ -2098,7 +2098,8 @@ its three routes, and a client module — no UI of its own.
   false}` would erase every build label on the row with no error and no
   way to tell it happened. The default belongs to whoever is *adding* a
   spark, which is the client, and living in exactly one place there
-  means flipping it really is one constant.
+  means flipping it really is one constant. **— reversed, see the
+  amendment below.**
 
   **Server-side, not `localStorage`.** It spans devices and it belongs
   to a user, so it is a row. This shipped briefly as a client store
@@ -2197,6 +2198,49 @@ its three routes, and a client module — no UI of its own.
   second copy of server state with no way to know it had gone stale.
   The rule it buys, within the client: **no mutator may treat absence
   from that list as absence from the server.**
+
+  **Amendment (2026-08-03, issue #64): the PUT became a partial update,
+  and both rulings above went with it.** The correction directly above
+  was a client-side interim, and the review of it named the three costs
+  plainly enough to be worth paying down rather than living with: an
+  extra round trip before every write, favouriting broken whenever the
+  *list* endpoint is degraded even though the write endpoint is
+  healthy, and a residual window between the re-read and the PUT that
+  no amount of client re-reading closes.
+
+  `WatchedSparkIn` now takes both fields as optional, and **an omitted
+  field is left as it is** — absent and `null` alike; `groups: []` is
+  how you clear them, which is a different request from not mentioning
+  them. So `setHunting` sends `{hunting}`, `setGroups` sends
+  `{groups}`, and `toggle` sends `{}`, which reads as "make sure this
+  spark is watched" and is a complete request. `currentOrFresh` is
+  gone, and with it every re-read in the module.
+
+  **Both of this entry's original rulings were right about their own
+  route and wrong to treat the route as fixed.** "No partial updates —
+  a PATCH would buy nothing and would need its own 'absent means
+  unchanged' rules on a two-field object": the rules turned out to be
+  one line each, and what the full replace bought was #62. "No defaults
+  at all, because a default on a full replace is a silent delete": true,
+  and the answer is that a default only ever applies to a row being
+  *created*, where there is nothing to delete. It stays a PUT rather
+  than becoming a PATCH — this is still an upsert on an identity the
+  caller names.
+
+  **"New sparks are hunted" moved to the `hunting` column's default.**
+  It lived in the client because under a full replace only the client
+  knew whether it was adding; with an upsert that applies only what it
+  was sent, the row that does not exist yet is the server's to furnish.
+  `DEFAULT_HUNTING` is deleted rather than mirrored — two answers to a
+  question with one is how they drift.
+
+  What is genuinely better, not just tidier: the read-modify-write now
+  happens **inside the row's own transaction**, so the race is closed
+  rather than narrowed, and the rule "never guess a field you aren't
+  changing" is enforced by the shape of the request instead of being
+  remembered by every call site. #62 happened because one of three
+  remembered and two did not; hunted-skill scoring would have been the
+  fourth chance to forget.
 
   **No reconcile pass**, unlike `reconcileFilters`, and `key` is not
   validated against the factor reference. A watched spark missing from

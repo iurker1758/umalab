@@ -6,10 +6,18 @@ frontend gives it its own module: three features read it — the spark chooser
 (#28), the proc tables' watched block (#27) and hunted-skill scoring — and
 only one of them is the designer's blueprint CRUD.
 
-Three routes, no partial updates. (kind, key) is the identity and travels in
-the path; the body is the whole mutable half of the row, which the client
-already has in hand. A PATCH would buy nothing and would need its own
-"absent means unchanged" rules on a two-field object.
+Three routes. (kind, key) is the identity and travels in the path; the body
+carries whichever of the two mutable fields the caller means to change, and
+an omitted one is left as it is (issue #64).
+
+That last part reverses this module's original ruling — "no partial updates;
+a PATCH would buy nothing and would need its own 'absent means unchanged'
+rules on a two-field object". The rules turned out to be one line each, and
+the full replace was not free: it forced the client to send fields it was not
+changing, so it had to *know* them, so every mutator re-read the whole list
+first — and the one that forgot destroyed a user's groups (#62). It stays a
+PUT rather than becoming a PATCH: this is still an upsert on an identity the
+caller names, which is what PUT is for.
 """
 from __future__ import annotations
 
@@ -24,6 +32,20 @@ from ..models import User, WatchedSpark
 from ..schemas import SlotFactorKind, WatchedSparkIn, WatchedSparkOut
 
 router = APIRouter(prefix="/api")
+
+
+def _apply(row: WatchedSpark, body: WatchedSparkIn) -> None:
+    """Set only what the body carried — absent (or null) leaves the field.
+
+    On a row being created, "left alone" means the column default takes it,
+    which is where "new sparks are hunted" is stated. Applied in both arms of
+    the insert race below, so the loser of that race lands on the same rules
+    as the winner.
+    """
+    if body.hunting is not None:
+        row.hunting = body.hunting
+    if body.groups is not None:
+        row.groups = body.groups
 
 
 async def _row(
@@ -66,21 +88,27 @@ async def watch(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Add the spark, or replace the bit and the groups on the one already
-    there. Upsert rather than POST-then-PATCH: the client's three operations
-    (add, set hunting, set groups) are all "this is the row I want", and an
-    add that 409s on an existing row would just make every caller do a lookup
-    first.
+    """Add the spark, or change whichever fields the body carries on the one
+    already there. Upsert rather than POST-then-PATCH: the client's three
+    operations (add, set hunting, set groups) are all "this is the row I
+    want", and an add that 409s on an existing row would just make every
+    caller do a lookup first.
+
+    An empty body is therefore a complete request: "make sure this spark is
+    watched, and leave it as it is if it already was". That is exactly what
+    the client's `toggle` means, and it can now say it without first finding
+    out whether the row exists.
 
     An existing row keeps its `id`, so re-hunting a spark does not move it to
-    the end of the list.
+    the end of the list. A row being created takes its defaults from the
+    columns, so "new sparks are hunted" is stated once (models.WatchedSpark)
+    rather than guessed by whoever is adding.
     """
     row = await _row(session, user, kind, key)
     if row is None:
         row = WatchedSpark(owner_id=user.id, kind=kind, key=key)
         session.add(row)
-    row.hunting = body.hunting
-    row.groups = body.groups
+    _apply(row, body)
     try:
         await session.commit()
     except IntegrityError:
@@ -94,8 +122,7 @@ async def watch(
         existing = await _row(session, user, kind, key)
         if existing is None:
             raise
-        existing.hunting = body.hunting
-        existing.groups = body.groups
+        _apply(existing, body)
         await session.commit()
         row = existing
     await session.refresh(row)

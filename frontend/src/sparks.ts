@@ -54,7 +54,12 @@ export type WatchedStore = {
 // false would leave #27's watched block empty on first use, with the bit
 // that fills it one the user has never seen. Filler you only want handy for
 // typing is one click off at the moment you add it.
-export const DEFAULT_HUNTING = true;
+//
+// The rule is stated ONCE, and not here: it is the `hunting` column's default
+// (backend/app/models.py). It used to be a constant in this module because
+// under a full-replace PUT only the client knew whether it was adding; a
+// partial update means the row that doesn't exist yet is the server's to
+// furnish (#64). A copy here would be a second answer to a question with one.
 
 const same = (spark: WatchedSpark, kind: SlotFactorKind, key: number) =>
   spark.kind === kind && spark.key === key;
@@ -127,58 +132,36 @@ const replacing = (
 
 export const loadWatched = (): Promise<WatchedSpark[]> => api.watchedSparks();
 
-// The PUT is a full replace, so every mutator has to send the fields it is
-// NOT changing — and must not guess them. A row can exist server-side and be
-// missing from this list (another tab, another device, a list fetched before
-// it was added, a fetch that failed and left it empty), and guessing there
-// silently rewrites the user's own choice: `setGroups` assuming
-// `hunting: true` would re-hunt a spark they had deliberately marked as
-// filler. So on a miss, re-read before writing, and only fall back to the
-// defaults if it really is new.
+// ---------- the three mutators ----------
+// Each sends only the field it is changing and hands back the caller's list
+// with the ONE row the server returned folded in. Nothing re-reads the list
+// first: the PUT is a partial update (#64), so a mutator never has to know —
+// or guess — the field it isn't touching.
 //
-// The rule is the module's, not this helper's: `toggle` obeys it too but
-// inlines the re-read, because the local-hit branch below cannot be reached
-// from there. Skipping the rule was issue #62 — the list being the caller's
-// is what makes the reads pure (DECISIONS.md #33), and the price of that is
-// that no mutator may treat absence from it as absence from the server.
+// That is the whole of the rule now. Getting it wrong is what #62 was: under
+// the old full-replace route every mutator had to send both fields, so it had
+// to know both, so it re-read the list before writing, and `toggle` didn't.
+// No re-read could close the gap between the read and the write anyway;
+// applying the change inside the row's own transaction does.
 //
-// Returns only the ROW. The list it was read from stays here: a write hands
-// back the caller's list with the one row it touched folded in, never a whole
-// re-read — see `toggle` for what that would do to the chooser's snapshot.
-async function currentOrFresh(
-  watched: WatchedSpark[],
-  kind: SlotFactorKind,
-  key: number
-): Promise<WatchedSpark | undefined> {
-  return find(watched, kind, key) ?? find(await loadWatched(), kind, key);
-}
+// A write folds in one row rather than adopting a whole fresh list on
+// purpose: the chooser freezes its Favorites membership at open and filters
+// the kind sections against that snapshot (#35), so a row the snapshot has
+// never seen would arrive as a filled star in a kind section — one click from
+// deleting a favorite added on another device. Refreshing wholesale is
+// `onReload`'s job, and it bumps `epoch` so the snapshot is retaken.
 
 /**
  * Add the spark if it isn't watched, remove it if it is.
  *
- * "Isn't watched" is decided against the SERVER on the add path, not against
- * the caller's list — the same rule `currentOrFresh` states, inlined here
- * because its cheap local-hit branch is unreachable from this one: the remove
- * path above has already consumed every row the caller's list holds.
+ * The add is an empty body: "make sure this spark is watched." The server
+ * creates it hunted (the column default) or leaves the existing row exactly
+ * as it is, and returns whichever — so a spark watched on another device
+ * keeps its groups and its filler bit, and the star still lands on. There is
+ * nothing to decide client-side and nothing to look up first.
  *
- * The remove path needs no re-read. The DELETE route treats an already-gone
+ * The remove needs no lookup either: the DELETE route treats an already-gone
  * row as the outcome the caller wanted, so a stale "watched" costs one 204.
- *
- * When the re-read finds the row after all, the click's intent — "I want this
- * watched" — is already true, so this writes NOTHING. The star lands on and
- * the row keeps the groups and the hunting bit it had. Removing it instead
- * would be the other reading of "toggle", and it would delete a row the user
- * never saw, which is worse than the stale star it would be correcting.
- *
- * Either way the ONE row this call is about is folded into the caller's list
- * rather than the whole re-read being handed back. A write must not change
- * which sparks the caller thinks are watched beyond the one it touched: the
- * chooser freezes its Favorites membership at open and filters the kind
- * sections against that snapshot (#35), so a row it has never seen arrives
- * as a filled star in a kind section — the "same spark, wrong place" state
- * the freeze exists to prevent, and one click from deleting a favorite the
- * user never added here. Refreshing the whole list is `onReload`'s job, and
- * it bumps `epoch` precisely so the snapshot is retaken.
  */
 export async function toggle(
   watched: WatchedSpark[],
@@ -189,20 +172,13 @@ export async function toggle(
     await api.unwatchSpark(kind, key);
     return watched.filter((spark) => !same(spark, kind, key));
   }
-  const fresh = await loadWatched();
-  const row = find(fresh, kind, key);
-  if (row !== undefined) return replacing(watched, row);
-  const saved = await api.watchSpark(kind, key, {
-    hunting: DEFAULT_HUNTING,
-    groups: [],
-  });
-  return replacing(watched, saved);
+  return replacing(watched, await api.watchSpark(kind, key, {}));
 }
 
 /**
  * Set the hunting bit. A spark that isn't watched yet is ADDED by this — the
- * server route is an upsert, and "hunt this" is a reason to want the row.
- * Its groups start empty, exactly as `toggle` would leave them.
+ * route is an upsert, and "hunt this" is a reason to want the row. Its groups
+ * are left alone, which for a new row means empty.
  */
 export async function setHunting(
   watched: WatchedSpark[],
@@ -210,12 +186,7 @@ export async function setHunting(
   key: number,
   hunting: boolean
 ): Promise<WatchedSpark[]> {
-  const row = await currentOrFresh(watched, kind, key);
-  const saved = await api.watchSpark(kind, key, {
-    hunting,
-    groups: row?.groups ?? [],
-  });
-  return replacing(watched, saved);
+  return replacing(watched, await api.watchSpark(kind, key, { hunting }));
 }
 
 /**
@@ -229,10 +200,5 @@ export async function setGroups(
   key: number,
   groups: string[]
 ): Promise<WatchedSpark[]> {
-  const row = await currentOrFresh(watched, kind, key);
-  const saved = await api.watchSpark(kind, key, {
-    hunting: row?.hunting ?? DEFAULT_HUNTING,
-    groups,
-  });
-  return replacing(watched, saved);
+  return replacing(watched, await api.watchSpark(kind, key, { groups }));
 }

@@ -7,7 +7,14 @@ import type {
   SlotFactor,
 } from "../api";
 import type { SparkListStore } from "../sparks";
-import { APTITUDE_LABELS, aptitudeRows, letterModeOf, undroppableSpark } from "../aptitude";
+import {
+  APTITUDE_LABELS,
+  aptitudeRows,
+  letterModeOf,
+  UNDROPPABLE_TITLE,
+  undroppableMessage,
+  undroppableSpark,
+} from "../aptitude";
 import {
   NAMED_COUNT,
   deepCardAt,
@@ -320,9 +327,13 @@ export function FocusPanel({
                 sparkLists={sparkLists}
                 cardOwner={cardOwner}
                 locked={false}
+                // Nobody cast: no letters to resolve a pink against, and
+                // `undroppableSpark` only ever flags a catalog cast.
+                undroppable={false}
                 sort={ancestorSort}
                 onSort={setAncestorSort}
                 onSetFactors={onSetFactors}
+                onSetSpark={onSetSpark}
                 onError={onError}
               />
             ) : (
@@ -413,9 +424,11 @@ export function FocusPanel({
             sparkLists={sparkLists}
             cardOwner={cardOwner}
             locked={pinkFixed}
+            undroppable={undroppable}
             sort={ancestorSort}
             onSort={setAncestorSort}
             onSetFactors={onSetFactors}
+            onSetSpark={onSetSpark}
             onError={onError}
           />
         )
@@ -455,12 +468,8 @@ export function FocusPanel({
           a guardrail that only rendered on Details would never reach someone
           reading procs down the tree. */}
       {undroppable && slot.spark !== null && (
-        <p
-          className="spark-warn"
-          role="alert"
-          title="Pink sparks only generate on aptitudes the member reached A in."
-        >
-          {APTITUDE_LABELS[slot.spark.aptitude]} resolves below A — pinks only drop at A.
+        <p className="spark-warn" role="alert" title={UNDROPPABLE_TITLE}>
+          {undroppableMessage(slot.spark.aptitude)}
         </p>
       )}
       {locked !== null && <LockNote owner={locked} />}

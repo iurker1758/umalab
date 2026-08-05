@@ -1621,8 +1621,9 @@ Keep adding entries as the build evolves. This file is the interview.
   because comparing one view between two ancestors is the common move.
   The non-pink sparks are edited on the Sparks tab (they feed nothing
   else); the pink stays on Details, beside the letters it bumps at
-  career start. Map chips stay out, as V1 ruled: the 31 nodes have no
-  room.
+  career start (amended by #42: the Sparks tab's popout is a second
+  pink editor — Details keeps the home one). Map chips stay out, as V1
+  ruled: the 31 nodes have no room.
 
   **The tab is never gated on a score** — corrected after review; the
   first cut showed it only once that node had an affinity. The tab is
@@ -3263,3 +3264,58 @@ marked in each.
   row still here") would argue a live filter and a different stillness
   fix. A third surface removing sparks would reopen the one-remover
   rule the green exemption leans on.
+
+## 42. Pink joins the popout, as its own rows
+
+- **Requirements:** issue #87 — once blue landed (#40), the pink was
+  the one spark kind the popout didn't offer, so shaping a proc
+  profile on the Sparks tab forced a tab switch for exactly one kind.
+  A second entry point, not a move — amending #30's "the pink stays
+  on Details" to name Details the home editor: it keeps its place
+  beside the letters the pink bumps (#26/#30). Client-only — the slot's
+  `spark` field and its validation don't change. #86's held-row
+  invariants hold in the new section.
+- **Choice:** a **Pink section between Blue and Green** — the slot
+  `SPARK_TYPE_ORDER` already reserves — with ten rows from the
+  client's own aptitude vocabulary (`APTITUDE_LABELS`), a PARALLEL
+  row shape rather than a sixth `Option` kind: the document keys a
+  pink by aptitude on the slot's own `spark` field, not by factor
+  key, so the rows never pass through refs, orphans or the green
+  possibility rules, and the popout writes through the same
+  `onSetSpark` setter Details uses — a second writer of one field,
+  never a second store, so the Details select follows every write.
+  **Replace across the whole section**, #40's blue rule held one
+  shape further: one member, one pink, ten rows it can sit on —
+  clicking any star moves it, and row existence is trivially frozen
+  (all ten aptitudes, always). A star that would displace the held
+  spark of a one-per-member section says so — "Replace Mile with
+  Turf at 2★", pink and blue both — since the displaced row's change
+  happens off-focus, where "Add" reads as a second spark. The below-A
+  guardrail echoes on a bar pinned to the popout's bottom edge — the
+  popout covers the focus panel's own alert, so the second writer
+  carries the warning at the moment of the write. Pinned, not in the
+  Pink section: appearing there shoved every row under the pointer
+  (#41's rule, vertical) and a query could hide it; and without
+  `role="alert"`, so the panel's copy stays the one live region.
+  **The held row keeps the ✕**: every held row keeps one anatomy, and
+  the popout can clear the one spark it could otherwise only move;
+  Details' select staying a second clearer of the field is accepted.
+  **No ★ ever**: pinks aren't listable — the server refuses the
+  kind, and a hunted build is named by its skills, not its aptitude.
+  The pink joins the Current Sparks pill's count and press-time
+  snapshot with the rest of what the member holds.
+- **Alternatives rejected:** *pink as an `Option` through
+  `/api/factors`* — the reference serves no pink rows and the
+  document doesn't key one by factor key, so forcing it through
+  would mean inventing keys only the client understands and
+  translating at both ends of one component. *No ✕ on the held pink*
+  — the one held row with a blank ✕ slot beside a blue's ✕ reads as
+  broken, and the only in-popout clear would be gone, reinstating
+  the tab switch #87 exists to remove. *Moving the pink editor onto
+  the Sparks tab* — the Details pairing is the causal display (#30),
+  letters beside the pink that bumps them; this is an addition.
+- **What would change my mind:** the game gaining multi-pink members
+  — the parallel shape collapses into `factors`, and replace
+  semantics and the single-`spark` field fall with it. Pinks
+  becoming huntable (say the skill-spark scoring milestone reaching
+  aptitudes) would argue the ★ and list membership back.

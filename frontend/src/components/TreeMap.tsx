@@ -4,6 +4,7 @@ import {
   APTITUDE_LABELS,
   aptitudeRows,
   letterModeOf,
+  undroppableMessage,
   undroppableSpark,
   type AptitudeRow,
 } from "../aptitude";
@@ -235,11 +236,7 @@ export function TreeMap({
               // so the row never carries hidden text you'd have to hunt for.
               <span
                 className={`spark-row${warn ? " warn" : ""}`}
-                title={
-                  warn
-                    ? `${APTITUDE_LABELS[spark.aptitude]} resolves below A — pinks only drop at A.`
-                    : undefined
-                }
+                title={warn ? undroppableMessage(spark.aptitude) : undefined}
               >
                 {APTITUDE_LABELS[spark.aptitude]} {starTrio(spark.stars)}
               </span>

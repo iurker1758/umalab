@@ -3117,23 +3117,36 @@ shape that was being refined in the wrong direction.
   and never passes through `BlueprintIn`, so the write path (POST/PUT
   both take `BlueprintIn`) rejects while the read path stays permissive,
   by construction rather than by a mode flag. A slot with no character
-  is uncheckable and stays legal (#36's uncast tier). The check is
-  purely structural — `key == card_id`, no reference lookup — so it is
-  not the unknown-key leniency of #30 in disguise: that accepts keys the
-  reference hasn't caught up to; this rejects a key contradicting the
-  slot it sits on. Surveyed before landing: 4 saved blueprints, zero
-  greens on named slots, so no data migration and nothing becomes
-  unwritable.
+  is uncheckable and stays legal (#36's uncast tier), and so is one on a
+  7-digit `91xxxxx` card — the NPC/tutorial copies `cards.json` ships
+  and dumps can carry, the same range `derive_chara_id` special-cases.
+  No unique factor key exists at those ids, so "her own" is
+  unsatisfiable there, and a pull path landing one with a green would
+  otherwise produce a document that 422s on every autosave with its
+  sparks locked client-side. The check is purely structural —
+  `key == card_id`, no reference lookup — so it is not the unknown-key
+  leniency of #30 in disguise: that accepts keys the reference hasn't
+  caught up to; this rejects a key contradicting the slot it sits on.
+  Surveyed before landing, raw SQL over every row and owner: 4 saved
+  blueprints with zero greens on named slots, and zero 7-digit-card
+  members across 1,519 roster rows — so no data migration and nothing
+  becomes unwritable.
 - **Alternatives rejected:** the check in `BlueprintSlotIn` with a
   validation-context flag — the write-only split becomes invisible
   runtime state instead of model structure, and a future caller that
-  forgets the flag breaks reads. A data migration stripping mismatched
-  greens — mutates user documents to fix rows the survey shows don't
-  exist. Validating the key against the factor reference too — reopens
-  exactly the reference-gap failure #30 closed.
+  forgets the flag breaks reads (the slot model's docstring now carries
+  the warning). A data migration stripping mismatched greens — mutates
+  user documents to fix rows the survey shows don't exist. Validating
+  the key against the factor reference too — reopens exactly the
+  reference-gap failure #30 closed. Requiring an NPC card's green to
+  match `card_id % 1_000_000` — plausible, but zero observed NPC
+  members means the mapping is unverified, and a wrong guess strands a
+  pulled branch.
 - **What would change my mind:** a pre-rule mismatched row surfacing in
   a real database after all — its next full save 422s, which the client
   surfaces as a failed autosave; that would justify a one-off strip
-  migration. The game shipping a card whose unique factor key is not its
-  own card id (the two known exceptions are unreleased `91xxxxx` NPCs) —
-  that breaks the identity the rule is built on, not just this check.
+  migration. A real dump showing an NPC member's green — that pins the
+  key mapping the exemption currently declines to guess, and the
+  exemption tightens to it. The game shipping a regular card whose
+  unique factor key is not its own card id — that breaks the identity
+  the rule is built on, not just this check.

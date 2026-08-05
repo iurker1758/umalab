@@ -336,7 +336,12 @@ class BlueprintSlotIn(BaseModel):
     a non-pink spark, or both. An empty node is written as a null slot, not as
     an identity-less husk. A pink is not required beside `factors`: "whatever
     carries these two whites" is as real a plan, and requiring one would make
-    clearing the pink destroy the spark list."""
+    clearing the pink destroy the spark list.
+
+    Every rule in this model runs on READ too — BlueprintOut embeds
+    BlueprintSlotsIn — so a rule here that a stored row can fail 500s the
+    whole blueprint list. A rule that must bind on write only goes in
+    BlueprintIn._validate instead (the green rule, DECISIONS.md #39)."""
 
     source: Literal["catalog", "roster", "lineage"]
     chara_id: int | None = None
@@ -473,7 +478,12 @@ class BlueprintIn(BaseModel):
         # learn another uma's unique during a run, but she can never carry the
         # SPARK for one — zero exceptions across 1,372 real roster rows. A slot
         # with no character stays legal: "whatever carries this green" is a
-        # plan (#30), and there is nothing to check it against.
+        # plan (#30), and there is nothing to check it against. Neither can a
+        # 7-digit NPC-variant card (the same range derive_chara_id special-
+        # cases): no unique factor key exists at those ids, so "her own" is
+        # unsatisfiable there and rejecting would strand a pulled branch —
+        # its sparks are locked client-side — in a document that can never
+        # save again.
         #
         # Checked HERE and not in BlueprintSlotIn, because BlueprintOut embeds
         # BlueprintSlotsIn — the slot model must stay permissive so a row saved
@@ -481,7 +491,7 @@ class BlueprintIn(BaseModel):
         # (DECISIONS.md #39). This is not the unknown-key leniency of #30:
         # no reference lookup is involved, the key contradicts the slot itself.
         for slot in self.slots.named:
-            if slot is None or slot.card_id is None:
+            if slot is None or slot.card_id is None or slot.card_id > 999_999:
                 continue
             for factor in slot.factors:
                 if factor.kind == "unique" and factor.key != slot.card_id:

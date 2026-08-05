@@ -530,9 +530,8 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    "Est. Per Run", and `aria-sort` is what announces the state. */
 .proc-th-sort:not([aria-sort="none"]) .proc-h::after { content: " ▾"; }
 /* The chance column carries a bar, so it needs real width — the spark names
-   ellipsize, the numbers don't. One width for every table: the level column
-   and its ✕ retired to the Edit Sparks popout (#41), so an editable member's
-   table is the same two columns a locked one draws. */
+   ellipsize, the numbers don't. One width for every table: an editable
+   member's table draws the same two columns a locked one does (#41). */
 .proc-table th.proc-chance { text-align: right; }
 .proc-chance { width: 36%; }
 /* Bar, filled 0–100 absolutely (see ChanceBar), with the number riding on the

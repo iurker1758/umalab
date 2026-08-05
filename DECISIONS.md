@@ -3219,55 +3219,47 @@ shape that was being refined in the wrong direction.
 
 ## 41. Edit Sparks: the popout edits, the table displays
 
-Issue #86, carrying #74. The popout stops being add-only and the table
-stops being half an editor — reversing named pieces of #34 and of #35,
+Issue #86, carrying #74. Reverses named pieces of #34 and of #35,
 marked in each.
 
 - **Requirements:** editing a member's sparks was split: add + level in
-  the popout (#28/#35), remove via a ✕ in the proc table (#34), and a
+  the popout (#28/#35), remove via a ✕ in the proc table (#34), a
   mis-level fixable only by drop-then-re-add across the two. The one
   remover must reach everything held — a spark the reference can't
   name, a foreign green in an old document (reads stay permissive,
-  #39) — and no row may move or vanish under the pointer or the focus
-  that is editing it.
+  #39) — and no row may move or vanish under the pointer or focus.
 - **Choice:** the button becomes **Edit Sparks**, and the popout is the
-  one editor. A held row keeps the three star buttons live with the
-  current level pressed — a mis-level is one click, the pressed star a
-  no-op, never a toggle-off — plus the ✕, in place in its own section:
-  held-ness is row STATE, never row position. Which rows EXIST is
-  frozen per open: held sparks the reference can't name get degraded
-  "Unknown (key)" rows in their kind sections, and a removed foreign
-  green keeps her row with dead add buttons rather than unmounting
-  mid-interaction. A **Current Sparks pill** in the sticky band filters
-  the browse to the member's own rows; membership snapshots when
-  PRESSED, and it disables where she holds nothing. `factorsWith`
-  re-levels in place rather than appending the duplicate the server
-  rejects. The table's ✕ and level column retire: every table is the
-  locked two-column readout (names 122→171px in the 301px sidebar).
-  #74, both variants: focus is captured in the click handler and
-  restored to the control where it survived, else to the row ITSELF —
-  never the row's first button, which after a ✕ is the 1★ add, and
-  Enter auto-repeats. The ✕'s 24px slot is held on EVERY row, blank
-  where there is nothing to remove: a ✕ that materialized with the add
-  measured a 27px leftward shove of the stars under the pointer that
-  had just clicked them. 111px of name at 358px — 66.1% of all 437
-  names on one line, the rest on two, none on three.
-- **Alternatives rejected:** *a Current Sparks SECTION on top* — under
-  the Favorites freeze it was stale by design (an add surfaced there
-  only on the next open), and made live it would tear the row out of
-  the section under the pointer; the filter gets freshness and
-  stillness at once. *Toggle-off on the pressed star* — the idlest
-  click on the surface would delete. *Keeping the table's ✕ beside the
-  popout's* — one remove on two surfaces, drifting. *Exempting held
-  rows from greenFilter LIVE* — the foreign green's row unmounts with
-  its own ✕ click, reopening #74 in the one case the exemption exists
-  for. *Restoring focus from an effect observing `busy`* — runs after
-  the disabled state commits, so it captured `<body>`; shipped as a
-  no-op and reverted (#74). Do not re-attempt.
+  one editor: add, re-level (in place, via `factorsWith`), remove — a
+  held row keeps its three stars live with the current level pressed,
+  the pressed star a no-op, plus the ✕. Held-ness is row STATE, never
+  row position, and which rows EXIST is frozen per open: a spark the
+  reference can't name gets a degraded "Unknown (key)" row atop its
+  kind section, and a foreign green keeps her row with only the ✕
+  live — a re-level would 422 like the add it is. A **Current Sparks
+  pill** filters the browse to the member's own rows, snapshotted when
+  pressed, disabled where she holds nothing. Every table is the locked
+  two-column readout (names 122→171px in the 301px sidebar). #74:
+  focus is captured in the click handler, restored to the control
+  where it survived, else to the row ITSELF — its first button is the
+  1★ add under an auto-repeating Enter. The ✕'s 24px slot is held on
+  every row: one that materialized with the add measured a 27px shove
+  of the stars under the pointer. 111px of name at 358px — 66.1% of
+  all 437 names on one line, none on three.
+- **Alternatives rejected:** *a Current Sparks SECTION on top* — frozen
+  it was stale (an add surfaced next open), live it tore the row out
+  from under the pointer; the filter gets freshness and stillness at
+  once. *Toggle-off on the pressed star* — the idlest click would
+  delete. *Keeping the table's ✕* — one remove on two surfaces,
+  drifting. *Exempting held rows from greenFilter LIVE* — the foreign
+  green's row unmounts with its own ✕ click, reopening #74 in the one
+  case the exemption exists for. *Focus restore from an effect
+  observing `busy`* — runs after the disabled state commits, so it
+  captured `<body>`; shipped as a no-op and reverted (#74). Do not
+  re-attempt.
 - **What would change my mind:** sessions turning out to be mostly
   re-levelling a settled build — the popout's modality then costs more
-  than #35 priced, and the editor wants to be a panel beside the table.
-  The press-time snapshot confusing anyone ("why is the removed row
-  still here") would argue for a live filter and a different stillness
-  fix for its ✕s. A third surface wanting to remove sparks, which would
-  reopen the one-remover rule the green exemption leans on.
+  than #35 priced, and the editor wants to be a panel beside the
+  table. The press-time snapshot confusing anyone ("why is the removed
+  row still here") would argue a live filter and a different stillness
+  fix. A third surface removing sparks would reopen the one-remover
+  rule the green exemption leans on.

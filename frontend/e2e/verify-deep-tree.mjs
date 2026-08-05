@@ -893,6 +893,11 @@ try {
     page.locator(".spark-popout .spark-section", {
       has: page.locator(`.spark-section-head:text-is("${head}")`),
     });
+  // A popout row by its spark's identity — one selector to chase if the row
+  // markup ever moves, instead of the same template hand-built per check.
+  const sparkRowSel = (kind, key) => `li:has(button[data-spark="${kind}:${key}"])`;
+  const rowForSpark = (kind, key) =>
+    page.locator(`.spark-popout ${sparkRowSel(kind, key)}`);
   check("the panel's one entry point is the Edit Sparks button",
     ((await page.locator(".focus .spark-open").textContent()) ?? "").trim() === "Edit Sparks");
   const addSpark = async (label, ref, stars = 1) => {
@@ -955,13 +960,13 @@ try {
   // clicked it (#34's invariant, kept by #86).
   const speedKey = added.find((r) => r.kind === "blue").key;
   check("an add lands on the row that was clicked, which stays put",
-    (await sectionNamed("Blue").locator(`li:has(button[data-spark="blue:${wit.key}"])`).count()) === 1 &&
+    (await sectionNamed("Blue").locator(sparkRowSel("blue", wit.key)).count()) === 1 &&
     (await sectionNamed("Blue").locator('.seg[aria-pressed="true"][data-stars="2"]').count()) === 1 &&
     (await sectionNamed("Blue").locator(".spark-drop").count()) === 1 &&
     Math.round((await witStar.boundingBox()).x) === witStarX);
   check("and the replace-on-add reads on the replaced row too",
-    (await page.locator(`.spark-popout li:has(button[data-spark="blue:${speedKey}"]) .spark-drop`).count()) === 0 &&
-    (await page.locator(`.spark-popout li:has(button[data-spark="blue:${speedKey}"]) .seg[aria-pressed="true"]`).count()) === 0);
+    (await rowForSpark("blue", speedKey).locator(".spark-drop").count()) === 0 &&
+    (await rowForSpark("blue", speedKey).locator('.seg[aria-pressed="true"]').count()) === 0);
   await closeChooser();
   check("adding a second blue replaces the first",
     await until(async () =>
@@ -1138,14 +1143,12 @@ try {
   // beside it.
   await openChooser("G1-1");
   await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(spare.name);
-  const spareRow = page.locator(
-    `.spark-popout li:has(button[data-spark="${spare.kind}:${spare.key}"])`
-  );
+  const spareRow = rowForSpark(spare.kind, spare.key);
   check("searching a spark you already hold says so, rather than nothing",
     (await until(async () =>
       (await spareRow.locator('.seg[aria-pressed="true"][data-stars="3"]').count()) === 1)) &&
     (await spareRow.locator(".spark-drop").count()) === 1 &&
-    (await sectionNamed("White").locator(`li:has(button[data-spark="${spare.kind}:${spare.key}"])`).count()) === 1);
+    (await sectionNamed("White").locator(sparkRowSel(spare.kind, spare.key)).count()) === 1);
 
   // Guarded: every stanza below clicks the spare's held-row controls, and
   // clicking unconditionally after a failed `until` aborts the run at a
@@ -1819,7 +1822,7 @@ try {
   // covering — and picked up by the reload below. Removed again right after
   // it, through the UI, which is the assertion.
   const orphanKey = Math.max(...factorRef.map((f) => f.key)) + 1;
-  await fetch(`${BASE}/api/blueprints/${mine.id}`, {
+  const orphanPut = await fetch(`${BASE}/api/blueprints/${mine.id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1834,6 +1837,10 @@ try {
       },
     }),
   });
+  // Checked here, or a refused write surfaces 40 lines down as a 30s
+  // timeout blaming the popout for a failed setup.
+  check("the orphan white lands on the server", orphanPut.ok,
+    `PUT ${orphanPut.status} ${await orphanPut.text().catch(() => "")}`);
 
   // ---------- reload reopens the same blueprint ----------
   await page.reload();
@@ -1860,12 +1867,9 @@ try {
     await until(async () => (await rowFor(`Unknown (${orphanKey})`).count()) === 1));
   const preDropRows = await page.locator(".focus .proc-table tbody tr").count();
   await openChooser("G1-1");
-  const orphanRow = page.locator(
-    `.spark-popout li:has(button[data-spark="white:${orphanKey}"])`
-  );
+  const orphanRow = rowForSpark("white", orphanKey);
   check("and gets a degraded row in its kind section, held and removable",
-    (await sectionNamed("White")
-      .locator(`li:has(button[data-spark="white:${orphanKey}"])`).count()) === 1 &&
+    (await sectionNamed("White").locator(sparkRowSel("white", orphanKey)).count()) === 1 &&
     (await orphanRow.locator('.seg[aria-pressed="true"][data-stars="2"]').count()) === 1 &&
     (await orphanRow.locator(".spark-drop").count()) === 1);
   await orphanRow.locator(".spark-drop").click();

@@ -119,7 +119,14 @@ const unknownOption = (spark: { kind: SlotFactorKind; key: number }): Option => 
 // inert under Enter, and the next Tab walks into the row's own controls.
 const refocus = (control: HTMLElement | null): (() => void) => {
   const row = control?.closest("li") ?? null;
+  // Captured with the element: in browsers that don't focus a button on
+  // click (Safari; Firefox on macOS), a mouse user's activeElement is still
+  // <body> HERE — there is nothing to restore, and doing so anyway would
+  // paint a focus ring on a row that never had focus.
+  const hadFocus =
+    document.activeElement !== null && document.activeElement !== document.body;
   return () => {
+    if (!hadFocus) return;
     // After React commits the state the click caused — restoring synchronously
     // would focus an element the commit is about to disable or remove.
     setTimeout(() => {
@@ -296,10 +303,9 @@ function SparkRows({
   // snapshotted. Which SECTION a row sits in is frozen per open; what its
   // controls show is the document as it stands.
   heldStars: Map<string, number>;
-  // Whether an UNHELD row's add buttons are live. False only for a green the
-  // cast can't take, on screen because she was held when the popout opened:
-  // her ✕ must not vanish the row (see `possible`), and her adds must not
-  // offer what the server refuses.
+  // Whether a row's star buttons are live, held or not. False only for a
+  // green the cast can't take: re-levelling her writes the document just
+  // like adding her, and the server refuses both — only her ✕ helps.
   addable: (option: Option) => boolean;
   lists: SparkList[];
   listsFailed: boolean;
@@ -399,7 +405,7 @@ function SparkRows({
                   className={heldAt === n ? "seg active" : "seg"}
                   data-spark={id}
                   data-stars={n}
-                  disabled={heldAt === undefined && !addable(o)}
+                  disabled={!addable(o)}
                   aria-pressed={heldAt === n}
                   aria-label={
                     heldAt === undefined
@@ -414,13 +420,11 @@ function SparkRows({
                 </button>
               ))}
             </span>
-            {/* The remove — the table's ✕, moved to the row that also set the
-                level. Focus is captured before the click unmounts this
-                button (#74). The slot is held on EVERY row, blank where
-                there is nothing to remove: a ✕ that materialized with the
-                add would shove the stars left under the pointer that just
-                clicked them — the same reasoning as the pink row's blank
-                slot in the table this replaced (#34/#41). */}
+            {/* Focus is captured before the click unmounts this button
+                (#74). The slot is held on EVERY row, blank where there is
+                nothing to remove: a ✕ that materialized with the add
+                measured a 27px leftward shove of the stars under the
+                pointer that had just clicked them (#41). */}
             {heldAt !== undefined ? (
               <button
                 className="spark-drop"
@@ -527,13 +531,13 @@ function ChooserPopout({
   );
   // The Current Sparks FILTER: null browses everything; a Set narrows the
   // popout to the member's own rows, in their own sections. A filter, not a
-  // section (Jason's call over the held section built first — frozen at open
-  // it was stale, an add only surfacing on the next open, and live it would
-  // tear the row out of the section under the pointer). Membership
-  // snapshots when the pill is PRESSED, so it is fresh at the moment you
-  // ask — the spark added seconds ago is in it — while a ✕ under it leaves
-  // its row in place, add buttons back, rather than vanishing the list out
-  // from under the pointer. Pressing it again takes a fresh cut.
+  // section: frozen at open a section is stale (an add only surfaces on the
+  // next open), and live it tears the row out of the section under the
+  // pointer. Membership snapshots when the pill is PRESSED, so it is fresh
+  // at the moment you ask — the spark added seconds ago is in it — while a
+  // ✕ under it leaves its row in place, add buttons back, rather than
+  // vanishing the list out from under the pointer. Pressing it again takes
+  // a fresh cut.
   const [onlyCurrent, setOnlyCurrent] = useState<Set<string> | null>(null);
 
   // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
@@ -572,12 +576,11 @@ function ChooserPopout({
   const greenPossible = greenFilter(cardId, charaId);
   const possible = (o: Option): boolean =>
     heldAtOpen.has(sparkId({ type: o.kind, key: o.key })) || greenPossible(o);
-  // Live, unlike `possible`: held rows re-level whatever they hold, and the
-  // one row shown-but-unaddable is the foreign green after her ✕ — offering
-  // her add buttons would put the client on the wrong side of the rule the
-  // server enforces (DECISIONS.md #39).
-  const addable = (o: Option): boolean =>
-    heldStars.has(sparkId({ type: o.kind, key: o.key })) || greenPossible(o);
+  // Live, unlike `possible`: a foreign green's stars are dead whether she
+  // is held or already removed — a re-level writes the document just like
+  // an add, and the server refuses every save carrying either (DECISIONS.md
+  // #39). Only her ✕ helps.
+  const addable = greenPossible;
   // One rule for every section: the query and the Current Sparks filter
   // narrow, and hits rank by where the query lands in the name then
   // alphabetically — a no-op with no query, the reference arriving sorted
@@ -605,12 +608,15 @@ function ChooserPopout({
   const sections = BROWSE_KINDS.map((kind) => ({
     kind,
     options: matching([
+      // Orphans first: the unknown spark is what the open is FOR when one
+      // exists, and "Unknown (key)" belongs nowhere in the alphabet —
+      // appended, it sat ~300 rows below where anyone would look for it.
+      ...orphanRows.filter((f) => f.kind === kind).map(unknownOption),
       ...refs
         .filter(
           (r) => r.kind === kind && !pinned.has(sparkId({ type: r.kind, key: r.key }))
         )
         .map(optionOf),
-      ...orphanRows.filter((f) => f.kind === kind).map(unknownOption),
     ]),
   })).filter((s) => s.options.length > 0);
 

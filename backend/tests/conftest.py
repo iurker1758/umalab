@@ -14,9 +14,8 @@ running is worse than one that was never written.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncGenerator, Awaitable, Callable, MutableMapping
+from collections.abc import AsyncGenerator
 from contextvars import ContextVar
-from typing import Any
 
 import httpx
 import pytest
@@ -29,6 +28,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from starlette.types import Receive, Scope, Send
 
 from app.auth import current_user
 from app.config import settings
@@ -130,13 +130,10 @@ async def users(sessions: async_sessionmaker[AsyncSession]) -> list[User]:
         return rows
 
 
-# Set by each client's ASGI shim for the span of one request; deliberately no
-# default, so a request that somehow reaches `current_user` without a shim
-# fails loudly instead of running as whoever was bound last.
+# Set by each client's ASGI shim for the span of one request. Deliberately no
+# default: a request that reaches the app without a shim must fail (see
+# `request_user` below), not run as whoever was bound last.
 _request_user: ContextVar[User] = ContextVar("_request_user")
-
-_Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
-_Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 
 
 @pytest.fixture
@@ -149,28 +146,37 @@ def client(sessions: async_sessionmaker[AsyncSession], users: list[User]):
 
     Identity travels with the client, not the process: each client wraps the
     app in a shim that binds its user into a context variable around every
-    request, and the one override reads that. Writing the user straight into
-    `app.dependency_overrides` at construction time made the last-constructed
-    client win for every client still open, so a cross-user test holding two
-    clients at once compared a user against herself — and passed with the
-    owner filter deleted (issue #53). A separate FastAPI instance per user
-    was the other candidate; rejected because the routers close over module
-    singletons anyway, so a second app costs re-running setup without
-    isolating anything more than the override dict.
+    request, and the one override reads that. The app carries a single
+    `dependency_overrides` dict, so anything written there is last-writer-
+    wins across every open client — a cross-user test holding two clients at
+    once would compare a user against herself (issue #53). A separate
+    FastAPI instance per user was the other candidate; rejected because the
+    routers close over module singletons anyway, so a second app costs
+    re-running setup without isolating anything more than the override dict.
     """
     async def override_session() -> AsyncGenerator[AsyncSession, None]:
         async with sessions() as session:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    # A lambda, not `_request_user.get` itself: FastAPI reads the override's
-    # signature, and the builtin's is unparseable by `inspect`.
-    app.dependency_overrides[current_user] = lambda: _request_user.get()
+
+    # `async def`, so the ContextVar is read on the event loop where the shim
+    # set it — FastAPI dispatches a sync override to a worker thread, where it
+    # resolves only because anyio copies the caller's context. (Nor can it be
+    # `_request_user.get` itself: FastAPI reads the override's signature, and
+    # the builtin's is unparseable by `inspect`.)
+    async def request_user() -> User:
+        try:
+            return _request_user.get()
+        except LookupError as e:
+            raise RuntimeError(
+                "request reached the app without going through client(user)"
+            ) from e
+
+    app.dependency_overrides[current_user] = request_user
 
     def as_user(user: User) -> httpx.AsyncClient:
-        async def bound_app(
-            scope: MutableMapping[str, Any], receive: _Receive, send: _Send
-        ) -> None:
+        async def bound_app(scope: Scope, receive: Receive, send: Send) -> None:
             token = _request_user.set(user)
             try:
                 await app(scope, receive, send)

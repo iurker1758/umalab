@@ -462,20 +462,20 @@ async def test_patching_a_missing_list_is_a_404(client: Any, users: list[User]):
 
 async def test_too_many_lists_are_refused(client: Any, users: list[User]):
     a, _ = users
-    for n in range(50):
+    for n in range(MAX_LISTS_PER_OWNER):
         assert (await create(client, a, f"build {n}")).status_code == 201
     response = await create(client, a, "one more")
     assert response.status_code == 409
-    assert len(await listing(client, a)) == 50
+    assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
     # The cap and the name collision are BOTH 409s and the client shows
     # whichever detail it is handed, so they have to be distinguishable — a
     # user at the cap being told to pick another name renames four times and
     # learns nothing.
-    assert "50 lists" in response.json()["detail"]
+    assert f"{MAX_LISTS_PER_OWNER} lists" in response.json()["detail"]
 
 
 async def test_concurrent_creates_cannot_exceed_the_cap(
-    client: Any, users: list[User]
+    client: Any, users: list[User], sessions: Any
 ):
     """The check-then-act the advisory lock exists for: at 49 lists, five
     simultaneous creates must yield exactly one 201 and four 409s, never an
@@ -491,8 +491,18 @@ async def test_concurrent_creates_cannot_exceed_the_cap(
     `test_the_cap_check_runs_under_the_advisory_lock` below.
     """
     a, _ = users
-    for n in range(MAX_LISTS_PER_OWNER - 1):
-        assert (await create(client, a, f"build {n}")).status_code == 201
+    # Fixture state, not behaviour under test — the create path up to the
+    # cap is `test_too_many_lists_are_refused`'s, so the 49 rows arrive as
+    # one INSERT rather than 49 request cycles.
+    async with sessions() as session:
+        await session.execute(
+            text(
+                "INSERT INTO spark_lists (owner_id, name)"
+                " SELECT :o, 'build ' || n"
+                " FROM generate_series(1, :n) n"
+            ).bindparams(o=a.id, n=MAX_LISTS_PER_OWNER - 1)
+        )
+        await session.commit()
     async with client(a) as http:
         await asyncio.gather(
             *(http.get(LISTS) for _ in range(CONCURRENT_CREATES))
@@ -534,11 +544,16 @@ async def test_the_cap_check_runs_under_the_advisory_lock(
         try:
             # pg_advisory_xact_lock(bigint) files under classid = the
             # key's high 32 bits (0 for any real user id), objid = the
-            # low 32, objsubid 1.
+            # low 32, objsubid 1. Scoped to this database: advisory keys
+            # are per-database, but pg_locks lists every backend on the
+            # instance, and owner 1 exists in every copy of this app — a
+            # dev server's waiter must not satisfy the sighting.
             waiting = text(
                 "SELECT count(*) FROM pg_locks"
                 " WHERE locktype = 'advisory' AND classid = 0"
                 " AND objid = :oid AND objsubid = 1 AND NOT granted"
+                " AND database = (SELECT oid FROM pg_database"
+                " WHERE datname = current_database())"
             ).bindparams(oid=a.id)
             for _ in range(100):
                 if request.done():
@@ -567,12 +582,15 @@ async def test_the_cap_check_runs_under_the_advisory_lock(
             await holder.commit()
             response = await asyncio.wait_for(request, timeout=5)
         finally:
-            # A failure above would otherwise abandon the task to be
-            # torn down with the transport, burying the real error
-            # under "Task exception was never retrieved".
-            if not request.done():
-                request.cancel()
-                await asyncio.gather(request, return_exceptions=True)
+            # Release the lock BEFORE reaping: a failure above leaves the
+            # create parked on it, and awaiting a task nothing will unblock
+            # is a hang, not a report. A no-op on the success path, where
+            # commit already ended the transaction. The reap itself keeps a
+            # POST that raised from dying as teardown noise under "Task
+            # exception was never retrieved".
+            await holder.rollback()
+            request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
     assert response.status_code == 409, response.text
     assert f"{MAX_LISTS_PER_OWNER} lists" in response.json()["detail"]
     assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
@@ -584,7 +602,7 @@ async def test_the_cap_is_per_owner(client: Any, users: list[User]):
     whole suite while blocking user b behind user a's 50 — the class of
     omission test_isolation.py exists to catch."""
     a, b = users
-    for n in range(50):
+    for n in range(MAX_LISTS_PER_OWNER):
         assert (await create(client, a, f"build {n}")).status_code == 201
     assert (await create(client, a, "one more")).status_code == 409
     assert (await create(client, b, "my first")).status_code == 201

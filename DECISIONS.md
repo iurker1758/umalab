@@ -3066,11 +3066,10 @@ shape that was being refined in the wrong direction.
 
 ## 38. Guards proven able to fail: migration drift, and the lock's ordering
 
-Issue #76: two tests asserted less than they read. Everything below was
-settled by mutation — each guard was shown to fail against the fault it
-watches before being trusted.
-
-- **Requirements:** the DB suite builds its schema with `create_all`, so
+- **Requirements:** issue #76 — two tests asserted less than they read,
+  and each guard here had to be shown failing against the fault it
+  watches before being trusted.
+  The DB suite builds its schema with `create_all`, so
   migration-vs-models drift never reached `pytest` — CI's `alembic check`
   step covers it, but merges don't wait for CI here, so the local run is
   the gate that counts. And the concurrent-creates test passed with

@@ -85,6 +85,30 @@ async def test_upgrade_head_matches_the_models():
                 raise
             pytest.skip(f"no test database at {TEST_DATABASE_URL}: {e}")
 
+        # Refuse before writing, not after: the child's only tie to the test
+        # database is DATABASE_URL outranking backend/.env inside a fresh
+        # settings import, and conftest's same-database refusal cannot see a
+        # subprocess. So ask a child what it resolves FIRST — an env-var
+        # precedence change fails here, while the damage is still zero.
+        probe = await asyncio.to_thread(
+            subprocess.run,
+            [
+                sys.executable,
+                "-c",
+                "from app.config import settings; print(settings.database_url)",
+            ],
+            cwd=BACKEND_DIR,
+            env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert probe.returncode == 0, probe.stderr
+        assert probe.stdout.strip() == TEST_DATABASE_URL, (
+            "a subprocess no longer resolves DATABASE_URL to the test "
+            f"database: {probe.stdout.strip()}"
+        )
+
         result = await asyncio.to_thread(
             subprocess.run,
             [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -97,12 +121,11 @@ async def test_upgrade_head_matches_the_models():
         assert result.returncode == 0, result.stderr
 
         async with engine.connect() as connection:
-            # The child's only tie to this database is DATABASE_URL
-            # outranking backend/.env inside its fresh settings import —
-            # conftest's same-database refusal cannot see a subprocess. If
-            # that link ever breaks, the upgrade lands on the app's own
-            # database and the diff below degenerates into add_table noise;
-            # the missing stamp names the actual fault.
+            # The backstop behind the preflight, for whatever it cannot
+            # see — an env.py that stopped reading settings, say. Without
+            # this, an upgrade that landed elsewhere degenerates the diff
+            # below into add_table noise; the missing stamp names the
+            # actual fault.
             stamped = (
                 await connection.exec_driver_sql(
                     "SELECT to_regclass('public.alembic_version')"

@@ -14,7 +14,9 @@ running is worse than one that was never written.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable, MutableMapping
+from contextvars import ContextVar
+from typing import Any
 
 import httpx
 import pytest
@@ -128,6 +130,15 @@ async def users(sessions: async_sessionmaker[AsyncSession]) -> list[User]:
         return rows
 
 
+# Set by each client's ASGI shim for the span of one request; deliberately no
+# default, so a request that somehow reaches `current_user` without a shim
+# fails loudly instead of running as whoever was bound last.
+_request_user: ContextVar[User] = ContextVar("_request_user")
+
+_Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
+_Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
+
+
 @pytest.fixture
 def client(sessions: async_sessionmaker[AsyncSession], users: list[User]):
     """A factory: `client(user)` makes a client that authenticates as `user`.
@@ -135,17 +146,39 @@ def client(sessions: async_sessionmaker[AsyncSession], users: list[User]):
     `current_user` itself is overridden rather than driven with a token —
     what it produces from a request is test_auth.py's subject, and what the
     routes do with the result is these modules'.
+
+    Identity travels with the client, not the process: each client wraps the
+    app in a shim that binds its user into a context variable around every
+    request, and the one override reads that. Writing the user straight into
+    `app.dependency_overrides` at construction time made the last-constructed
+    client win for every client still open, so a cross-user test holding two
+    clients at once compared a user against herself — and passed with the
+    owner filter deleted (issue #53). A separate FastAPI instance per user
+    was the other candidate; rejected because the routers close over module
+    singletons anyway, so a second app costs re-running setup without
+    isolating anything more than the override dict.
     """
     async def override_session() -> AsyncGenerator[AsyncSession, None]:
         async with sessions() as session:
             yield session
 
     app.dependency_overrides[get_session] = override_session
+    # A lambda, not `_request_user.get` itself: FastAPI reads the override's
+    # signature, and the builtin's is unparseable by `inspect`.
+    app.dependency_overrides[current_user] = lambda: _request_user.get()
 
     def as_user(user: User) -> httpx.AsyncClient:
-        app.dependency_overrides[current_user] = lambda: user
+        async def bound_app(
+            scope: MutableMapping[str, Any], receive: _Receive, send: _Send
+        ) -> None:
+            token = _request_user.set(user)
+            try:
+                await app(scope, receive, send)
+            finally:
+                _request_user.reset(token)
+
         return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=bound_app), base_url="http://test"
         )
 
     yield as_user

@@ -92,6 +92,22 @@ async def test_latest_import_is_your_own(client: Any, users: list[User]):
         assert (await http.get("/api/imports/latest")).json() is None
 
 
+async def test_two_open_clients_keep_their_own_identities(client: Any, users: list[User]):
+    """Both clients open at once — the natural shape for a cross-user check.
+    When identity was bound at construction through the app's global override
+    dict, the last-constructed client won for every client still open, and a
+    test written this way compared b's rows against b's rows — green even
+    with the owner filter deleted."""
+    a, b = users
+    assert (await import_as(client, a)).status_code == 201
+
+    async with client(a) as ha, client(b) as hb:
+        a_sees = (await ha.get("/api/veterans")).json()
+        b_sees = (await hb.get("/api/veterans")).json()
+        assert a_sees, "a's own roster vanished — the identities crossed"
+        assert b_sees == []
+
+
 # ---------- tags ----------
 
 async def test_you_cannot_tag_another_users_veteran(client: Any, users: list[User]):

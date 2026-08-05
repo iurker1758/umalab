@@ -529,27 +529,11 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* Drawn, not written: the label in the DOM stays exactly "Spark" and
    "Est. Per Run", and `aria-sort` is what announces the state. */
 .proc-th-sort:not([aria-sort="none"]) .proc-h::after { content: " ▾"; }
-/* The level column, on editable ancestor tables only: the ★ glyphs every row
-   shows, and the ✕ every row but the pink's carries. Shrink-to-fit, so the
-   names keep every pixel it doesn't need — which is most of them, the level
-   being a readout here rather than the three-button control it briefly was
-   (DECISIONS.md #34). */
-.proc-level { width: 1%; white-space: nowrap; text-align: right; }
-/* Both sized the same and both always present, so the ★ end at one x down
-   the column whether or not the row can be dropped. */
-.proc-drop, .proc-drop-blank { display: inline-block; width: 1.05rem; margin-left: 0.3rem; vertical-align: middle; }
-.proc-drop { padding: 0; font-size: 0.9rem; line-height: 1; color: inherit; background: none; border: 0; opacity: 0.45; cursor: pointer; }
-.proc-drop:hover { opacity: 1; color: #ff8a80; }
 /* The chance column carries a bar, so it needs real width — the spark names
-   ellipsize, the numbers don't. */
+   ellipsize, the numbers don't. One width for every table: an editable
+   member's table draws the same two columns a locked one does (#41). */
 .proc-table th.proc-chance { text-align: right; }
 .proc-chance { width: 36%; }
-/* Where the row also carries the ★ control, the bar gives up 8% so the names
-   keep a second line instead of a third — measured at 390px: 36% left the
-   longest name (36 chars) on three lines and three more on two, 28% puts the
-   table back at the wrap profile it had before the control moved in. The bar
-   still runs 93px, which holds a full "100.0%" with room to read the fill. */
-.proc-table-edit .proc-chance { width: 28%; }
 /* Bar, filled 0–100 absolutely (see ChanceBar), with the number riding on the
    track rather than on the fill — at these rates most fills are too short to
    hold a label, and a number that jumps between inside and outside its bar as
@@ -657,10 +641,12 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    and both messages are only true of a control in here. */
 .spark-note { margin: 0.4rem 0 0; font-size: 0.78rem; opacity: 0.65; }
 .spark-note-bad { color: #ff9f9f; opacity: 0.9; }
-/* A match is a name and three add buttons, one per level: you choose the ★ at
-   the moment you choose the spark, which is when you know it, and a 3★ takes
-   one click instead of pick-then-correct. The row's own level control went
-   away with it, so nothing in the table can move a row (DECISIONS.md #34). */
+/* A match is a name and three level buttons: you choose the ★ at the moment
+   you choose the spark, which is when you know it, and a 3★ takes one click
+   instead of pick-then-correct. A HELD row keeps the same three, live, with
+   the current level pressed, plus the ✕ that removes — the table behind the
+   popout is a readout, so nothing in it can move a row (DECISIONS.md #34,
+   #41). */
 .spark-matches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 /* `wrap` is what puts the list picker on its own line: the row already
    carries a star, a kind tag, a name and three buttons, and at 358px — the
@@ -720,14 +706,25 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    they measured 25×18px — under the 24px minimum, on a PWA that is used on a
    phone. */
 .spark-matches .seg { padding: 0.45rem 0.5rem; font-size: 0.68rem; line-height: 1; cursor: pointer; }
-.spark-matches .seg:hover { opacity: 1; background: #1e3a5f; }
+/* Never the `.seg.active` blue: the pressed star is the only readout of the
+   held level, so a hover fill identical to it reads as the level under
+   whichever star the pointer happens to cross. */
+.spark-matches .seg:hover:not(.active):not([disabled]) { opacity: 1; background: #2a3340; }
+.spark-matches .seg[disabled] { opacity: 0.25; cursor: default; }
 /* Whose green a green is. A unique's factor key IS a card_id, so the spark
    names the uma and not the other way round — dimmed and trailing, because
    the spark is what you are picking. Only appears where the list isn't
    already narrowed to one card. */
 .spark-owner { margin-left: 0.4rem; font-size: 0.72rem; opacity: 0.5; }
-/* A held spark answers its own search rather than vanishing from it. */
-.spark-held { flex: none; font-size: 0.7rem; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.5; }
+/* The remove, on held rows only — the table's ✕, moved beside the stars that
+   set the level (#41), at the 24px thumb width the row's buttons follow. Both
+   sized the same and the slot held on every row, so an add is zero-movement:
+   a ✕ that materialized with the add measured a 27px leftward shove of the
+   stars under the pointer that had just clicked them — clicking where 2★ was
+   could land on 3★, the mis-click #34 closed coming back sideways. */
+.spark-drop, .spark-drop-blank { flex: none; width: 24px; }
+.spark-drop { padding: 0.4rem 0; font-size: 0.78rem; line-height: 1; color: inherit; background: none; border: 0; opacity: 0.45; cursor: pointer; }
+.spark-drop:hover { opacity: 1; color: #ff8a80; }
 /* The popout is a browser, so its rows scroll under a sticky search box
    rather than being capped — the "N more — keep typing to narrow" line the
    inline search needed is gone with the cap that produced it. */
@@ -738,6 +735,14 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    would stretch its own border and radius across the popout. */
 .spark-search-band { position: sticky; top: 0; z-index: 1; margin: 0 -0.9rem; padding: 0.9rem 0.9rem 0.2rem; background: #141a21; }
 .spark-search-band .uma-search { margin-bottom: 0; }
+/* The current-only filter — a pill under the search, in the filter panel's
+   legacy-toggle idiom. A FILTER, not a section: rows keep their sections and
+   their positions whether held or not, and this narrows the browse to the
+   member's own on demand. */
+.spark-current { display: inline-flex; margin-top: 0.4rem; background: #1a2027; border: 1px dashed #3a4250; border-radius: 999px; color: inherit; font-size: 0.72rem; padding: 0.28rem 0.65rem; opacity: 0.7; cursor: pointer; }
+.spark-current:hover:not([disabled]) { opacity: 1; }
+.spark-current[disabled] { opacity: 0.35; cursor: default; }
+.spark-current.active { border-style: solid; border-color: #2a76c9; background: #1e3a5f; opacity: 1; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */

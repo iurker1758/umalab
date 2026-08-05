@@ -2120,6 +2120,12 @@ group. So the level left the row entirely and moved onto the search's
 match rows, where choosing it is one click and nothing in the table can
 reorder anything.
 
+**#41 later moved the level column and its ✕ into the popout too** — an
+editable table is now the locked two-column readout, and a held row
+re-levels in place, removing the drop-and-re-add trade accepted below.
+What survives of this entry is the sort machinery and the invariant
+that nothing in the table can move a row.
+
 - **Requirements:** (a) on an editable ancestor's tab, every non-pink
   spark rendered **twice** ~30px apart — once as a ranked, kind-coloured
   row with ★ glyphs, once as an insertion-ordered white row with a
@@ -2364,7 +2370,9 @@ reorder anything.
 
 Issue #28, the first consumer of the watched-spark store #33 shipped
 with no UI. It replaces the inline search, and it reverses #30 in
-writing.
+writing. **#41 later made the popout the whole editor** — Edit Sparks,
+re-level and remove on the row, a Current Sparks filter — retiring the
+`Added` marker and the add-only framing below.
 
 - **Requirements:** hand entry was search-only — type into "Add a
   Spark…" on an ancestor's Sparks tab and pick from up to eight ranked
@@ -3208,3 +3216,50 @@ shape that was being refined in the wrong direction.
   move without touching the shape. A real use for pinning a blue or a
   green in a list — widening `ListSparkKind` back is free; narrowing
   it again would need another survey.
+
+## 41. Edit Sparks: the popout edits, the table displays
+
+Issue #86, carrying #74. Reverses named pieces of #34 and of #35,
+marked in each.
+
+- **Requirements:** editing a member's sparks was split: add + level in
+  the popout (#28/#35), remove via a ✕ in the proc table (#34), a
+  mis-level fixable only by drop-then-re-add across the two. The one
+  remover must reach everything held — a spark the reference can't
+  name, a foreign green in an old document (reads stay permissive,
+  #39) — and no row may move or vanish under the pointer or focus.
+- **Choice:** the button becomes **Edit Sparks**, and the popout is the
+  one editor: add, re-level (in place, via `factorsWith`), remove — a
+  held row keeps its three stars live with the current level pressed,
+  the pressed star a no-op, plus the ✕. Held-ness is row STATE, never
+  row position, and which rows EXIST is frozen per open: a spark the
+  reference can't name gets a degraded "Unknown (key)" row atop its
+  kind section, and a foreign green keeps her row with only the ✕
+  live — a re-level would 422 like the add it is. A **Current Sparks
+  pill** filters the browse to the member's own rows, snapshotted when
+  pressed, disabled where she holds nothing. Every table is the locked
+  two-column readout (names 122→171px in the 301px sidebar). #74:
+  focus is captured in the click handler, restored to the control
+  where it survived, else to the row ITSELF — its first button is the
+  1★ add under an auto-repeating Enter. The ✕'s 24px slot is held on
+  every row: one that materialized with the add measured a 27px shove
+  of the stars under the pointer. 111px of name at 358px — 66.1% of
+  all 437 names on one line, none on three.
+- **Alternatives rejected:** *a Current Sparks SECTION on top* — frozen
+  it was stale (an add surfaced next open), live it tore the row out
+  from under the pointer; the filter gets freshness and stillness at
+  once. *Toggle-off on the pressed star* — the idlest click would
+  delete. *Keeping the table's ✕* — one remove on two surfaces,
+  drifting. *Exempting held rows from greenFilter LIVE* — the foreign
+  green's row unmounts with its own ✕ click, reopening #74 in the one
+  case the exemption exists for. *Focus restore from an effect
+  observing `busy`* — runs after the disabled state commits, so it
+  captured `<body>`; shipped as a no-op and reverted (#74). Do not
+  re-attempt.
+- **What would change my mind:** sessions turning out to be mostly
+  re-levelling a settled build — the popout's modality then costs more
+  than #35 priced, and the editor wants to be a panel beside the
+  table. The press-time snapshot confusing anyone ("why is the removed
+  row still here") would argue a live filter and a different stillness
+  fix. A third surface removing sparks would reopen the one-remover
+  rule the green exemption leans on.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
   LIST_SPARK_KINDS,
@@ -8,7 +8,6 @@ import {
   type SlotFactor,
   type SlotFactorKind,
   type SparkList,
-  type SparkRef,
 } from "../api";
 import { deriveCharaId, factorsWith } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
@@ -21,12 +20,15 @@ import {
   type SparkListStore,
 } from "../sparks";
 
-// Hand entry for a member's non-pink sparks: a popout that BROWSES the 437
-// factors, with the ones you've favorited at the top (DECISIONS.md #35).
-//
-// ADDING is all it does, and adding includes the LEVEL — three buttons per
-// row, so a 3★ is one click at the moment you are choosing the spark
-// (DECISIONS.md #34). Nothing here can change a chance in the table behind it.
+// The EDITOR for a member's non-pink sparks: a popout that BROWSES the 437
+// factors with your favorites on top (DECISIONS.md #35, #41). Adding includes
+// the LEVEL — three buttons per row, so a 3★ is one click at the moment you
+// are choosing the spark (#34) — and a held row keeps the same three buttons
+// live with the current level pressed, plus the ✕ that removes, IN PLACE in
+// its own section: held-ness is row STATE, never row position. A Current
+// Sparks filter in the search band narrows the browse to what the member
+// holds. The table behind it displays and never edits: every act that
+// changes a chance happens in here, where nothing can move a row (#41).
 //
 // FAVOURITING is a different act from adding, deliberately: a filler white you
 // type onto every node must not land in #27's watched block, and a row must
@@ -94,13 +96,57 @@ const listableOf = (o: Option): ListableSpark | null =>
 
 const optionOf = (ref: FactorRef): Option => ref;
 
-const unknownOption = (spark: SparkRef): Option => ({
+const unknownOption = (spark: { kind: SlotFactorKind; key: number }): Option => ({
   kind: spark.kind,
   key: spark.key,
   // The same degradation ProcPanel uses for a stored spark the reference
   // can't name, rather than a blank row.
   name: `Unknown (${spark.key})`,
 });
+
+// The #74 fix, both variants. A list write disables the pill that was clicked,
+// and a held row's ✕ unmounts itself — a disabled or removed element cannot
+// hold focus, so either way the browser drops it to <body> and the next Tab
+// restarts from the top of a 437-row popout. The element is captured HERE, in
+// the click handler, before any state changes: an effect observing `busy` runs
+// after React commits the disabled state, by which point focus is already on
+// <body> — that shape shipped as a no-op and was reverted (#74, do not
+// re-attempt). Captured at the ROW as well as the control, so one fix covers
+// both variants: focus returns to the control where it survived (the pill,
+// re-enabled), else to the row ITSELF — never the row's first live button,
+// which in a ✕'s row is the 1★ add: Enter auto-repeats, so a held or doubled
+// press on the ✕ would remove a 3★ and silently re-add it at 1★. The li is
+// inert under Enter, and the next Tab walks into the row's own controls.
+const refocus = (control: HTMLElement | null): (() => void) => {
+  const row = control?.closest("li") ?? null;
+  // Captured with the element: in browsers that don't focus a button on
+  // click (Safari; Firefox on macOS), a mouse user's activeElement is still
+  // <body> HERE — there is nothing to restore, and doing so anyway would
+  // paint a focus ring on a row that never had focus.
+  const hadFocus =
+    document.activeElement !== null && document.activeElement !== document.body;
+  return () => {
+    if (!hadFocus) return;
+    // After React commits the state the click caused — restoring synchronously
+    // would focus an element the commit is about to disable or remove.
+    setTimeout(() => {
+      const active = document.activeElement;
+      // Only where focus was actually dropped: the user may have moved on.
+      if (active !== null && active !== document.body) return;
+      if (
+        control !== null &&
+        control.isConnected &&
+        !(control as HTMLButtonElement).disabled
+      ) {
+        control.focus();
+      } else if (row !== null && row.isConnected) {
+        // Focusable programmatically only — rows never join the Tab order.
+        row.tabIndex = -1;
+        row.focus();
+      }
+    });
+  };
+};
 
 /**
  * The membership editor for one spark: every list, checked where it holds it,
@@ -135,20 +181,29 @@ function ListPicker({
   // the whole membership array built from that stale copy, silently dropping
   // anything another device added.
   listsFailed: boolean;
-  onToggleList: (listId: number) => void;
+  // A promise so the pill can put focus back where it was once the write
+  // settles and the control re-enables (#74).
+  onToggleList: (listId: number) => Promise<unknown>;
   // Resolves false when the server refused the name, which is when the field
   // must keep it.
   onCreateList: (listName: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState("");
+  // The field, not the event target: Enter and the Add button both land here,
+  // and after a successful create the button disables with the emptied draft
+  // while the field is where the next name gets typed (#74).
+  const inputRef = useRef<HTMLInputElement>(null);
   // Cleared only once the list exists, so correcting a name collision doesn't
   // mean retyping it from scratch.
   const submit = () => {
     const trimmed = draft.trim();
     if (trimmed === "") return;
-    void onCreateList(trimmed).then((made) => {
-      if (made) setDraft("");
-    });
+    const restore = refocus(inputRef.current);
+    void onCreateList(trimmed)
+      .then((made) => {
+        if (made) setDraft("");
+      })
+      .finally(restore);
   };
   return (
     <div className="spark-lists" role="group" aria-label={`Lists for ${name}`}>
@@ -175,7 +230,10 @@ function ListPicker({
             }
             title={holds ? `Remove from ${list.name}` : `Add to ${list.name}`}
             disabled={busy || listsFailed}
-            onClick={() => onToggleList(list.id)}
+            onClick={(e) => {
+              const restore = refocus(e.currentTarget);
+              void onToggleList(list.id).finally(restore);
+            }}
           >
             {list.name}
             {/* A glyph inside the button, never a nested one — a button in a
@@ -189,6 +247,7 @@ function ListPicker({
       })}
       <span className="spark-list-new">
         <input
+          ref={inputRef}
           className="uma-search"
           type="text"
           aria-label={`New list for ${name}`}
@@ -226,19 +285,28 @@ function ListPicker({
 
 function SparkRows({
   options,
-  held,
+  heldStars,
+  addable,
   lists,
   listsFailed,
   busy,
   openPicker,
   cardOwner,
   onAdd,
+  onRemove,
   onOpenPicker,
   onToggleList,
   onCreateList,
 }: {
   options: Option[];
-  held: Set<string>;
+  // What the member holds RIGHT NOW, by spark id, with its level — live, not
+  // snapshotted. Which SECTION a row sits in is frozen per open; what its
+  // controls show is the document as it stands.
+  heldStars: Map<string, number>;
+  // Whether a row's star buttons are live, held or not. False only for a
+  // green the cast can't take: re-levelling her writes the document just
+  // like adding her, and the server refuses both — only her ✕ helps.
+  addable: (option: Option) => boolean;
   lists: SparkList[];
   listsFailed: boolean;
   busy: boolean;
@@ -251,8 +319,9 @@ function SparkRows({
   // says whose sparks these are.
   cardOwner: (cardId: number) => string | null;
   onAdd: (option: Option, stars: number) => void;
+  onRemove: (option: Option) => void;
   onOpenPicker: (id: string | null) => void;
-  onToggleList: (spark: ListableSpark, listId: number) => void;
+  onToggleList: (spark: ListableSpark, listId: number) => Promise<unknown>;
   onCreateList: (spark: ListableSpark, listName: string) => Promise<boolean>;
 }) {
   return (
@@ -266,6 +335,7 @@ function SparkRows({
         const holders = listable === null ? [] : listsWith(lists, o.kind, o.key);
         const fav = holders.length > 0;
         const picking = listable !== null && openPicker === id;
+        const heldAt = heldStars.get(id);
         return (
           <li key={id}>
             {/* Disabled rather than hidden when the lists didn't load, so the
@@ -315,29 +385,61 @@ function SparkRows({
                 <span className="spark-owner">{cardOwner(o.key)}</span>
               )}
             </span>
-            {held.has(id) ? (
-              // Shown, marked, rather than filtered into silence: finding the
-              // right name and getting nothing back reads as "no such spark".
-              <span className="spark-held">Added</span>
+            {/* One control shape for every row, held or not (#41). Held, the
+                current level is pressed and a mis-level is one click to fix;
+                clicking the pressed star is a NO-OP, never a toggle-off — the
+                most common idle click must not be destructive. The three
+                buttons persist across an add, so the one under the pointer
+                (and under focus) survives its own click. Not a `radiogroup`
+                on an unheld row: there these are three different add actions,
+                each naming its own outcome, because "3★" alone is meaningless
+                read out of the row it sits in. `aria-pressed` is present in
+                BOTH states — absent-when-unheld makes the add flip the
+                control's role from button to toggle button as a side effect
+                of its own click; false keeps the role while the state and
+                label carry the change. */}
+            <span className="seg-group" role="group">
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  className={heldAt === n ? "seg active" : "seg"}
+                  data-spark={id}
+                  data-stars={n}
+                  disabled={!addable(o)}
+                  aria-pressed={heldAt === n}
+                  aria-label={
+                    heldAt === undefined
+                      ? `Add ${o.name} at ${n}★`
+                      : `Set ${o.name} to ${n}★`
+                  }
+                  onClick={() => {
+                    if (heldAt !== n) onAdd(o, n);
+                  }}
+                >
+                  {n}★
+                </button>
+              ))}
+            </span>
+            {/* Focus is captured before the click unmounts this button
+                (#74). The slot is held on EVERY row, blank where there is
+                nothing to remove: a ✕ that materialized with the add
+                measured a 27px leftward shove of the stars under the
+                pointer that had just clicked them (#41). */}
+            {heldAt !== undefined ? (
+              <button
+                className="spark-drop"
+                data-spark={id}
+                aria-label={`Remove ${o.name}`}
+                onClick={(e) => {
+                  const restore = refocus(e.currentTarget);
+                  onRemove(o);
+                  restore();
+                }}
+              >
+                ✕
+              </button>
             ) : (
-              // Not a `radiogroup`: these three don't hold a value between
-              // them, they are three different add actions. Each names its own
-              // outcome, because "3★" alone is meaningless read out of the row
-              // it sits in.
-              <span className="seg-group" role="group">
-                {[1, 2, 3].map((n) => (
-                  <button
-                    key={n}
-                    className="seg"
-                    data-spark={id}
-                    data-stars={n}
-                    aria-label={`Add ${o.name} at ${n}★`}
-                    onClick={() => onAdd(o, n)}
-                  >
-                    {n}★
-                  </button>
-                ))}
-              </span>
+              <span className="spark-drop-blank" aria-hidden="true" />
             )}
             {/* Only for the row whose ★ is open, and on its own line: at 358px
                 a fifth control on the line takes the name's width. */}
@@ -369,6 +471,7 @@ function ChooserPopout({
   charaId,
   cardOwner,
   onAdd,
+  onRemove,
   onError,
   onClose,
 }: {
@@ -380,12 +483,22 @@ function ChooserPopout({
   charaId: number | null;
   cardOwner: (cardId: number) => string | null;
   onAdd: (option: Option, stars: number) => void;
+  onRemove: (option: Option) => void;
   onError: (message: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
+  const names = new Map(
+    refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name])
+  );
+  // Resolves a stored (kind, key) against the committed reference, degrading
+  // the way the tables do for a key it doesn't know.
+  const optionFor = (w: { kind: SlotFactorKind; key: number }): Option => {
+    const name = names.get(sparkId({ type: w.kind, key: w.key }));
+    return name === undefined ? unknownOption(w) : { kind: w.kind, key: w.key, name };
+  };
   // WHICH sparks sit in the Favorites section, snapshotted for the life of
   // this open. MEMBERSHIP is frozen; the ★ and the picker's pills stay live off
   // the lists. Without the freeze, favoriting a row lifts it out of its kind
@@ -402,6 +515,30 @@ function ChooserPopout({
   // empty union mid-fetch without needing an effect or a ref read at render.
   const [pinnedRows] = useState(() => unionOf(sparkLists.lists));
   const pinned = new Set(pinnedRows.map((w) => sparkId({ type: w.kind, key: w.key })));
+  // Held sparks the reference can't name, frozen per open like everything
+  // else that decides which rows EXIST. Each gets a degraded row in its kind
+  // section: this popout is the only remove surface, so a held spark with no
+  // row is stuck on the member — counted by every estimate — until the whole
+  // node is cleared. The pinned ones already surface through Favorites via
+  // `optionFor`.
+  const [orphanRows] = useState(() =>
+    factors
+      .filter((f) => {
+        const id = sparkId({ type: f.kind, key: f.key });
+        return !names.has(id) && !pinned.has(id);
+      })
+      .map((f) => ({ kind: f.kind, key: f.key }))
+  );
+  // The Current Sparks FILTER: null browses everything; a Set narrows the
+  // popout to the member's own rows, in their own sections. A filter, not a
+  // section: frozen at open a section is stale (an add only surfaces on the
+  // next open), and live it tears the row out of the section under the
+  // pointer. Membership snapshots when the pill is PRESSED, so it is fresh
+  // at the moment you ask — the spark added seconds ago is in it — while a
+  // ✕ under it leaves its row in place, add buttons back, rather than
+  // vanishing the list out from under the pointer. Pressing it again takes
+  // a fresh cut.
+  const [onlyCurrent, setOnlyCurrent] = useState<Set<string> | null>(null);
 
   // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
   // `busy` silently swallows the keypress. What that leaves open — close
@@ -416,19 +553,45 @@ function ChooserPopout({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const held = new Set(factors.map((f) => sparkId({ type: f.kind, key: f.key })));
-  const names = new Map(
-    refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name])
+  // What she holds RIGHT NOW, with levels — live, so a row's controls track
+  // the document while the section it sits in stays frozen.
+  const heldStars = new Map(
+    factors.map((f) => [sparkId({ type: f.kind, key: f.key }), f.stars])
   );
+  // What she held when the popout OPENED. Row existence keys off this, never
+  // the live map: exempted live, a foreign green's row unmounts with its own
+  // ✕ click — gone from under the pointer, and gone from under the focus the
+  // ✕ was about to hand back (#74).
+  const [heldAtOpen] = useState(() => new Set(heldStars.keys()));
   const q = query.trim().toLowerCase();
   // Applied to the favorites too, though a list can no longer hold a green:
-  // one section exempt from the rule would be the one place it leaks.
-  const possible = greenFilter(cardId, charaId);
-  // One rule for every section: hits rank by where the query lands in the name
-  // then alphabetically — a no-op with no query, the reference arriving sorted
+  // one section exempt from the rule would be the one place it leaks. Rows
+  // held AT OPEN are exempt instead: this popout is the only place a spark
+  // can be removed, and an old document can hold a green the current cast
+  // couldn't take (reads stay permissive, DECISIONS.md #39) — filtered out,
+  // she'd be invisible and unremovable while the server refuses every save
+  // that carries her. Once removed she stays for the life of the open, adds
+  // dead (`addable`): she can't legally come back, and her row can't vanish
+  // mid-interaction either.
+  const greenPossible = greenFilter(cardId, charaId);
+  const possible = (o: Option): boolean =>
+    heldAtOpen.has(sparkId({ type: o.kind, key: o.key })) || greenPossible(o);
+  // Live, unlike `possible`: a foreign green's stars are dead whether she
+  // is held or already removed — a re-level writes the document just like
+  // an add, and the server refuses every save carrying either (DECISIONS.md
+  // #39). Only her ✕ helps.
+  const addable = greenPossible;
+  // One rule for every section: the query and the Current Sparks filter
+  // narrow, and hits rank by where the query lands in the name then
+  // alphabetically — a no-op with no query, the reference arriving sorted
   // by (kind, name) already.
   const matching = (options: Option[]): Option[] => {
-    const hits = options.filter((o) => possible(o) && o.name.toLowerCase().includes(q));
+    const hits = options.filter(
+      (o) =>
+        possible(o) &&
+        o.name.toLowerCase().includes(q) &&
+        (onlyCurrent === null || onlyCurrent.has(sparkId({ type: o.kind, key: o.key })))
+    );
     if (q === "") return hits;
     return hits.sort(
       (a, b) =>
@@ -438,24 +601,23 @@ function ChooserPopout({
   };
 
   // Built from the frozen snapshot, so a row stays put when you un-star it.
-  const favorites = matching(
-    pinnedRows.map((w) => {
-      const name = names.get(sparkId({ type: w.kind, key: w.key }));
-      return name === undefined ? unknownOption(w) : { kind: w.kind, key: w.key, name };
-    })
-  );
+  const favorites = matching(pinnedRows.map(optionFor));
   // A favorite is in the Favorites section and NOWHERE ELSE — the same spark
   // twice on one surface reads as "which of these two rows did I already
   // star". The snapshot decides, so nothing disappears from under the pointer.
   const sections = BROWSE_KINDS.map((kind) => ({
     kind,
-    options: matching(
-      refs
+    options: matching([
+      // Orphans first: the unknown spark is what the open is FOR when one
+      // exists, and "Unknown (key)" belongs nowhere in the alphabet —
+      // appended, it sat ~300 rows below where anyone would look for it.
+      ...orphanRows.filter((f) => f.kind === kind).map(unknownOption),
+      ...refs
         .filter(
           (r) => r.kind === kind && !pinned.has(sparkId({ type: r.kind, key: r.key }))
         )
-        .map(optionOf)
-    ),
+        .map(optionOf),
+    ]),
   })).filter((s) => s.options.length > 0);
 
   // Non-optimistic: `sparks.ts` returns the list the server ended up with, so
@@ -506,7 +668,8 @@ function ChooserPopout({
       : fallback;
 
   const rowProps = {
-    held,
+    heldStars,
+    addable,
     lists: sparkLists.lists,
     listsFailed: sparkLists.failed,
     busy,
@@ -515,9 +678,10 @@ function ChooserPopout({
     // to one card, the panel above already names her.
     cardOwner: cardId === null ? cardOwner : () => null,
     onAdd,
+    onRemove,
     onOpenPicker: setOpenPicker,
     onToggleList: (s: ListableSpark, listId: number) =>
-      void write(
+      write(
         () => toggleMembership(sparkLists.lists, listId, s.kind, s.key),
         () => "Couldn't save that list change — try again."
       ),
@@ -547,7 +711,7 @@ function ChooserPopout({
           broken" until the next click. The filter panel's popouts do the
           same. */}
       <div className="uma-popout-backdrop" onMouseDown={onClose} />
-      <div className="uma-popout spark-popout" role="dialog" aria-label="Add a Spark">
+      <div className="uma-popout spark-popout" role="dialog" aria-label="Edit Sparks">
         {/* Sticky, so the query stays reachable while you scroll 437 rows past
             it. */}
         <div className="spark-search-band">
@@ -560,6 +724,23 @@ function ChooserPopout({
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
           />
+          {/* Sticky with the search it composes with, so both narrowing
+              controls stay reachable while you scroll. */}
+          <button
+            className={onlyCurrent === null ? "spark-current" : "spark-current active"}
+            aria-pressed={onlyCurrent !== null}
+            // On a member holding nothing the press empties the popout to
+            // the same "No sparks match." a typo produces, with nothing on
+            // screen naming the cause. Only while INACTIVE: removing the
+            // last spark under the filter must leave the pill able to
+            // toggle off.
+            disabled={onlyCurrent === null && heldStars.size === 0}
+            onClick={() =>
+              setOnlyCurrent(onlyCurrent === null ? new Set(heldStars.keys()) : null)
+            }
+          >
+            Current Sparks
+          </button>
         </div>
         {/* The reference is committed and works offline; the favorites are
             server state behind Access. Said separately so a failed list fetch
@@ -621,12 +802,16 @@ export function SparkChooser({
   onError: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // An UPDATER, not an array: the popout stays open across adds, so two clicks
-  // resolved against the same render would each compute `[...factors, x]` from
-  // one base and the second would drop the first.
+  // UPDATERS, not arrays: the popout stays open across edits, so two clicks
+  // resolved against the same render would each compute their list from one
+  // base and the second would drop the first.
   const add = (option: Option, stars: number) =>
     onChange((current) =>
       factorsWith(current, { kind: option.kind, key: option.key, stars })
+    );
+  const remove = (option: Option) =>
+    onChange((current) =>
+      current.filter((f) => !(f.kind === option.kind && f.key === option.key))
     );
   return (
     <div className="spark-add">
@@ -644,7 +829,7 @@ export function SparkChooser({
           setOpen(true);
         }}
       >
-        Add a Spark
+        Edit Sparks
       </button>
       {open && (
         <ChooserPopout
@@ -666,6 +851,7 @@ export function SparkChooser({
           charaId={charaId}
           cardOwner={cardOwner}
           onAdd={add}
+          onRemove={remove}
           onError={onError}
           onClose={() => setOpen(false)}
         />

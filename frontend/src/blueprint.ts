@@ -249,14 +249,21 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
 }
 
 // One spark added to a member's list, under the document's own cardinality
-// rules: a blue REPLACES the blue she holds — a uma carries exactly one of
-// the five stats, and the server rejects a member with two. Here rather than
-// in the chooser, beside `factorsOf` and `factorsFromApi` which hold the
-// rule's other two halves (dedupe-on-pull, reject-on-read).
+// rules: a spark she already holds is RE-LEVELLED in place — a held row's
+// star buttons are live (#86), and an append would carry a duplicate
+// (kind, key) — and a blue REPLACES the blue she holds, whichever stat it
+// was: a uma carries exactly one of the five, and the server rejects a
+// member with two. Here rather than in the chooser, beside `factorsOf` and
+// `factorsFromApi` which hold the rule's other two halves (dedupe-on-pull,
+// reject-on-read).
 export function factorsWith(
   current: readonly SlotFactor[],
   next: SlotFactor
 ): SlotFactor[] {
+  const held = current.findIndex(
+    (f) => f.kind === next.kind && f.key === next.key
+  );
+  if (held >= 0) return current.map((f, i) => (i === held ? next : f));
   const kept =
     next.kind === "blue" ? current.filter((f) => f.kind !== "blue") : current;
   return [...kept, next];

@@ -285,9 +285,10 @@ class PinkSparkIn(BaseModel):
         return self
 
 
-# The inheritable spark kinds a designed node can carry, beside its pink.
-# Blue joined late (DECISIONS.md #40 reversing #30). Adding a kind is a line
-# here and a line in the frontend's rate map.
+# The inheritable spark kinds a designed node can carry, beside its pink
+# (DECISIONS.md #40). Adding a kind is a line here and a line in the
+# frontend's rate map — and a deliberate decision about ListSparkKind below,
+# which does NOT follow this set.
 SlotFactorKind = Literal["blue", "white", "unique", "race", "scenario"]
 
 
@@ -356,7 +357,7 @@ class BlueprintSlotIn(BaseModel):
     # aptitudes at all. All ten keys or none, since the client reads the map as
     # a whole and refuses a partial one.
     aptitudes: dict[AptitudeKey, AptitudeLetter] | None = None
-    # The member's other sparks — white, unique (green), race, scenario.
+    # The member's other sparks — blue, white, unique (green), race, scenario.
     # Optional and defaulted, which is the one way this document is allowed to
     # grow (DECISIONS.md #28). Unlike `spark`, these feed only the proc
     # estimates: inherited or not, never projected onto career-start letters.
@@ -562,8 +563,9 @@ MAX_LISTS_PER_OWNER = 50
 # SlotFactorKind — blues and greens are excluded because every parent carries
 # her blue and her own green regardless, so a list naming one selects nothing.
 # Strict on read as well as write, which the loud-read rule below makes safe
-# only because a survey found zero stored blues or greens (2026-08-05, all
-# owners); widening this later is free, narrowing it again is not.
+# only because migration a7c4e2b91f55 deletes any entry outside this set at
+# upgrade — the strict read can never meet a row that predates the rule.
+# Widening this later is free; narrowing it again needs another migration.
 ListSparkKind = Literal["white", "race", "scenario"]
 
 

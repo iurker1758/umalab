@@ -13,6 +13,7 @@ import {
   emptyDesign,
   factorsOf,
   factorsSurviving,
+  factorsWith,
   fromApi,
   genOf,
   halfOf,
@@ -217,6 +218,26 @@ describe("factorsOf", () => {
       factor({ kind: "blue", key: 5, star: 3 }),
     ]);
     expect(out).toEqual([{ kind: "blue", key: 5, stars: 3 }]);
+  });
+});
+
+describe("factorsWith", () => {
+  const held = [
+    { kind: "blue" as const, key: 1, stars: 1 },
+    { kind: "white" as const, key: 700, stars: 2 },
+  ];
+
+  it("appends any kind but blue", () => {
+    const out = factorsWith(held, { kind: "race", key: 5, stars: 3 });
+    expect(out).toEqual([...held, { kind: "race", key: 5, stars: 3 }]);
+  });
+
+  it("replaces the held blue — a uma carries exactly one", () => {
+    const out = factorsWith(held, { kind: "blue", key: 5, stars: 3 });
+    expect(out).toEqual([
+      { kind: "white", key: 700, stars: 2 },
+      { kind: "blue", key: 5, stars: 3 },
+    ]);
   });
 
   it("dedupes on kind AND key, keeping the strongest", () => {

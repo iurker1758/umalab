@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  LIST_SPARK_KINDS,
   SLOT_FACTOR_KINDS,
   type FactorRef,
   type ListSparkKind,
@@ -9,7 +10,7 @@ import {
   type SparkList,
   type SparkRef,
 } from "../api";
-import { deriveCharaId } from "../blueprint";
+import { deriveCharaId, factorsWith } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
 import {
   createListWith,
@@ -87,7 +88,9 @@ type Option = { kind: SlotFactorKind; key: number; name: string };
 type ListableSpark = { kind: ListSparkKind; key: number };
 
 const listableOf = (o: Option): ListableSpark | null =>
-  o.kind === "blue" || o.kind === "unique" ? null : { kind: o.kind, key: o.key };
+  (LIST_SPARK_KINDS as readonly string[]).includes(o.kind)
+    ? { kind: o.kind as ListSparkKind, key: o.key }
+    : null;
 
 const optionOf = (ref: FactorRef): Option => ref;
 
@@ -256,9 +259,12 @@ function SparkRows({
     <ul className="spark-matches">
       {options.map((o) => {
         const id = sparkId({ type: o.kind, key: o.key });
-        const holders = listsWith(lists, o.kind, o.key);
-        const fav = holders.length > 0;
         const listable = listableOf(o);
+        // Only where a ★ can render it: the popout shows all 437 rows and
+        // re-renders on every keystroke, so a scan over every list for the
+        // 142 starless rows is pure waste.
+        const holders = listable === null ? [] : listsWith(lists, o.kind, o.key);
+        const fav = holders.length > 0;
         const picking = listable !== null && openPicker === id;
         return (
           <li key={id}>
@@ -618,13 +624,10 @@ export function SparkChooser({
   // An UPDATER, not an array: the popout stays open across adds, so two clicks
   // resolved against the same render would each compute `[...factors, x]` from
   // one base and the second would drop the first.
-  // A blue REPLACES the blue she holds rather than joining it: a uma carries
-  // exactly one of the five stats, and the server refuses a member with two.
   const add = (option: Option, stars: number) =>
-    onChange((current) => [
-      ...(option.kind === "blue" ? current.filter((f) => f.kind !== "blue") : current),
-      { kind: option.kind, key: option.key, stars },
-    ]);
+    onChange((current) =>
+      factorsWith(current, { kind: option.kind, key: option.key, stars })
+    );
   return (
     <div className="spark-add">
       {/* No ellipsis: a button that opens a dialog doesn't take one, so the

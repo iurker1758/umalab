@@ -3179,11 +3179,19 @@ shape that was being refined in the wrong direction.
   green rows**: a list is a hunt and neither kind is hunted — every
   parent carries her blue and her own green regardless — so lists
   narrow to `ListSparkKind` (white/race/scenario), tightening #37's
-  `SparkRef`; strict on read too, a survey (2026-08-05, all owners)
-  finding zero stored blues or greens. A 1★ blue is over the per-event
-  cap at any real affinity, so its row reads ~100% — true, and the cap
-  finally visible on screen. The trainee's height clip (#34) needs no
-  blue policy: it folds whatever order the sort produced.
+  `SparkRef`; strict on read too, which a data migration makes safe: it
+  deletes any entry outside the set at upgrade, so the strict read can
+  never meet a row that predates the rule (a survey found zero, but a
+  survey is one database at one instant). A 1★ blue is over the
+  per-event cap at any real affinity, so its row reads ~100% — true,
+  and the cap finally visible on screen. The trainee's height clip
+  (#34) needs no blue policy: it folds whatever order the sort
+  produced. Two rollout facts, accepted: a pulled branch saved before
+  this carries no blue until it is cleared and re-pulled — the same
+  rollout #30's factors had, and the document's absent-reads-as-none
+  makes it silent; and a client build predating the kind refuses a
+  blue-carrying document until its service worker updates — unreachable
+  while hosting is local-only, worth remembering at deployment.
 - **Alternatives rejected:** pull-only entry (above). Serving blue
   names client-side from a constant instead of `/api/factors` — splits
   the name pipeline #30 built on "one regen keeps both paths in step"

@@ -833,6 +833,15 @@ try {
   await openTab("Sparks");
   const rowFor = (name) => page.locator(".focus .proc-table tbody tr", { hasText: name });
   const chanceOf = (name) => rowFor(name).locator(".proc-chance").textContent();
+  // By id for anything the hand-entry loop added: `rowFor` is a substring
+  // match, and a blue's bare stat name ("Speed") can sit inside a green or
+  // white's name on a future catalog, which strict mode turns into an abort
+  // rather than a failed check. NOT named rowById — that is the API helper
+  // the persistence section resolves blueprints with, and shadowing it here
+  // hands that section a Locator.
+  const procRow = (r) =>
+    page.locator(`.focus .proc-table tbody tr[data-spark="${r.kind}:${r.key}"]`);
+  const procChance = (r) => procRow(r).locator(".proc-chance").textContent();
   const g11Pink = procPct("pink", 3, expectedAff.g11_affinity);
   check(`g11's 3★ pink at ${expectedAff.g11_affinity} affinity estimates ${pct(g11Pink)}`,
     (await page.locator(".focus .proc-table tbody tr").allTextContents()).length === 1 &&
@@ -924,14 +933,15 @@ try {
   await addSpark("G1-1", added.find((r) => r.kind === "blue"), 1);
   // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
   // 1/2/3, scenario 3/6/9, blue 70/80/90 — so a 1★ of each at one affinity
-  // must produce distinct numbers, not one repeated. Blue alone is over the
-  // event cap at any real affinity, so its row is the cap on screen.
+  // must produce distinct numbers, not one repeated. Blue's base dwarfs the
+  // rest, so its row sits at or near the event cap whatever the cast's
+  // affinity turns out to be.
   const expected1Star = Object.fromEntries(
     added.map((r) => [r.kind, pct(procPct(r.kind, 1, expectedAff.g11_affinity))])
   );
   check(`each kind rolls on its own base (${added.map((r) => `${r.kind} ${expected1Star[r.kind]}`).join(", ")})`,
     await until(async () =>
-      (await Promise.all(added.map((r) => chanceOf(r.name)))).join(",") ===
+      (await Promise.all(added.map((r) => procChance(r)))).join(",") ===
         added.map((r) => expected1Star[r.kind]).join(",")));
   check("green outruns white, and race trails both, at the same star and affinity",
     Number(expected1Star.unique.replace("%", "")) >
@@ -940,8 +950,11 @@ try {
       Number(expected1Star.race.replace("%", "")));
   check("each is named from the reference and coloured by its kind",
     (await Promise.all(
-      added.map(async (r) => (await rowFor(r.name).getAttribute("class")))
-    )).every((cls, i) => cls?.includes(`proc-row-${added[i].kind}`)));
+      added.map(async (r) => ({
+        cls: await procRow(r).getAttribute("class"),
+        named: (await procRow(r).locator(".proc-name").textContent())?.includes(r.name),
+      }))
+    )).every((row, i) => row.named && row.cls?.includes(`proc-row-${added[i].kind}`)));
   // The kind is colour and bar fill only — spelling it out cost the names
   // width they need, and the tables never repeat it as a word.
   check("no spelled-out kind in the spark column",
@@ -1307,27 +1320,28 @@ try {
     (await page.locator(".focus .proc-table thead th").allTextContents()).join(",") ===
       "Spark,Est. Per Run");
   // The number rides on a bar filled in the spark's own colour, and the bar
-  // is the chance: 0–100 absolutely, so an unlikely spark reads as a sliver
-  // rather than filling because nothing beat it. The top row is the blue at
-  // its capped ~100% — legitimately full — so the absolute-scale proof
-  // measures the pink row instead, whose combined ~30% must render as ~30%
-  // of the track.
+  // is the chance. With the blue holding this table's maximum at or near
+  // 100%, absolute and table-relative scaling compute almost identical
+  // widths HERE — the discriminating check lives on Parent 2's whites-only
+  // table below, whose maximum is nowhere near full. This one pins the
+  // formula on the two ends of the range.
   const topRow = page.locator(".focus .proc-table tbody tr").first();
   check("each chance is drawn as a bar in its spark's colour",
     (await page.locator(".focus .proc-table .proc-bar").count()) ===
       (await page.locator(".focus .proc-table tbody tr").count()) &&
     (await topRow.locator(".proc-fill").getAttribute("class"))?.includes("proc-fill-blue"));
-  check("the bar's width is the chance itself, not a rank",
-    await page
-      .locator('.focus .proc-table tbody tr[data-spark="pink:mile"] .proc-bar')
-      .evaluate((el) => {
-        const pct = Number(el.querySelector(".proc-pct").textContent.replace("%", ""));
-        const bar = el.getBoundingClientRect().width;
-        const fill = el.querySelector(".proc-fill").getBoundingClientRect().width;
-        // A table-relative scale would stretch every row against the leader;
-        // this one stays within a pixel of its own percentage.
-        return Math.abs(fill - (bar * pct) / 100) < 1 && fill < bar * 0.9;
-      }));
+  const ridesItsOwnPct = (row) =>
+    row.locator(".proc-bar").evaluate((el) => {
+      const pct = Number(el.querySelector(".proc-pct").textContent.replace("%", ""));
+      const bar = el.getBoundingClientRect().width;
+      const fill = el.querySelector(".proc-fill").getBoundingClientRect().width;
+      return Math.abs(fill - (bar * pct) / 100) < 1.5;
+    });
+  check("the blue and the pink each ride their own percentage",
+    (await ridesItsOwnPct(topRow)) &&
+    (await ridesItsOwnPct(
+      page.locator('.focus .proc-table tbody tr[data-spark="pink:mile"]')
+    )));
   // The proc table must not answer to the link table's selectors: those
   // checks assert the run decomposes into exactly seven links, and a second
   // table sharing their classes would silently break that claim.
@@ -1491,6 +1505,22 @@ try {
     (await page.locator(".focus .proc-row").count()) === filler.length &&
     (await page.locator(".focus .proc-clip").count()) === 0 &&
     (await page.locator(".focus .proc-more").count()) === 0);
+  // The absolute-scale proof, on the one table fit to give it: every row here
+  // is a 1★ white miles from 100%, so a table-relative scale would draw the
+  // leader full where the absolute one draws its own percentage. The
+  // trainee's table can't discriminate — its blue holds the maximum at or
+  // near 100%, where the two scales all but agree.
+  check("the bar's width is the chance itself, not a rank",
+    await page
+      .locator(".focus .proc-table tbody tr")
+      .first()
+      .locator(".proc-bar")
+      .evaluate((el) => {
+        const pct = Number(el.querySelector(".proc-pct").textContent.replace("%", ""));
+        const bar = el.getBoundingClientRect().width;
+        const fill = el.querySelector(".proc-fill").getBoundingClientRect().width;
+        return pct > 0 && Math.abs(fill - (bar * pct) / 100) < 1 && fill < bar * 0.9;
+      }));
   await selectNode("Trainee");
   await openTab("Details");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');

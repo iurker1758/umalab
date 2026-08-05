@@ -156,9 +156,9 @@ export interface SlotValue {
   // the same inheritance twice. Null on catalog picks (a card, not a horse)
   // and on lineage slots (the dump gives its members no aptitudes).
   aptitudes: AptitudeLetters | null;
-  // White, unique (green), race, scenario. Unlike the pink these feed nothing
-  // deterministic — inherited by inspiration or not at all, so they exist for
-  // the proc estimates alone.
+  // Blue, white, unique (green), race, scenario. Unlike the pink these feed
+  // nothing deterministic — inherited by inspiration or not at all, so they
+  // exist for the proc estimates alone.
   factors: SlotFactor[];
 }
 
@@ -246,6 +246,20 @@ export function withSpark(design: Design, i: number, spark: PinkSpark | null): D
         : { card_id: card }
       : { aptitude: spark.aptitude, stars: spark.stars, ...(card === null ? {} : { card_id: card }) }
   );
+}
+
+// One spark added to a member's list, under the document's own cardinality
+// rules: a blue REPLACES the blue she holds — a uma carries exactly one of
+// the five stats, and the server rejects a member with two. Here rather than
+// in the chooser, beside `factorsOf` and `factorsFromApi` which hold the
+// rule's other two halves (dedupe-on-pull, reject-on-read).
+export function factorsWith(
+  current: readonly SlotFactor[],
+  next: SlotFactor
+): SlotFactor[] {
+  const kept =
+    next.kind === "blue" ? current.filter((f) => f.kind !== "blue") : current;
+  return [...kept, next];
 }
 
 // Creates the slot when there wasn't one, as `withSpark` does for a pink:

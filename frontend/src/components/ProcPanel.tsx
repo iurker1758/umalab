@@ -156,6 +156,7 @@ export function NodeProcs({
   sparkLists,
   cardOwner,
   locked,
+  undroppable,
   sort,
   onSort,
   onSetFactors,
@@ -174,13 +175,17 @@ export function NodeProcs({
   // dump, so they are shown rather than edited — the same rule her pink
   // follows.
   locked: boolean;
+  // The panel's below-A verdict on the held pink, forwarded into the popout:
+  // the popout covers the panel's own alert, so the warning has to travel
+  // with the editor.
+  undroppable: boolean;
   sort: SparkSort;
   onSort: (s: SparkSort) => void;
   // An UPDATER rather than an array: two edits resolved against the same
   // render would otherwise each rebuild the list from one stale base, and the
   // later write would drop the earlier spark.
   onSetFactors: (i: number, update: (current: readonly SlotFactor[]) => SlotFactor[]) => void;
-  // The same updater Details' editor writes through (#87): the popout is a
+  // The same setter Details' editor writes through (#87): the popout is a
   // second writer of the slot's `spark` field, never a second store.
   onSetSpark: (i: number, spark: PinkSpark | null) => void;
   onError: (message: string) => void;
@@ -239,6 +244,7 @@ export function NodeProcs({
           cardId={slot?.card_id ?? null}
           charaId={slot?.chara_id ?? null}
           cardOwner={cardOwner}
+          undroppable={undroppable}
           onChange={(update) => onSetFactors(index, update)}
           onSetSpark={(s) => onSetSpark(index, s)}
           onError={onError}

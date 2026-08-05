@@ -320,6 +320,9 @@ export function FocusPanel({
                 sparkLists={sparkLists}
                 cardOwner={cardOwner}
                 locked={false}
+                // Nobody cast: no letters to resolve a pink against, and
+                // `undroppableSpark` only ever flags a catalog cast.
+                undroppable={false}
                 sort={ancestorSort}
                 onSort={setAncestorSort}
                 onSetFactors={onSetFactors}
@@ -414,6 +417,7 @@ export function FocusPanel({
             sparkLists={sparkLists}
             cardOwner={cardOwner}
             locked={pinkFixed}
+            undroppable={undroppable}
             sort={ancestorSort}
             onSort={setAncestorSort}
             onSetFactors={onSetFactors}

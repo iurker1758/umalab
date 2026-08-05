@@ -1004,22 +1004,29 @@ try {
     // One member, one pink, ten rows it can sit on: an add on any aptitude
     // MOVES the pink — blue's replace (DECISIONS.md #40), one shape further.
     await sectionNamed("Pink").locator('button[data-spark="pink:turf"][data-stars="2"]').click();
-    check("a pink add moves the pink to the row that was clicked",
+    // Gated on the move LANDING, not just the section rendering: the ✕
+    // below exists only on the moved-to row, so clicking it after a failed
+    // move is the same opaque 30s abort the spare's guard prevents.
+    const moved = await until(async () =>
       (await rowForSpark("pink", "turf").locator('.seg[aria-pressed="true"][data-stars="2"]').count()) === 1 &&
       (await rowForSpark("pink", "turf").locator(".spark-drop").count()) === 1 &&
       (await rowForSpark("pink", "mile").locator('.seg[aria-pressed="true"]').count()) === 0 &&
       (await rowForSpark("pink", "mile").locator(".spark-drop").count()) === 0);
-    // The ✕ clears through the same field: the table behind loses its pink
-    // row while the popout's row stays put, add buttons back.
-    await rowForSpark("pink", "turf").locator(".spark-drop").click();
-    check("its ✕ clears the pink, and the row stays put",
-      (await until(async () =>
-        (await page.locator('.focus .proc-row[data-spark^="pink:"]').count()) === 0)) &&
-      (await rowForSpark("pink", "turf").count()) === 1 &&
-      (await rowForSpark("pink", "turf").locator(".spark-drop").count()) === 0);
-    // Put the Mile back the way the suite typed it — the bracket and proc
-    // assertions below read it.
-    await sectionNamed("Pink").locator('button[data-spark="pink:mile"][data-stars="3"]').click();
+    check("a pink add moves the pink to the row that was clicked", moved);
+    if (moved) {
+      // The ✕ clears through the same field: the table behind loses its pink
+      // row while the popout's row stays put, add buttons back.
+      await rowForSpark("pink", "turf").locator(".spark-drop").click();
+      check("its ✕ clears the pink, and the row stays put",
+        (await until(async () =>
+          (await page.locator('.focus .proc-row[data-spark^="pink:"]').count()) === 0)) &&
+        (await rowForSpark("pink", "turf").count()) === 1 &&
+        (await rowForSpark("pink", "turf").locator(".spark-drop").count()) === 0);
+      // Put the Mile back the way the suite typed it — the bracket and proc
+      // assertions below read it. (A failed move leaves the Mile in place,
+      // so those assertions hold on that path too.)
+      await sectionNamed("Pink").locator('button[data-spark="pink:mile"][data-stars="3"]').click();
+    }
     await closeChooser();
     await openTab("Details");
     check("Details shows the popout's write — the select follows the field",
@@ -1208,6 +1215,13 @@ try {
     (await spareRow.locator(".spark-drop").count()) === 1 &&
     (await sectionNamed("White").locator(sparkRowSel(spare.kind, spare.key)).count()) === 1);
 
+  // How many pinks the table behind holds right now — 1 when the pink
+  // stanza's restore landed, 0 when it didn't. Every count below ADDS it
+  // rather than hard-coding it, so a pink failure is reported once, by that
+  // stanza's own named checks, instead of echoing through every spare and
+  // filter assertion here.
+  const heldPinks = await page.locator('.focus .proc-row[data-spark^="pink:"]').count();
+
   // Guarded: every stanza below clicks the spare's held-row controls, and
   // clicking unconditionally after a failed `until` aborts the run at a
   // 30s timeout on `.spark-drop` — an opaque locator error in place of the
@@ -1247,7 +1261,7 @@ try {
     await spareRow.locator(".spark-drop").click();
     check("✕ drops the spark; its row stays put with the add buttons back",
       (await until(async () =>
-        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + heldPinks)) &&
       (await spareRow.count()) === 1 &&
       (await spareRow.locator(".spark-drop").count()) === 0 &&
       (await spareRow.locator('.seg[aria-pressed="true"]').count()) === 0 &&
@@ -1255,14 +1269,14 @@ try {
     // The #74 unmount variant, driven by keyboard: the focused ✕ leaves the
     // DOM with its own click, and focus must land back in the row rather than
     // dropping to <body> — where the next Tab restarts from the top of a
-    // 437-row popout.
+    // 447-row popout.
     await spareRow.locator('.seg[data-stars="3"]').click();
     await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
     await spareRow.locator(".spark-drop").focus();
     await page.keyboard.press("Enter");
     check("removing by keyboard keeps focus in the row (#74's unmount variant)",
       (await until(async () =>
-        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + heldPinks)) &&
       (await until(async () =>
         page.evaluate(() => {
           const a = document.activeElement;
@@ -1276,7 +1290,7 @@ try {
     check("and a second Enter re-adds nothing",
       (await spareRow.locator('.seg[aria-pressed="true"]').count()) === 0 &&
       (await spareRow.locator(".spark-drop").count()) === 0 &&
-      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1);
+      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + heldPinks);
 
     // ---------- the Current Sparks filter ----------
     // A filter, not a section: rows keep their sections and positions whether
@@ -1288,18 +1302,19 @@ try {
     await spareRow.locator('.seg[data-stars="2"]').click();
     await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
     await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
+    // Held rows at press time: the added five, the spare re-added above,
+    // and however many pinks the table reported.
+    const underFilter = added.length + 1 + heldPinks;
     await page.locator(".spark-popout .spark-current").click();
-    // + 2, not + 1: the added five and the spare, plus the pink the filter
-    // counts with the rest since #87 — her Mile row narrows in too.
     check("the Current Sparks filter narrows the browse to what she holds right now",
       (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
-      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 2 &&
-      (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === added.length + 2);
+      (await page.locator(".spark-popout .spark-matches li").count()) === underFilter &&
+      (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === underFilter);
     await page.locator(`.spark-popout .spark-drop[data-spark="${spare.kind}:${spare.key}"]`).click();
     check("a ✕ under the filter leaves its row in place, add buttons back",
       (await until(async () =>
-        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
-      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 2 &&
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + heldPinks)) &&
+      (await page.locator(".spark-popout .spark-matches li").count()) === underFilter &&
       (await spareRow.locator(".seg").count()) === 3 &&
       (await spareRow.locator(".spark-drop").count()) === 0);
     await page.locator(".spark-popout .spark-current").click();

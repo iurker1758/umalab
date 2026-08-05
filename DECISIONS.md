@@ -1621,8 +1621,9 @@ Keep adding entries as the build evolves. This file is the interview.
   because comparing one view between two ancestors is the common move.
   The non-pink sparks are edited on the Sparks tab (they feed nothing
   else); the pink stays on Details, beside the letters it bumps at
-  career start. Map chips stay out, as V1 ruled: the 31 nodes have no
-  room.
+  career start (amended by #42: the Sparks tab's popout is a second
+  pink editor — Details keeps the home one). Map chips stay out, as V1
+  ruled: the 31 nodes have no room.
 
   **The tab is never gated on a score** — corrected after review; the
   first cut showed it only once that node had an affinity. The tab is
@@ -3269,8 +3270,9 @@ marked in each.
 - **Requirements:** issue #87 — once blue landed (#40), the pink was
   the one spark kind the popout didn't offer, so shaping a proc
   profile on the Sparks tab forced a tab switch for exactly one kind.
-  A second entry point, not a move: Details keeps its editor beside
-  the letters the pink bumps (#26/#30). Client-only — the slot's
+  A second entry point, not a move — amending #30's "the pink stays
+  on Details" to name Details the home editor: it keeps its place
+  beside the letters the pink bumps (#26/#30). Client-only — the slot's
   `spark` field and its validation don't change. #86's held-row
   invariants hold in the new section.
 - **Choice:** a **Pink section between Blue and Green** — the slot
@@ -3280,13 +3282,19 @@ marked in each.
   pink by aptitude on the slot's own `spark` field, not by factor
   key, so the rows never pass through refs, orphans or the green
   possibility rules, and the popout writes through the same
-  `onSetSpark` updater Details uses — a second writer of one field,
+  `onSetSpark` setter Details uses — a second writer of one field,
   never a second store, so the Details select follows every write.
   **Replace across the whole section**, #40's blue rule held one
   shape further: one member, one pink, ten rows it can sit on —
   clicking any star moves it, and row existence is trivially frozen
-  (all ten aptitudes, always). **The held row keeps the ✕** — decided
-  looking at both renderings: every held row keeps one anatomy, and
+  (all ten aptitudes, always). A star that would displace the held
+  spark of a one-per-member section says so — "Replace Mile with
+  Turf at 2★", pink and blue both — since the displaced row's change
+  happens off-focus, where "Add" reads as a second spark. The below-A
+  guardrail echoes inside the section: the popout covers the focus
+  panel's own alert, so the second writer carries the warning at the
+  moment of the write (`undroppableSpark`, one rule on two surfaces).
+  **The held row keeps the ✕**: every held row keeps one anatomy, and
   the popout can clear the one spark it could otherwise only move;
   Details' select staying a second clearer of the field is accepted.
   **No ★ ever**: pinks aren't listable — the server refuses the

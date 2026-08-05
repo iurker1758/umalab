@@ -46,14 +46,12 @@ jobs:
       - name: Create the test database
         run: psql "postgresql://postgres:postgres@localhost/postgres" -c 'CREATE DATABASE umalab_test'
 
-      # The suite builds its schema with Base.metadata.create_all, so it
-      # asserts against the MODELS. These two assert against the MIGRATIONS,
-      # which is what a deployment actually runs: `upgrade head` proves the
-      # chain applies, and `check` fails if autogenerate would still have
-      # something to say — i.e. if models.py and the migrations have drifted.
-      # Without it the CLAUDE.md invariant ("schema changes go through
-      # Alembic, not create_all") has nothing enforcing it, and a divergence
-      # reaches a deployed Pi as a 500 rather than a red run.
+      # `upgrade head` proves the chain applies, and `check` fails if
+      # autogenerate would still have something to say — i.e. if models.py
+      # and the migrations have drifted. tests/test_migrations.py asserts
+      # the same invariant from pytest, stricter (it also compares server
+      # defaults); this step stays as the fast pre-check, so a broken chain
+      # dies here by name rather than inside the suite.
       - name: Migrations match the models
         run: |
           alembic upgrade head

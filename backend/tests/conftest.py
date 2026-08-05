@@ -1,4 +1,5 @@
-"""Fixtures for the database-backed modules (test_isolation, test_spark_lists).
+"""Fixtures for the database-backed modules (test_isolation, test_spark_lists;
+test_migrations shares the URL and skip rules but builds its own schema).
 
 Most of this suite is pure-module and touches none of these — fixtures are
 lazy, so they cost those tests nothing. What needs them needs a real
@@ -20,7 +21,12 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import InterfaceError, OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.auth import current_user
 from app.config import settings
@@ -64,6 +70,21 @@ if _same_database(settings.database_url, TEST_DATABASE_URL):
     )
 
 
+# Shared with test_migrations.py, so the two DB-backed entry points cannot
+# drift on what counts as "no test database".
+DB_UNREACHABLE = (OperationalError, InterfaceError, OSError)
+
+
+async def reset_public_schema(connection: AsyncConnection) -> None:
+    """Whole schema, not Base.metadata.drop_all: a table this branch doesn't
+    know about — left behind by another branch, or by a migration since
+    reverted — still holds foreign keys into the ones it does, and drop_all
+    then fails on the dependency rather than on anything wrong with the code
+    under test."""
+    await connection.exec_driver_sql("DROP SCHEMA public CASCADE")
+    await connection.exec_driver_sql("CREATE SCHEMA public")
+
+
 @pytest_asyncio.fixture
 async def sessions() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     """A fresh schema per test.
@@ -77,20 +98,14 @@ async def sessions() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     engine = create_async_engine(TEST_DATABASE_URL)
     try:
         async with engine.begin() as connection:
-            # Whole schema, not Base.metadata.drop_all: a table this branch
-            # doesn't know about — left behind by another branch, or by a
-            # migration since reverted — still holds foreign keys into the
-            # ones it does, and drop_all then fails on the dependency rather
-            # than on anything wrong with the code under test.
-            await connection.exec_driver_sql("DROP SCHEMA public CASCADE")
-            await connection.exec_driver_sql("CREATE SCHEMA public")
+            await reset_public_schema(connection)
             await connection.run_sync(Base.metadata.create_all)
     # Only "the database isn't there" is a skip. A broad `except Exception`
     # would also swallow DDL failures — a bad server_default, a colliding
     # constraint name — and report a genuinely broken model as an environment
     # problem, green locally and red only in CI with a message blaming
     # Postgres. Those propagate.
-    except (OperationalError, InterfaceError, OSError) as e:
+    except DB_UNREACHABLE as e:
         await engine.dispose()
         if REQUIRE_DB:
             raise

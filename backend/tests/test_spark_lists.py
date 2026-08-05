@@ -16,11 +16,19 @@ from typing import Any
 
 import pytest
 from fastapi.exceptions import ResponseValidationError
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
 from app.models import User
+from app.schemas import MAX_LISTS_PER_OWNER
 
 LISTS = "/api/spark-lists"
+
+# How many simultaneous requests the concurrency tests race — and therefore
+# how many pooled connections their warm-up must establish first. Must stay
+# at or below conftest's engine default pool_size (5): a surplus request
+# waits on a NEW connection, and connection establishment staggers the field
+# back into the accidental serialization measured in #76.
+CONCURRENT_CREATES = 5
 
 
 async def create(as_user: Any, user: User, name: str):
@@ -454,50 +462,138 @@ async def test_patching_a_missing_list_is_a_404(client: Any, users: list[User]):
 
 async def test_too_many_lists_are_refused(client: Any, users: list[User]):
     a, _ = users
-    for n in range(50):
+    for n in range(MAX_LISTS_PER_OWNER):
         assert (await create(client, a, f"build {n}")).status_code == 201
     response = await create(client, a, "one more")
     assert response.status_code == 409
-    assert len(await listing(client, a)) == 50
+    assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
     # The cap and the name collision are BOTH 409s and the client shows
     # whichever detail it is handed, so they have to be distinguishable — a
     # user at the cap being told to pick another name renames four times and
     # learns nothing.
-    assert "50 lists" in response.json()["detail"]
+    assert f"{MAX_LISTS_PER_OWNER} lists" in response.json()["detail"]
 
 
 async def test_concurrent_creates_cannot_exceed_the_cap(
-    client: Any, users: list[User]
+    client: Any, users: list[User], sessions: Any
 ):
-    """The check-then-act the advisory lock exists for.
+    """The check-then-act the advisory lock exists for: at 49 lists, five
+    simultaneous creates must yield exactly one 201 and four 409s, never an
+    owner at 54.
 
-    At 49 lists, five simultaneous creates must yield exactly one 201 and
-    four 409s. Without the lock all five could read 49, all five pass the
-    test, and the owner would land on 54.
-
-    **This asserts the OUTCOME and is NOT the guard. Measured: it still
-    passes with `pg_advisory_xact_lock` removed.** An earlier version of this
-    docstring explained that away by saying the test client drives these
-    through one connection — which is FALSE: `conftest`'s override opens a
-    new `AsyncSession` per request off a pooled engine, so they do interleave
-    on separate connections.
-
-    So the measurement stands and the reason for it is unknown, which means
-    the lock's behaviour under real concurrency is unverified in either
-    direction. Do not read a pass here as evidence the lock is present —
-    deleting it would not fail this suite. Filed as #76, along with what a
-    test that actually guards it would need.
+    The pool is warmed first, and that is load-bearing. On a cold pool each
+    gathered request waits on a NEW connection, and connection establishment
+    staggers them into running one at a time — measured: with the lock
+    removed, the cold-pool version still passed [201, 409, 409, 409, 409]
+    while the warmed version landed [201, 201, 201, 201, 201], three runs
+    out of three each way. Genuine interleaving still isn't guaranteed, so
+    the lock itself is pinned deterministically by
+    `test_the_cap_check_runs_under_the_advisory_lock` below.
     """
     a, _ = users
-    for n in range(49):
-        assert (await create(client, a, f"build {n}")).status_code == 201
+    # Fixture state, not behaviour under test — the create path up to the
+    # cap is `test_too_many_lists_are_refused`'s, so the 49 rows arrive as
+    # one INSERT rather than 49 request cycles.
+    async with sessions() as session:
+        await session.execute(
+            text(
+                "INSERT INTO spark_lists (owner_id, name)"
+                " SELECT :o, 'build ' || n"
+                " FROM generate_series(1, :n) n"
+            ).bindparams(o=a.id, n=MAX_LISTS_PER_OWNER - 1)
+        )
+        await session.commit()
     async with client(a) as http:
+        await asyncio.gather(
+            *(http.get(LISTS) for _ in range(CONCURRENT_CREATES))
+        )
         responses = await asyncio.gather(
-            *(http.post(LISTS, json={"name": f"race {n}"}) for n in range(5))
+            *(
+                http.post(LISTS, json={"name": f"race {n}"})
+                for n in range(CONCURRENT_CREATES)
+            )
         )
     codes = sorted(r.status_code for r in responses)
-    assert codes == [201, 409, 409, 409, 409], codes
-    assert len(await listing(client, a)) == 50
+    assert codes == [201] + [409] * (CONCURRENT_CREATES - 1), codes
+    assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
+
+
+async def test_the_cap_check_runs_under_the_advisory_lock(
+    client: Any, users: list[User], sessions: Any
+):
+    """The deterministic guard on the lock, where the race above could still
+    accidentally serialize.
+
+    A second transaction holds the owner's advisory lock while a create is
+    fired. The create must turn up in pg_locks as a WAITER ON THAT LOCK —
+    a positive sighting, not "still running after a timeout", which a slow
+    connect or a loaded runner produces too. Then the holder fills the
+    owner to the cap and releases: a create that counts under the lock
+    finds a full owner and answers the cap 409. So this fails if the lock
+    is deleted — the create finishes instead of waiting — AND if it slides
+    below the count it protects: the create counted an empty table, so it
+    inserts one list past the cap on release. Both measured, three runs
+    of three.
+    """
+    a, _ = users
+    async with client(a) as http, sessions() as holder:
+        await holder.execute(select(func.pg_advisory_xact_lock(a.id)))
+        request = asyncio.ensure_future(
+            http.post(LISTS, json={"name": "Front Runner"})
+        )
+        try:
+            # pg_advisory_xact_lock(bigint) files under classid = the
+            # key's high 32 bits (0 for any real user id), objid = the
+            # low 32, objsubid 1. Scoped to this database: advisory keys
+            # are per-database, but pg_locks lists every backend on the
+            # instance, and owner 1 exists in every copy of this app — a
+            # dev server's waiter must not satisfy the sighting.
+            waiting = text(
+                "SELECT count(*) FROM pg_locks"
+                " WHERE locktype = 'advisory' AND classid = 0"
+                " AND objid = :oid AND objsubid = 1 AND NOT granted"
+                " AND database = (SELECT oid FROM pg_database"
+                " WHERE datname = current_database())"
+            ).bindparams(oid=a.id)
+            for _ in range(100):
+                if request.done():
+                    # Retrieved, so a POST that raised reports its own
+                    # traceback rather than a missing lock.
+                    pytest.fail(
+                        "the create finished instead of waiting: "
+                        f"{request.exception() or request.result()!r}"
+                    )
+                if await holder.scalar(waiting):
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                pytest.fail("the create never waited on the owner lock")
+            await holder.execute(
+                text(
+                    "INSERT INTO spark_lists (owner_id, name)"
+                    " SELECT :o, 'bulk ' || n"
+                    " FROM generate_series(1, :cap) n"
+                ).bindparams(o=a.id, cap=MAX_LISTS_PER_OWNER)
+            )
+            # Commit ends the holder's transaction, which IS the
+            # release — the lock is transaction-scoped. Only now may
+            # the create proceed, and what it must find is a full
+            # owner.
+            await holder.commit()
+            response = await asyncio.wait_for(request, timeout=5)
+        finally:
+            # Release the lock BEFORE reaping: a failure above leaves the
+            # create parked on it, and awaiting a task nothing will unblock
+            # is a hang, not a report. A no-op on the success path, where
+            # commit already ended the transaction. The reap itself keeps a
+            # POST that raised from dying as teardown noise under "Task
+            # exception was never retrieved".
+            await holder.rollback()
+            request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
+    assert response.status_code == 409, response.text
+    assert f"{MAX_LISTS_PER_OWNER} lists" in response.json()["detail"]
+    assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
 
 
 async def test_the_cap_is_per_owner(client: Any, users: list[User]):
@@ -506,7 +602,7 @@ async def test_the_cap_is_per_owner(client: Any, users: list[User]):
     whole suite while blocking user b behind user a's 50 — the class of
     omission test_isolation.py exists to catch."""
     a, b = users
-    for n in range(50):
+    for n in range(MAX_LISTS_PER_OWNER):
         assert (await create(client, a, f"build {n}")).status_code == 201
     assert (await create(client, a, "one more")).status_code == 409
     assert (await create(client, b, "my first")).status_code == 201

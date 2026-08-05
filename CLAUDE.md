@@ -65,11 +65,12 @@ Backend (from `backend/`, venv in `.venv/`):
 - Migrations: `alembic upgrade head` · new: `alembic revision --autogenerate -m "..."`
 - Test: `pytest` · Lint: `ruff check .` · Types: `pyright` (strict; run with the
   venv active so it resolves site-packages)
-- `tests/test_isolation.py` needs a **second Postgres database** (default: the
-  app's URL with the name swapped to `umalab_test`; `TEST_DATABASE_URL`
-  overrides). It drops every table, and refuses to run against the app's own
-  `DATABASE_URL`. Without one it skips — CI sets `PYTEST_REQUIRE_DB=1` so the
-  skip is a failure there (DECISIONS.md #32)
+- `tests/test_isolation.py`, `test_spark_lists.py` and `test_migrations.py`
+  need a **second Postgres database** (default: the app's URL with the name
+  swapped to `umalab_test`; `TEST_DATABASE_URL` overrides). They drop the
+  whole schema, and refuse to run against the app's own `DATABASE_URL`.
+  Without one they skip — CI sets `PYTEST_REQUIRE_DB=1` so the skip is a
+  failure there (DECISIONS.md #32)
 - Reference data: `python scripts/build_reference_data.py` (uma.moe key from
   `UMA_MOE_API_KEY` in `backend/.env` — gitignored, never commit it);
   `--mdb-only` regenerates just the client-sourced files (relations.json,

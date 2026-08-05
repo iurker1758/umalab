@@ -104,6 +104,15 @@ export const union = (lists: SparkList[]): SparkRef[] => {
 export const favorites = (lists: SparkList[]): SparkRef[] => union(lists);
 
 /**
+ * The lists the selection actually names — selected ∩ existing, in list
+ * order. Unlike `activeSparks` there is deliberately NO fallback-to-all:
+ * empty here means "no filter", and each caller decides what that renders —
+ * for the filter surfaces, the whole unfiltered view (DECISIONS.md #43).
+ */
+export const chosenLists = (lists: SparkList[], active: number[]): SparkList[] =>
+  lists.filter((list) => active.includes(list.id));
+
+/**
  * The sparks in play: the union of the ACTIVE lists.
  *
  * **Nothing selected means everything.** Every user starts with no lists and
@@ -115,9 +124,16 @@ export const activeSparks = (
   lists: SparkList[],
   active: number[]
 ): SparkRef[] => {
-  const chosen = lists.filter((list) => active.includes(list.id));
+  const chosen = chosenLists(lists, active);
   return union(chosen.length === 0 ? lists : chosen);
 };
+
+/** `activeSparks` as a membership test, ids in the `kind:key` format the
+ *  proc tables key their rows by — what the watched tint checks. */
+export const activeSparkIds = (
+  lists: SparkList[],
+  active: number[]
+): Set<string> => new Set(activeSparks(lists, active).map(refId));
 
 /** Every list name in use, in the user's order — what the active-list
  *  selector (#67) renders. No in-app caller yet; not dead code. */

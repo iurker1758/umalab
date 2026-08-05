@@ -179,9 +179,10 @@ export function FocusPanel({
   // stored sparks by key — every CHANCE on the Procs tab reads the design,
   // not this.
   factorRefs: FactorRef[];
-  // Forwarded untouched: only the chooser reads it, and the reference is
-  // committed and works offline, so a favorites list that didn't load costs an
-  // ordering and nothing else.
+  // Forwarded untouched to the chooser and both proc tables — the filter
+  // pills, the watched tint and the Favorites section all read it
+  // (DECISIONS.md #43). The reference is committed and works offline, so a
+  // fetch that didn't land costs those and never the browse or a chance.
   sparkLists: SparkListStore;
   // Names the uma a green spark belongs to, for the chooser's green rows.
   cardOwner: (cardId: number) => string | null;
@@ -411,6 +412,7 @@ export function FocusPanel({
             design={design}
             affinity={affinity}
             sparkNames={sparkNames}
+            sparkLists={sparkLists}
             sort={traineeSort}
             onSort={setTraineeSort}
           />

@@ -5,7 +5,6 @@ import type {
   PinkSpark,
   SlotFactor,
 } from "../api";
-import type { SparkListStore } from "../sparks";
 import { APTITUDE_LABELS } from "../aptitude";
 import {
   NAMED_COUNT,
@@ -17,12 +16,21 @@ import {
 import {
   combineOutlooks,
   formatChance,
+  listRows,
   memberSparks,
   sortSparks,
   sparkId,
   type SparkRef,
   type SparkSort,
 } from "../procs";
+import { ListFilter } from "./ListFilter";
+import {
+  activeSparkIds,
+  chosenLists,
+  toggleActive,
+  union,
+  type SparkListStore,
+} from "../sparks";
 import { SparkChooser } from "./SparkChooser";
 
 // The Sparks tab. Every spark in the tree is here as a chance the TRAINEE
@@ -121,6 +129,7 @@ const SparkRow = ({
   spark,
   name,
   stars,
+  watched = false,
 }: {
   spark: SparkRef & { chance: number | null };
   name: string;
@@ -128,11 +137,17 @@ const SparkRow = ({
   // hold this spark at different levels — see SparkOutlook. An ancestor's own
   // table always has one, and it is what her chance is computed from.
   stars: number | null;
+  // In the union of the active lists (DECISIONS.md #43). A lightness lift
+  // only — hue stays with the kinds, which the tint must not compete with.
+  watched?: boolean;
 }) => (
   // The spark's identity on the row, so anything driving this table picks by
   // (kind, key) rather than by displayed name — the reference holds two
   // distinct whites both called "Pressure".
-  <tr className={`proc-row proc-row-${spark.type}`} data-spark={sparkId(spark)}>
+  <tr
+    className={`proc-row proc-row-${spark.type}${watched ? " proc-row-watched" : ""}`}
+    data-spark={sparkId(spark)}
+  >
     <td className="proc-name">
       {stars === null ? name : <>{name} <Stars n={stars} /></>}
     </td>
@@ -141,6 +156,29 @@ const SparkRow = ({
     </td>
   </tr>
 );
+
+// The active-list selector (#67) on a panel: the Lists disclosure, pressed
+// state the device-local selection every consumer reads (DECISIONS.md #43).
+// Rendered ABOVE and OUTSIDE .proc-clip — nothing focusable may sit inside
+// the clipped table (DECISIONS.md #34). Pressed state is the LIVE store, not
+// a snapshot like the popout's: nothing in these tables is a pointer target,
+// so rows may retint and refilter under the cursor safely. Nothing renders
+// with no lists or a failed fetch — a control over zero lists is furniture,
+// and stale pills would filter against ghosts.
+function PanelListFilter({ sparkLists }: { sparkLists: SparkListStore }) {
+  if (sparkLists.lists.length === 0 || sparkLists.failed) return null;
+  return (
+    <div className="proc-list-pills">
+      <ListFilter
+        lists={sparkLists.lists}
+        isPressed={(id) => sparkLists.active.includes(id)}
+        onToggle={(id) =>
+          sparkLists.onActiveChange(toggleActive(sparkLists.active, id))
+        }
+      />
+    </div>
+  );
+}
 
 // One ancestor's own sparks: what each is worth as a contribution to the
 // trainee, at this member's individual affinity (DECISIONS.md #29). The row
@@ -194,9 +232,21 @@ export function NodeProcs({
   const share = id === null || affinity === null ? null : affinity[`${id}_affinity`];
   const slot = design.named[index];
   const factors = slot?.factors ?? [];
-  const rows = sortSparks(memberSparks(sparkAt(design, index), factors, share), sort);
+  const memberRows = memberSparks(sparkAt(design, index), factors, share);
+  // The same two states the trainee's table has (DECISIONS.md #43): a
+  // selection narrows to the chosen lists' sparks — "—" for one she doesn't
+  // carry — and nothing selected shows her own rows with the listed ones
+  // tinted. Her held sparks stay held either way; the filter is a view.
+  const chosen = chosenLists(sparkLists.lists, sparkLists.active);
+  const filtered = chosen.length > 0;
+  const rows = sortSparks(
+    filtered ? listRows(memberRows, union(chosen)) : memberRows,
+    sort
+  );
+  const watched = filtered ? null : activeSparkIds(sparkLists.lists, sparkLists.active);
   return (
     <>
+      <PanelListFilter sparkLists={sparkLists} />
       <table className="proc-table">
         {/* A pulled ancestor's table sorts too; she just gains no editing
             control, which is what DECISIONS.md #28 makes read-only — and an
@@ -207,7 +257,9 @@ export function NodeProcs({
           {rows.length === 0 ? (
             <tr>
               <td className="proc-name proc-empty" colSpan={2}>
-                No sparks on this member yet.
+                {filtered
+                  ? "Nothing in the selected lists yet."
+                  : "No sparks on this member yet."}
               </td>
             </tr>
           ) : (
@@ -216,7 +268,8 @@ export function NodeProcs({
                 key={sparkId(r)}
                 spark={r}
                 name={sparkName(r, sparkNames)}
-                stars={r.stars}
+                stars={"stars" in r ? r.stars : null}
+                watched={watched !== null && watched.has(sparkId(r))}
               />
             ))
           )}
@@ -279,16 +332,25 @@ const clipHeight = (el: Element): number => {
 // ANY of its carriers lands it. Two members holding the same skill is how you
 // actually hunt one, so the combined number is the question no single
 // ancestor's tab can answer.
+//
+// The active selection filters it (DECISIONS.md #43). Nothing selected keeps
+// the ranked table answering "what will I get", with the union of ALL lists
+// tinted; lists selected swaps the rows for the union of the SELECTED lists —
+// "what am I hunting" — where a spark no ancestor carries renders the "—" a
+// chance that can't be estimated already does. Same table either way, so the
+// clip, the sort and the fold never learn the filter exists.
 export function TraineeProcs({
   design,
   affinity,
   sparkNames,
+  sparkLists,
   sort,
   onSort,
 }: {
   design: Design;
   affinity: AffinityResult | null;
   sparkNames: Map<string, string>;
+  sparkLists: SparkListStore;
   sort: SparkSort;
   onSort: (s: SparkSort) => void;
 }) {
@@ -310,10 +372,19 @@ export function TraineeProcs({
     if (sparks.length > 0) perMember.push({ index: i, sparks });
   }
   const outlooks = combineOutlooks(perMember);
+  const chosen = chosenLists(sparkLists.lists, sparkLists.active);
+  const filtered = chosen.length > 0;
+  const rows = filtered ? listRows(outlooks, union(chosen)) : outlooks;
+  // Tint only while unfiltered: filtered, every row is selected by
+  // construction, and tinting all of them says nothing.
+  const watched = filtered ? null : activeSparkIds(sparkLists.lists, sparkLists.active);
   // Measured against the table's own height rather than the wrapper's, so the
   // answer doesn't depend on whether the clip is currently applied. The
   // observer catches the sort changing a row's wrap, the viewport changing,
-  // and a spark being typed on an ancestor while this tab is open.
+  // and a spark being typed on an ancestor while this tab is open. `rows`,
+  // not `outlooks`: the observer misses the element being REPLACED across the
+  // early-return boundary, and the filter can swap row sets of equal outlook
+  // count.
   useLayoutEffect(() => {
     const el = tableRef.current;
     if (el === null) return;
@@ -331,14 +402,23 @@ export function TraineeProcs({
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [outlooks.length]);
-  if (outlooks.length === 0) {
-    return <p className="focus-note">No sparks on the ancestors yet.</p>;
+  }, [rows.length]);
+  // Only the UNFILTERED empty tree gets the note: a selection over an empty
+  // tree falls through to the table, all rows "—" — which while planning is
+  // the answer, not a degenerate case.
+  if (!filtered && outlooks.length === 0) {
+    return (
+      <>
+        <PanelListFilter sparkLists={sparkLists} />
+        <p className="focus-note">No sparks on the ancestors yet.</p>
+      </>
+    );
   }
-  const shown = sortSparks(outlooks, sort);
+  const shown = sortSparks(rows, sort);
   const clipped = tall && !expanded;
   return (
     <>
+      <PanelListFilter sparkLists={sparkLists} />
       <div className={clipped ? "proc-clip proc-clipped" : "proc-clip"}>
         <table ref={tableRef} className="proc-table">
           <SparkHead sort={sort} onSort={onSort} />
@@ -346,16 +426,25 @@ export function TraineeProcs({
             {/* Which members carry each spark is deliberately not a column: this
                 table answers "what am I likely to come out with", and the
                 per-member breakdown is one click away on their own tabs. */}
-            {shown.map((o) => (
-              <SparkRow
-                key={sparkId(o)}
-                spark={o}
-                name={sparkName(o, sparkNames)}
-                // No level on this table: the carriers may hold a spark at
-                // different levels, and the chance is the union across them.
-                stars={null}
-              />
-            ))}
+            {shown.length === 0 ? (
+              <tr>
+                <td className="proc-name proc-empty" colSpan={2}>
+                  Nothing in the selected lists yet.
+                </td>
+              </tr>
+            ) : (
+              shown.map((o) => (
+                <SparkRow
+                  key={sparkId(o)}
+                  spark={o}
+                  name={sparkName(o, sparkNames)}
+                  // No level on this table: the carriers may hold a spark at
+                  // different levels, and the chance is the union across them.
+                  stars={null}
+                  watched={watched !== null && watched.has(sparkId(o))}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -370,7 +459,7 @@ export function TraineeProcs({
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? "Show Fewer" : `Show All ${outlooks.length}`}
+          {expanded ? "Show Fewer" : `Show All ${rows.length}`}
         </button>
       )}
     </>

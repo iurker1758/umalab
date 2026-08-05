@@ -1125,7 +1125,9 @@ try {
   // Asserted against what's RENDERED between the tabs and the table — not
   // against the class names of the pill this replaced, which would report
   // "no second switch" however many switches a later change put there under
-  // different classes.
+  // different classes. One block is licensed to sit there: the Lists filter
+  // (#43), which narrows rows rather than reordering them — anything else
+  // is the second switch coming back.
   check("and the sort lives on the headers, with no second switch under the tabs",
     (await sortedBy()) === "Spark:other" &&
     (await page.locator(".focus .proc-table thead .proc-h").count()) === 2 &&
@@ -1140,8 +1142,8 @@ try {
       for (let n = tabs.nextElementSibling; n && n !== table; n = n.nextElementSibling) {
         between.push(n.className);
       }
-      return between.length;
-    })) === 0);
+      return between.every((c) => c.split(" ").includes("proc-list-pills"));
+    })));
   // NOTHING in the table can change anything: the level is chosen in the
   // popout when the spark is added, re-levelled there and removed there
   // (#86), so the only buttons the table carries are its two sort headers.
@@ -1579,6 +1581,160 @@ try {
   check("the affinity tab is unchanged underneath",
     (await page.locator(".focus .aff-links").count()) === 1 &&
     (await page.locator(".focus .proc-table").count()) === 0);
+
+  // ---------- the active lists filter the table and the browse ----------
+  // One device-local selection, two surfaces (#67 + #27, DECISIONS.md #43):
+  // pills above the trainee's table and in the chooser's band. Nothing
+  // selected keeps the ranked table, with every listed spark tinted; a
+  // selection swaps the rows for the union of the chosen lists, where a
+  // spark nobody carries renders "—". The browser starts with the key
+  // absent (fresh context), so this section controls the selection end to
+  // end — and clears it at the end, because later sections count popout
+  // rows that a leftover filter would narrow.
+  await openTab("Sparks");
+  const preFilterRows = await page.locator(".focus .proc-table tbody tr").count();
+  // The pills live behind a Lists DISCLOSURE — 50 lists is the cap, and a
+  // flat row on every panel would grow with it. Open it: one pill per list
+  // (the run's own plus whatever the baseline holds), and the control sits
+  // OUTSIDE the clip: clipped rows stay in the DOM, and a focusable control
+  // below the fold would be reachable but invisible (DECISIONS.md #34).
+  // Structural, so it can't rot into a coincidence of current heights.
+  const panelLists = ".focus .proc-list-pills .spark-list-disclose";
+  await page.locator(panelLists).click();
+  check("the Lists disclosure opens one pill per list, outside the clip",
+    (await page.locator(panelLists).getAttribute("aria-expanded")) === "true" &&
+    (await page.locator(".focus .spark-list-menu .spark-list-filter").count()) ===
+      (await getJson("/api/spark-lists")).length &&
+    (await page.locator(".focus .proc-clip .proc-list-pills").count()) === 0);
+  // The filter list is built THROUGH the chooser, never by bare fetch: the
+  // page's list state was fetched at mount and this suite never reloads, so
+  // a row the client didn't write would have no pill. One carried spark and
+  // one nobody holds — the "—" row is the case a highlight could never show.
+  const list2Name = `${E2E_LIST_PREFIX} filter ${Date.now()}`;
+  const carried = added[2];
+  const uncarried = factorRef.find(
+    (f) =>
+      (f.kind === "white" || f.kind === "race" || f.kind === "scenario") &&
+      !added.some((a) => a.kind === f.kind && a.key === f.key)
+  );
+  await selectNode("Grandparent 1-1");
+  const filterSearch = page.locator('.spark-popout input[aria-label="G1-1 spark search"]');
+  await openChooser("G1-1");
+  await filterSearch.fill(carried.name);
+  await page.locator(`.spark-fav[data-spark="${carried.kind}:${carried.key}"]`).click();
+  await page.waitForSelector(`.spark-lists [aria-label="New list for ${carried.name}"]`);
+  // Recorded first, same as the favorites section: the create writes a real
+  // row, and a timed-out wait must still reach cleanup with the name known.
+  listsOwned.add(list2Name);
+  await page.locator(`[aria-label="New list for ${carried.name}"]`).fill(list2Name);
+  await page.locator(`[aria-label="Create list for ${carried.name}"]`).click();
+  const filterList = async () =>
+    (await getJson("/api/spark-lists")).find((l) => l.name === list2Name);
+  await until(async () => (await filterList())?.sparks.length === 1);
+  // Resolved once and guarded, like `created` above: a failed create skips
+  // the block rather than crashing the run on `.id` of undefined.
+  const list2 = await filterList();
+  if (list2 === undefined) {
+    check("the filter list is readable back", false);
+  } else {
+    await filterSearch.fill(uncarried.name);
+    await page.locator(`.spark-fav[data-spark="${uncarried.kind}:${uncarried.key}"]`).click();
+    const uncarriedPill =
+      `.spark-popout .spark-list-pill[data-list="${list2.id}"]` +
+      `[data-spark="${uncarried.kind}:${uncarried.key}"]`;
+    const pillShown = await page
+      .waitForSelector(uncarriedPill, { timeout: 5000 })
+      .then(() => true, () => false);
+    if (pillShown) await page.locator(uncarriedPill).click();
+    check("the filter list holds a carried spark and an uncarried one",
+      await until(async () => (await filterList())?.sparks.length === 2));
+    await closeChooser();
+    await selectNode("Trainee");
+    // Node switches remount the panel, so the disclosure reopens per visit.
+    await page.locator(panelLists).click();
+    const pill2 = page.locator(
+      `.focus .spark-list-menu .spark-list-filter[data-list="${list2.id}"]`
+    );
+    await pill2.click();
+    // Still ONE .proc-table: the filter swaps rows, never adds a table —
+    // which is what keeps every unqualified selector above honest.
+    check("selecting a list swaps the table for that list's sparks",
+      (await pill2.getAttribute("aria-pressed")) === "true" &&
+      (await page.locator(".focus .proc-table").count()) === 1 &&
+      (await page.locator(".focus .proc-table tbody tr").count()) === 2 &&
+      (await procRow(carried).locator(".proc-bar").count()) === 1 &&
+      (await procRow(uncarried).locator(".proc-bar").count()) === 0 &&
+      ((await procRow(uncarried).locator(".proc-none").textContent()) ?? "").trim() === "—" &&
+      (await page.locator(".focus .proc-table .proc-stars").count()) === 0);
+    check("the selection persists device-locally",
+      JSON.stringify(
+        await page.evaluate(() =>
+          JSON.parse(localStorage.getItem("umalab.sparkLists.active") ?? "null"))
+      ) === JSON.stringify([list2.id]));
+    // A member's table takes the same filter (DECISIONS.md #43): her own row
+    // where she carries a chosen spark — level and all — and "—" where she
+    // doesn't. Her held sparks are a view away, not gone.
+    await selectNode("Grandparent 1-1");
+    check("an ancestor's table filters too, keeping her levels",
+      (await page.locator(".focus .proc-table tbody tr").count()) === 2 &&
+      (await procRow(carried).locator(".proc-stars").count()) === 1 &&
+      (await procRow(uncarried).locator(".proc-stars").count()) === 0 &&
+      ((await procRow(uncarried).locator(".proc-none").textContent()) ?? "").trim() === "—");
+    // The same selection pre-presses the chooser's band control, narrowing
+    // the browse to the chosen lists — rows held at open stay, because this
+    // popout is the only place a spark can be removed. The Lists button
+    // reads active with its count while closed: the filter keeps narrowing
+    // with the menu shut.
+    await openChooser("G1-1");
+    const bandLists = ".spark-popout .spark-list-disclose";
+    const otherBlue = factorRef.find((f) => f.kind === "blue" && f.key !== added[4].key);
+    check("the chooser opens pre-filtered to the active lists",
+      ((await page.locator(bandLists).textContent()) ?? "").startsWith("Lists · 1") &&
+      (await rowForSpark(uncarried.kind, uncarried.key).count()) === 1 &&
+      (await rowForSpark(added[4].kind, added[4].key).count()) === 1 &&
+      (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 0);
+    // Toggling OFF in the popout exercises the write path from this surface;
+    // the two controls press one stored selection.
+    await page.locator(bandLists).click();
+    await page
+      .locator(`.spark-popout .spark-list-menu .spark-list-filter[data-list="${list2.id}"]`)
+      .click();
+    check("toggling off in the popout clears the selection and restores the browse",
+      JSON.stringify(
+        await page.evaluate(() =>
+          JSON.parse(localStorage.getItem("umalab.sparkLists.active") ?? "null"))
+      ) === "[]" &&
+      (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 1);
+    await closeChooser();
+    await selectNode("Trainee");
+    await page.locator(panelLists).click();
+    check("deselecting restores the ranked table",
+      (await pill2.getAttribute("aria-pressed")) === "false" &&
+      (await page.locator(".focus .proc-table tbody tr").count()) === preFilterRows);
+    // The tint marks the union of ALL lists while nothing is selected.
+    // Expected set computed from the live API ∩ the table's own rows, so a
+    // baseline list naming a suite-typed spark strengthens the check rather
+    // than failing it.
+    const allListSparks = new Set(
+      (await getJson("/api/spark-lists")).flatMap((l) =>
+        l.sparks.map((s) => `${s.kind}:${s.key}`))
+    );
+    const tableSparks = await page
+      .locator(".focus .proc-table tbody tr")
+      .evaluateAll((rows) => rows.map((r) => r.dataset.spark));
+    const tinted = await page
+      .locator(".focus .proc-table tbody tr.proc-row-watched")
+      .evaluateAll((rows) => rows.map((r) => r.dataset.spark));
+    const expectedTint = tableSparks.filter((s) => allListSparks.has(s));
+    check("with nothing selected, listed sparks are tinted — all of them and only them",
+      expectedTint.length >= 1 &&
+      JSON.stringify(tinted) === JSON.stringify(expectedTint));
+  }
+  // Belt over the [] the deselect wrote: nothing after this section may
+  // inherit a selection, whatever path the guarded block took.
+  await page.evaluate(() => localStorage.removeItem("umalab.sparkLists.active"));
+  await openTab("Details");
+
   // The sparks reach the server, or a reload would quietly lower every
   // estimate the design was judged on. Read from the API rather than by
   // reloading: this suite's later sections build on the page state as it is.

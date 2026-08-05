@@ -5,11 +5,13 @@ import {
   combineOutlooks,
   eventChance,
   formatChance,
+  listRows,
   memberSparks,
   runChance,
   sortSparks,
   sparkId,
   type SparkChance,
+  type SparkOutlook,
   type SparkRef,
 } from "./procs";
 import type { SlotFactor } from "./api";
@@ -194,6 +196,64 @@ describe("combineOutlooks", () => {
       },
     ]);
     expect(rows.map(sparkId)).toEqual(["white:7", "unique:5", "race:9"]);
+  });
+});
+
+describe("listRows", () => {
+  const outlooks: SparkOutlook[] = [
+    { type: "white", key: 7, from: [1, 3], chance: 30.6 },
+    { type: "race", key: 9, from: [2], chance: null },
+  ];
+
+  it("keeps a carried spark's own row intact", () => {
+    const [row] = listRows(outlooks, [{ kind: "white", key: 7 }]);
+    expect(row).toBe(outlooks[0]);
+  });
+
+  it("synthesizes a bare row for a spark nobody holds", () => {
+    // The row whose absence a plain highlight could never show — the point
+    // of the filtered view while planning (DECISIONS.md #43).
+    const [row] = listRows(outlooks, [{ kind: "scenario", key: 40_001 }]);
+    expect(row).toEqual({ type: "scenario", key: 40_001, chance: null });
+  });
+
+  it("carries a member's stars through, and no stars on a synthesized row", () => {
+    // The member tables narrow through this too — their rows keep the ★
+    // level, and a spark she doesn't carry has no level to show.
+    const rows = listRows(
+      [{ type: "white" as const, key: 7, stars: 2, chance: 12.5 }],
+      [{ kind: "white", key: 7 }, { kind: "race", key: 9 }]
+    );
+    expect(rows[0]).toEqual({ type: "white", key: 7, stars: 2, chance: 12.5 });
+    expect("stars" in rows[1]).toBe(false);
+  });
+
+  it("stays null for a carried spark nobody can estimate", () => {
+    const [row] = listRows(outlooks, [{ kind: "race", key: 9 }]);
+    expect(row.chance).toBeNull();
+  });
+
+  it("keeps the wanted order, one row per want", () => {
+    const rows = listRows(outlooks, [
+      { kind: "race", key: 9 },
+      { kind: "white", key: 7 },
+    ]);
+    expect(rows.map(sparkId)).toEqual(["race:9", "white:7"]);
+  });
+
+  it("sorts under sortSparks with the — rows last", () => {
+    // The property the tables rely on: filtering never lets an unanswerable
+    // row rank above a real chance.
+    const rows = listRows(outlooks, [
+      { kind: "race", key: 9 },
+      { kind: "scenario", key: 40_001 },
+      { kind: "white", key: 7 },
+    ]);
+    expect(sortSparks(rows, "chance").map(sparkId)).toEqual([
+      "white:7",
+      "race:9",
+      "scenario:40001",
+    ]);
   });
 });
 

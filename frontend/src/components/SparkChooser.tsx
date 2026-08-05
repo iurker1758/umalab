@@ -13,13 +13,16 @@ import {
   type SparkList,
 } from "../api";
 import { APTITUDE_LABELS, UNDROPPABLE_TITLE, undroppableMessage } from "../aptitude";
+import { ListFilter } from "./ListFilter";
 import { deriveCharaId, factorsWith } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
 import {
   createListWith,
   favorites as unionOf,
+  listById,
   listsWith,
   PartialWrite,
+  toggleActive,
   toggleMembership,
   type SparkListStore,
 } from "../sparks";
@@ -29,14 +32,17 @@ import {
 // the LEVEL — three buttons per row, so a 3★ is one click at the moment you
 // are choosing the spark (#34) — and a held row keeps the same three buttons
 // live with the current level pressed, plus the ✕ that removes, IN PLACE in
-// its own section: held-ness is row STATE, never row position. A Current
-// Sparks filter in the search band narrows the browse to what the member
-// holds. The table behind it displays and never edits: every act that
-// changes a chance happens in here, where nothing can move a row (#41).
+// its own section: held-ness is row STATE, never row position. Filter pills
+// in the search band narrow the browse — Current Sparks to what the member
+// holds, and one pill per spark list, whose presses persist as the active
+// selection the trainee's table also reads (DECISIONS.md #43). The table
+// behind it displays and never edits: every act that changes a chance
+// happens in here, where nothing can move a row (#41).
 //
 // FAVOURITING is a different act from adding, deliberately: a filler white you
-// type onto every node must not land in #27's watched block, and a row must
-// not move under the pointer that just clicked it.
+// type onto every node must not land in the sparks the active lists mark as
+// hunted (DECISIONS.md #43), and a row must not move under the pointer that
+// just clicked it.
 //
 // The ★ OPENS A LIST PICKER rather than toggling one flag (DECISIONS.md #37).
 // A favorite is a spark in at least one of the user's named lists, so "star
@@ -673,16 +679,57 @@ function ChooserPopout({
       })
       .map((f) => ({ kind: f.kind, key: f.key }))
   );
-  // The Current Sparks FILTER: null browses everything; a Set narrows the
-  // popout to the member's own rows, in their own sections. A filter, not a
-  // section: frozen at open a section is stale (an add only surfaces on the
-  // next open), and live it tears the row out of the section under the
-  // pointer. Membership snapshots when the pill is PRESSED, so it is fresh
-  // at the moment you ask — the spark added seconds ago is in it — while a
-  // ✕ under it leaves its row in place, add buttons back, rather than
-  // vanishing the list out from under the pointer. Pressing it again takes
-  // a fresh cut.
-  const [onlyCurrent, setOnlyCurrent] = useState<Set<string> | null>(null);
+  // The FILTER pills: which are pressed, each with the row-id snapshot it
+  // contributed at press — or at open, for lists the persisted selection
+  // pre-presses. The shown set is the union of the values; empty browses
+  // everything. A filter, not sections: frozen at open a section is stale
+  // (an add only surfaces on the next open), and live it tears the row out
+  // of the section under the pointer. Membership snapshots when a pill is
+  // PRESSED, so it is fresh at the moment you ask — the spark added seconds
+  // ago is in it — while a ✕ under it leaves its row in place, add buttons
+  // back, rather than vanishing the list out from under the pointer.
+  // Pressing again takes a fresh cut.
+  //
+  // Keyed by source — "current" or a list id — because the two differ in
+  // LIFETIME: list presses persist through `onActiveChange` (the active
+  // selection, DECISIONS.md #43) and are re-pressed here at the next open,
+  // while Current Sparks is per-member and dies with the popout. The lazy
+  // initializer IS the snapshot-at-open — the popout mounts fresh per open
+  // (and per `epoch`), and `onActiveChange` never bumps `epoch`, so the map,
+  // not the live `active` prop, is this popout's single source of truth.
+  // Stale active ids name no list and contribute no entry, so an all-stale
+  // selection degrades to browsing everything.
+  const [filters, setFilters] = useState<Map<"current" | number, Set<string>>>(() => {
+    const init = new Map<"current" | number, Set<string>>();
+    for (const id of sparkLists.active) {
+      const list = listById(sparkLists.lists, id);
+      if (list !== undefined) {
+        init.set(
+          id,
+          new Set(list.sparks.map((s) => sparkId({ type: s.kind, key: s.key })))
+        );
+      }
+    }
+    return init;
+  });
+  const toggleListFilter = (id: number) => {
+    setFilters((prev) => {
+      const next = new Map(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        const list = listById(sparkLists.lists, id);
+        next.set(
+          id,
+          new Set((list?.sparks ?? []).map((s) => sparkId({ type: s.kind, key: s.key })))
+        );
+      }
+      return next;
+    });
+    // Synchronous localStorage, so no busy machinery: a membership write in
+    // flight doesn't make toggling a filter unsafe.
+    sparkLists.onActiveChange(toggleActive(sparkLists.active, id));
+  };
 
   // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
   // `busy` silently swallows the keypress. What that leaves open — close
@@ -736,10 +783,24 @@ function ChooserPopout({
   // an add, and the server refuses every save carrying either (DECISIONS.md
   // #39). Only her ✕ helps.
   const addable = greenPossible;
-  // One rule for every section: the query and the Current Sparks filter
-  // narrow, and hits rank by where the query lands in the name then
-  // alphabetically — a no-op with no query, the reference arriving sorted
-  // by (kind, name) already.
+  // One rule for every section: the query and the filter pills narrow, and
+  // hits rank by where the query lands in the name then alphabetically — a
+  // no-op with no query, the reference arriving sorted by (kind, name)
+  // already.
+  //
+  // Rows held AT OPEN are exempt from the membership term — under a list
+  // filter, a held foreign green in none of the selected lists would
+  // otherwise be invisible but unremovable, the :possible exemption's
+  // failure over again. Uniform across sources, which extends it to Current
+  // Sparks: a row removed before the pill was pressed now stays visible
+  // rather than vanishing with the snapshot. The query still applies to
+  // held rows.
+  const filterIds =
+    filters.size === 0
+      ? null
+      : new Set([...filters.values()].flatMap((set) => [...set]));
+  const inFilter = (id: string) =>
+    filterIds === null || filterIds.has(id) || heldAtOpen.has(id);
   const byQuery = (a: { name: string }, b: { name: string }) =>
     a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||
     a.name.localeCompare(b.name);
@@ -748,19 +809,19 @@ function ChooserPopout({
       (o) =>
         possible(o) &&
         o.name.toLowerCase().includes(q) &&
-        (onlyCurrent === null || onlyCurrent.has(sparkId({ type: o.kind, key: o.key })))
+        inFilter(sparkId({ type: o.kind, key: o.key }))
     );
     if (q === "") return hits;
     return hits.sort(byQuery);
   };
   // The pink rows under the same narrowing, over the parallel shape. No
   // possibility rule rides along: any node this chooser renders on can hold
-  // any pink.
+  // any pink — though a list can hold none, so under a list-only filter this
+  // section shows just a held-at-open pink, or nothing.
   const pinkHits = PINK_OPTIONS.filter(
     (o) =>
       o.name.toLowerCase().includes(q) &&
-      (onlyCurrent === null ||
-        onlyCurrent.has(sparkId({ type: "pink", aptitude: o.aptitude })))
+      inFilter(sparkId({ type: "pink", aptitude: o.aptitude }))
   );
   if (q !== "") pinkHits.sort(byQuery);
 
@@ -917,23 +978,38 @@ function ChooserPopout({
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
           />
-          {/* Sticky with the search it composes with, so both narrowing
-              controls stay reachable while you scroll. */}
-          <button
-            className={onlyCurrent === null ? "spark-current" : "spark-current active"}
-            aria-pressed={onlyCurrent !== null}
-            // On a member holding nothing the press empties the popout to
-            // the same "No sparks match." a typo produces, with nothing on
-            // screen naming the cause. Only while INACTIVE: removing the
-            // last spark under the filter must leave the pill able to
-            // toggle off.
-            disabled={onlyCurrent === null && heldStars.size === 0}
-            onClick={() =>
-              setOnlyCurrent(onlyCurrent === null ? new Set(heldStars.keys()) : null)
-            }
-          >
-            Current Sparks
-          </button>
+          {/* Sticky with the search they compose with, so every narrowing
+              control stays reachable while you scroll. */}
+          <div className="spark-filter-row">
+            <button
+              className={filters.has("current") ? "spark-current active" : "spark-current"}
+              aria-pressed={filters.has("current")}
+              // On a member holding nothing the press empties the popout to
+              // the same "No sparks match." a typo produces, with nothing on
+              // screen naming the cause. Only while INACTIVE: removing the
+              // last spark under the filter must leave the pill able to
+              // toggle off.
+              disabled={!filters.has("current") && heldStars.size === 0}
+              onClick={() =>
+                setFilters((prev) => {
+                  const next = new Map(prev);
+                  if (next.has("current")) next.delete("current");
+                  else next.set("current", new Set(heldStars.keys()));
+                  return next;
+                })
+              }
+            >
+              Current Sparks
+            </button>
+            {/* Disabled with the ★, and for its reason: a snapshot cut from
+                lists the app has proven stale would filter against ghosts. */}
+            <ListFilter
+              lists={sparkLists.lists}
+              isPressed={(id) => filters.has(id)}
+              disabled={sparkLists.failed}
+              onToggle={toggleListFilter}
+            />
+          </div>
         </div>
         {/* The reference is committed and works offline; the favorites are
             server state behind Access. Said separately so a failed list fetch

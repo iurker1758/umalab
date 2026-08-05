@@ -560,6 +560,13 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-row-unique .proc-name { color: #7fdba2; }
 .proc-row-race .proc-name { color: #ffd257; }
 .proc-row-scenario .proc-name { color: #b9a0ff; }
+/* Watched — in the union of the active lists (DECISIONS.md #43). A lightness
+   lift and a weight bump only, no hue: the six kind colours above own that
+   channel, and a seventh hue would read as a seventh kind. The lift is the
+   hover magnitude the app already uses, so it reads as emphasis rather than
+   selection. */
+.proc-row-watched td { background: rgba(255, 255, 255, 0.055); }
+.proc-row-watched .proc-name { font-weight: 600; }
 
 /* The tag survives in the hand-entry search, where you are choosing BETWEEN
    kinds rather than reading your own — several race and scenario sparks share
@@ -595,6 +602,11 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* The one place the fold's height is written. TraineeProcs reads it back off
    this custom property to decide whether anything is hidden, so the clip and
    the button can't disagree. */
+/* The active-list pills above the trainee's table (#67) — same control as
+   the popout band's, placed OUTSIDE .proc-clip: clipped rows stay in the
+   DOM, and a hidden control is worse than a hidden row (DECISIONS.md #34,
+   #43). */
+.proc-list-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.6rem; }
 .proc-clip { --proc-clip: 24rem; overflow: clip; }
 .proc-clipped {
   max-height: var(--proc-clip);
@@ -739,14 +751,37 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    would stretch its own border and radius across the popout. */
 .spark-search-band { position: sticky; top: 0; z-index: 1; margin: 0 -0.9rem; padding: 0.9rem 0.9rem 0.2rem; background: #141a21; }
 .spark-search-band .uma-search { margin-bottom: 0; }
-/* The current-only filter — a pill under the search, in the filter panel's
-   legacy-toggle idiom. A FILTER, not a section: rows keep their sections and
-   their positions whether held or not, and this narrows the browse to the
-   member's own on demand. */
-.spark-current { display: inline-flex; margin-top: 0.4rem; background: #1a2027; border: 1px dashed #3a4250; border-radius: 999px; color: inherit; font-size: 0.72rem; padding: 0.28rem 0.65rem; opacity: 0.7; cursor: pointer; }
-.spark-current:hover:not([disabled]) { opacity: 1; }
-.spark-current[disabled] { opacity: 0.35; cursor: default; }
-.spark-current.active { border-style: solid; border-color: #2a76c9; background: #1e3a5f; opacity: 1; }
+/* The filter pills under the search — Current Sparks plus one per spark
+   list, in the filter panel's legacy-toggle idiom. FILTERS, not sections:
+   rows keep their sections and their positions whether held or not, and
+   these narrow the browse on demand. The margin sits on the row, not the
+   pill: inside a flex row a pill's own top margin would misalign it against
+   its neighbours. */
+.spark-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-top: 0.4rem; }
+/* One shape, two class names on purpose: the e2e suite counts
+   `.spark-current` as a single match, so the list pills must not answer to
+   it — and `.spark-list-pill`'s gold is membership's, a different question
+   from "is this filter on". Active is the `.seg.active` blue instead. */
+.spark-current, .spark-list-filter { display: inline-flex; align-items: center; background: #1a2027; border: 1px dashed #3a4250; border-radius: 999px; color: inherit; font-size: 0.72rem; padding: 0.28rem 0.65rem; opacity: 0.7; cursor: pointer; }
+.spark-current:hover:not([disabled]), .spark-list-filter:hover:not([disabled]) { opacity: 1; }
+.spark-current[disabled], .spark-list-filter[disabled] { opacity: 0.35; cursor: default; }
+.spark-current.active, .spark-list-filter.active { border-style: solid; border-color: #2a76c9; background: #1e3a5f; opacity: 1; }
+/* The Lists button is NOT a pill: a pill here is a filter you toggle, and
+   this discloses the menu of them — so it wears the app's rectangular
+   action shape (`.spark-open`, `.proc-more`) instead. The blue active
+   state stays: the filter keeps narrowing after the menu closes, and a
+   plain button in front of a filtered table would read as off. */
+.spark-list-disclose { display: inline-flex; align-items: center; padding: 0.28rem 0.6rem; font-size: 0.72rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; opacity: 0.85; cursor: pointer; }
+.spark-list-disclose:hover:not([disabled]) { opacity: 1; background: #1d2b3a; }
+.spark-list-disclose[disabled] { opacity: 0.35; cursor: default; }
+.spark-list-disclose.active { border-color: #2a76c9; background: #1e3a5f; opacity: 1; }
+.spark-list-caret { margin-left: 0.3rem; font-size: 0.6rem; opacity: 0.6; }
+/* The disclosed pills, on their own full-width line below whatever shares
+   the row — `flex-basis: 100%` inside a wrapping flex row, the ★ picker's
+   `.spark-lists` layout. Scrolls past ~4 rows: lists cap at 50 per owner,
+   and in the popout's STICKY band an unbounded menu would eat the rows it
+   filters. */
+.spark-list-menu { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 8.5rem; overflow-y: auto; }
 
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */

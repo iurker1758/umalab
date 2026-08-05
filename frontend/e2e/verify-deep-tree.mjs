@@ -1138,11 +1138,17 @@ try {
       const tabs = f.querySelector(".focus-tabs");
       const table = f.querySelector(".proc-table");
       // Every element sat between the tab bar and the table, whatever it is.
+      // AT MOST the one licensed block: `every` alone passes however many
+      // elements wear the licensed class, which is the blank cheque this
+      // check exists to refuse.
       const between = [];
       for (let n = tabs.nextElementSibling; n && n !== table; n = n.nextElementSibling) {
         between.push(n.className);
       }
-      return between.every((c) => c.split(" ").includes("proc-list-pills"));
+      return (
+        between.length <= 1 &&
+        between.every((c) => c.split(" ").includes("proc-list-pills"))
+      );
     })));
   // NOTHING in the table can change anything: the level is chosen in the
   // popout when the spark is added, re-levelled there and removed there
@@ -1657,14 +1663,19 @@ try {
     );
     await pill2.click();
     // Still ONE .proc-table: the filter swaps rows, never adds a table —
-    // which is what keeps every unqualified selector above honest.
-    check("selecting a list swaps the table for that list's sparks",
+    // which is what keeps every unqualified selector above honest. Only the
+    // LISTABLE rows swap: an unchosen white leaves, the chosen pair stays
+    // (real chance and "—"), and blue/pink/green pass through untouched —
+    // a list can't name them, so the filter has no verdict on them.
+    check("selecting a list swaps the listable rows for that list's sparks",
       (await pill2.getAttribute("aria-pressed")) === "true" &&
       (await page.locator(".focus .proc-table").count()) === 1 &&
-      (await page.locator(".focus .proc-table tbody tr").count()) === 2 &&
       (await procRow(carried).locator(".proc-bar").count()) === 1 &&
       (await procRow(uncarried).locator(".proc-bar").count()) === 0 &&
       ((await procRow(uncarried).locator(".proc-none").textContent()) ?? "").trim() === "—" &&
+      (await procRow(added[0]).count()) === 0 &&
+      (await procRow(added[4]).count()) === 1 &&
+      (await page.locator('.focus .proc-table tbody tr[data-spark="pink:mile"]').count()) === 1 &&
       (await page.locator(".focus .proc-table .proc-stars").count()) === 0);
     check("the selection persists device-locally",
       JSON.stringify(
@@ -1673,13 +1684,15 @@ try {
       ) === JSON.stringify([list2.id]));
     // A member's table takes the same filter (DECISIONS.md #43): her own row
     // where she carries a chosen spark — level and all — and "—" where she
-    // doesn't. Her held sparks are a view away, not gone.
+    // doesn't, while her blue stays rendered and her unchosen white leaves.
+    // Her held sparks are a view away, not gone.
     await selectNode("Grandparent 1-1");
-    check("an ancestor's table filters too, keeping her levels",
-      (await page.locator(".focus .proc-table tbody tr").count()) === 2 &&
+    check("an ancestor's table filters its listable rows, keeping her levels",
       (await procRow(carried).locator(".proc-stars").count()) === 1 &&
       (await procRow(uncarried).locator(".proc-stars").count()) === 0 &&
-      ((await procRow(uncarried).locator(".proc-none").textContent()) ?? "").trim() === "—");
+      ((await procRow(uncarried).locator(".proc-none").textContent()) ?? "").trim() === "—" &&
+      (await procRow(added[0]).count()) === 0 &&
+      (await procRow(added[4]).count()) === 1);
     // The same selection pre-presses the chooser's band control, narrowing
     // the browse to the chosen lists — rows held at open stay, because this
     // popout is the only place a spark can be removed. The Lists button
@@ -1687,12 +1700,31 @@ try {
     // with the menu shut.
     await openChooser("G1-1");
     const bandLists = ".spark-popout .spark-list-disclose";
+    // The list dimension only speaks white/race/scenario: an unchosen unheld
+    // white is filtered out, while every blue and all ten pinks stay — the
+    // kinds a list can't name must stay addable under any selection.
+    const otherWhite = factorRef.find(
+      (f) =>
+        f.kind === "white" &&
+        f.key !== uncarried.key &&
+        !added.some((a) => a.kind === f.kind && a.key === f.key)
+    );
     const otherBlue = factorRef.find((f) => f.kind === "blue" && f.key !== added[4].key);
-    check("the chooser opens pre-filtered to the active lists",
+    check("the chooser opens pre-filtered, listable kinds only",
       ((await page.locator(bandLists).textContent()) ?? "").startsWith("Lists · 1") &&
       (await rowForSpark(uncarried.kind, uncarried.key).count()) === 1 &&
       (await rowForSpark(added[4].kind, added[4].key).count()) === 1 &&
-      (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 0);
+      (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 0 &&
+      (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 1 &&
+      (await page.locator('.spark-popout .spark-matches button[data-stars="1"][data-spark^="pink:"]').count()) === 10);
+    // Current Sparks composes with the lists by AND — WHICH sparks ∩ WHOSE —
+    // so pressing it narrows to what she holds of the chosen lists; a union
+    // would widen on press and make "only her own" unreachable.
+    await page.locator(".spark-popout .spark-current").click();
+    check("Current Sparks narrows within the list filter, never widens",
+      (await rowForSpark(carried.kind, carried.key).count()) === 1 &&
+      (await rowForSpark(uncarried.kind, uncarried.key).count()) === 0);
+    await page.locator(".spark-popout .spark-current").click();
     // Toggling OFF in the popout exercises the write path from this surface;
     // the two controls press one stored selection.
     await page.locator(bandLists).click();
@@ -1704,7 +1736,7 @@ try {
         await page.evaluate(() =>
           JSON.parse(localStorage.getItem("umalab.sparkLists.active") ?? "null"))
       ) === "[]" &&
-      (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 1);
+      (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 1);
     await closeChooser();
     await selectNode("Trainee");
     await page.locator(panelLists).click();

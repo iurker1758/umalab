@@ -27,7 +27,6 @@ import { ListFilter } from "./ListFilter";
 import {
   activeSparkIds,
   chosenLists,
-  toggleActive,
   union,
   type SparkListStore,
 } from "../sparks";
@@ -163,18 +162,17 @@ const SparkRow = ({
 // the clipped table (DECISIONS.md #34). Pressed state is the LIVE store, not
 // a snapshot like the popout's: nothing in these tables is a pointer target,
 // so rows may retint and refilter under the cursor safely. Nothing renders
-// with no lists or a failed fetch — a control over zero lists is furniture,
-// and stale pills would filter against ghosts.
+// with no lists — a control over zero lists is furniture — but a FAILED
+// fetch keeps it: the tables filter off the same possibly-stale lists, and
+// hiding this would hide the only control that can un-filter them.
 function PanelListFilter({ sparkLists }: { sparkLists: SparkListStore }) {
-  if (sparkLists.lists.length === 0 || sparkLists.failed) return null;
+  if (sparkLists.lists.length === 0) return null;
   return (
     <div className="proc-list-pills">
       <ListFilter
         lists={sparkLists.lists}
         isPressed={(id) => sparkLists.active.includes(id)}
-        onToggle={(id) =>
-          sparkLists.onActiveChange(toggleActive(sparkLists.active, id))
-        }
+        onToggle={sparkLists.onToggleActive}
       />
     </div>
   );
@@ -234,15 +232,16 @@ export function NodeProcs({
   const factors = slot?.factors ?? [];
   const memberRows = memberSparks(sparkAt(design, index), factors, share);
   // The same two states the trainee's table has (DECISIONS.md #43): a
-  // selection narrows to the chosen lists' sparks — "—" for one she doesn't
-  // carry — and nothing selected shows her own rows with the listed ones
-  // tinted. Her held sparks stay held either way; the filter is a view.
+  // selection narrows the LISTABLE kinds to the chosen lists' sparks — "—"
+  // for one she doesn't carry, her blue/pink/green always rendered — and
+  // nothing selected shows her own rows with the listed ones tinted. Her
+  // held sparks stay held either way; the filter is a view. An empty union
+  // (every chosen list emptied elsewhere) is no filter at all: more than
+  // asked, never an empty table.
   const chosen = chosenLists(sparkLists.lists, sparkLists.active);
-  const filtered = chosen.length > 0;
-  const rows = sortSparks(
-    filtered ? listRows(memberRows, union(chosen)) : memberRows,
-    sort
-  );
+  const wanted = union(chosen);
+  const filtered = wanted.length > 0;
+  const rows = sortSparks(filtered ? listRows(memberRows, wanted) : memberRows, sort);
   const watched = filtered ? null : activeSparkIds(sparkLists.lists, sparkLists.active);
   return (
     <>
@@ -257,9 +256,7 @@ export function NodeProcs({
           {rows.length === 0 ? (
             <tr>
               <td className="proc-name proc-empty" colSpan={2}>
-                {filtered
-                  ? "Nothing in the selected lists yet."
-                  : "No sparks on this member yet."}
+                No sparks on this member yet.
               </td>
             </tr>
           ) : (
@@ -335,10 +332,12 @@ const clipHeight = (el: Element): number => {
 //
 // The active selection filters it (DECISIONS.md #43). Nothing selected keeps
 // the ranked table answering "what will I get", with the union of ALL lists
-// tinted; lists selected swaps the rows for the union of the SELECTED lists —
-// "what am I hunting" — where a spark no ancestor carries renders the "—" a
-// chance that can't be estimated already does. Same table either way, so the
-// clip, the sort and the fold never learn the filter exists.
+// tinted; lists selected swaps the LISTABLE rows for the union of the
+// SELECTED lists — "what am I hunting" — where a spark no ancestor carries
+// renders the "—" a chance that can't be estimated already does, and the
+// blue/pink/green rows stay put throughout (a list can't name them, so the
+// filter has no verdict on them). Same table either way, so the clip, the
+// sort and the fold never learn the filter exists.
 export function TraineeProcs({
   design,
   affinity,
@@ -373,10 +372,14 @@ export function TraineeProcs({
   }
   const outlooks = combineOutlooks(perMember);
   const chosen = chosenLists(sparkLists.lists, sparkLists.active);
-  const filtered = chosen.length > 0;
-  const rows = filtered ? listRows(outlooks, union(chosen)) : outlooks;
-  // Tint only while unfiltered: filtered, every row is selected by
-  // construction, and tinting all of them says nothing.
+  // An empty union — every chosen list emptied elsewhere — is no filter at
+  // all: more than asked, never an empty table.
+  const wanted = union(chosen);
+  const filtered = wanted.length > 0;
+  const rows = filtered ? listRows(outlooks, wanted) : outlooks;
+  // Tint only while unfiltered: filtered, every listable row is selected by
+  // construction, and the structural rows are told apart by their kind
+  // colours already.
   const watched = filtered ? null : activeSparkIds(sparkLists.lists, sparkLists.active);
   // Measured against the table's own height rather than the wrapper's, so the
   // answer doesn't depend on whether the clip is currently applied. The
@@ -426,25 +429,17 @@ export function TraineeProcs({
             {/* Which members carry each spark is deliberately not a column: this
                 table answers "what am I likely to come out with", and the
                 per-member breakdown is one click away on their own tabs. */}
-            {shown.length === 0 ? (
-              <tr>
-                <td className="proc-name proc-empty" colSpan={2}>
-                  Nothing in the selected lists yet.
-                </td>
-              </tr>
-            ) : (
-              shown.map((o) => (
-                <SparkRow
-                  key={sparkId(o)}
-                  spark={o}
-                  name={sparkName(o, sparkNames)}
-                  // No level on this table: the carriers may hold a spark at
-                  // different levels, and the chance is the union across them.
-                  stars={null}
-                  watched={watched !== null && watched.has(sparkId(o))}
-                />
-              ))
-            )}
+            {shown.map((o) => (
+              <SparkRow
+                key={sparkId(o)}
+                spark={o}
+                name={sparkName(o, sparkNames)}
+                // No level on this table: the carriers may hold a spark at
+                // different levels, and the chance is the union across them.
+                stars={null}
+                watched={watched !== null && watched.has(sparkId(o))}
+              />
+            ))}
           </tbody>
         </table>
       </div>

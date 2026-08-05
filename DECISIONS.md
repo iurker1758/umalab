@@ -3339,20 +3339,26 @@ marked in each.
   control sits on every Sparks panel and in the popout's sticky band,
   where a flat row grows with the count. In the chooser it joins
   Current Sparks (transient, per-member) in the band; list presses
-  persist as the active selection and the browse narrows to the union
-  of pressed sources, held-at-open rows exempt so nothing becomes
-  invisible but unremovable. Every proc table — the trainee's AND
-  each member's — takes the same two states: nothing selected keeps
-  its own rows with listed sparks tinted (a lightness lift plus a
-  weight bump, hue left to the kinds), and a selection **swaps the
-  rows** for the union of the chosen lists, a spark not carried
-  rendering the "—" an unscorable chance already does — members keep
-  their ★ levels on the rows they do carry. Same table either way, so
-  clip, sort and fold never learn the filter exists. Popout presses
-  snapshot (Current Sparks' tearing rationale); the panels' are live,
-  safe because those tables have no pointer targets. Filter-on is the
-  `.seg.active` blue, never the membership gold — two questions, two
-  colours.
+  persist as the active selection, and the two dimensions compose by
+  **AND** — lists say WHICH sparks, Current Sparks says WHOSE, so a
+  press always narrows — with held-at-open rows exempt so nothing
+  becomes invisible but unremovable. **The filter only speaks the
+  listable kinds**: blue, pink and green pass every surface untouched,
+  because a list cannot name them — filtered, a pink is unaddable and
+  a member's 90% blue vanishes, the vocabulary misread as a verdict.
+  An **empty union imposes no filter** (every chosen list emptied
+  elsewhere) — the corrupt-key rule: more than asked, never an empty
+  surface. Every proc table — the trainee's AND each member's — takes
+  the same two states: nothing selected keeps its own rows with
+  listed sparks tinted (a lightness lift plus a weight bump, hue left
+  to the kinds), and a selection swaps the **listable** rows for the
+  union of the chosen lists, a spark not carried rendering the "—" an
+  unscorable chance already does — members keep their ★ levels. Same
+  table either way, so clip, sort and fold never learn the filter
+  exists. Popout presses snapshot (Current Sparks' tearing
+  rationale); the panels' are live, safe because those tables have no
+  pointer targets. Filter-on is the `.seg.active` blue, never the
+  membership gold — two questions, two colours.
 - **Alternatives rejected:** *a stacked Watched block above the
   ranked table* (#27's original ruling) — a second table idiom
   spending #30's reflow budget, when the filtered view absorbs the

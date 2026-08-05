@@ -22,10 +22,13 @@ import {
   listById,
   listsWith,
   PartialWrite,
-  toggleActive,
   toggleMembership,
   type SparkListStore,
 } from "../sparks";
+
+// What the list filter dimension can speak about — every other kind passes
+// it untouched, since a list could never name one.
+const LISTABLE = new Set<string>(LIST_SPARK_KINDS);
 
 // The EDITOR for a member's sparks: a popout that BROWSES the 437
 // factors with your favorites on top (DECISIONS.md #35, #41). Adding includes
@@ -681,8 +684,9 @@ function ChooserPopout({
   );
   // The FILTER pills: which are pressed, each with the row-id snapshot it
   // contributed at press — or at open, for lists the persisted selection
-  // pre-presses. The shown set is the union of the values; empty browses
-  // everything. A filter, not sections: frozen at open a section is stale
+  // pre-presses. How the snapshots compose is `inFilter`'s business below;
+  // empty browses everything. A filter, not sections: frozen at open a
+  // section is stale
   // (an add only surfaces on the next open), and live it tears the row out
   // of the section under the pointer. Membership snapshots when a pill is
   // PRESSED, so it is fresh at the moment you ask — the spark added seconds
@@ -726,9 +730,7 @@ function ChooserPopout({
       }
       return next;
     });
-    // Synchronous localStorage, so no busy machinery: a membership write in
-    // flight doesn't make toggling a filter unsafe.
-    sparkLists.onActiveChange(toggleActive(sparkLists.active, id));
+    sparkLists.onToggleActive(id);
   };
 
   // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
@@ -788,19 +790,39 @@ function ChooserPopout({
   // no-op with no query, the reference arriving sorted by (kind, name)
   // already.
   //
-  // Rows held AT OPEN are exempt from the membership term — under a list
+  // The two filter dimensions compose by AND — lists say WHICH sparks are
+  // in play, Current Sparks says WHOSE — so pressing the pill always
+  // narrows; under a union a press could only ever widen, making "show me
+  // only what she holds" unreachable while any list was pressed. Within
+  // the list dimension pressed lists union: a week can be about two builds.
+  //
+  // The list dimension only speaks white/race/scenario, so every other
+  // kind passes it — filtered, a pink would be unaddable and a member
+  // could never be given a blue while any list was pressed.
+  //
+  // A list dimension whose flattened set is EMPTY imposes no filter — the
+  // corrupt-key rule again: a selection that would show nothing (every
+  // pressed list emptied on another device or surface) degrades to showing
+  // more than asked, never to "No sparks match." over an untouched node.
+  //
+  // Rows held AT OPEN are exempt from both membership terms — under a list
   // filter, a held foreign green in none of the selected lists would
   // otherwise be invisible but unremovable, the :possible exemption's
   // failure over again. Uniform across sources, which extends it to Current
   // Sparks: a row removed before the pill was pressed now stays visible
   // rather than vanishing with the snapshot. The query still applies to
   // held rows.
-  const filterIds =
-    filters.size === 0
-      ? null
-      : new Set([...filters.values()].flatMap((set) => [...set]));
-  const inFilter = (id: string) =>
-    filterIds === null || filterIds.has(id) || heldAtOpen.has(id);
+  const listIds = (() => {
+    const flat = new Set(
+      [...filters].flatMap(([key, set]) => (key === "current" ? [] : [...set]))
+    );
+    return flat.size === 0 ? null : flat;
+  })();
+  const currentIds = filters.get("current") ?? null;
+  const inFilter = (id: string, kind: string) =>
+    heldAtOpen.has(id) ||
+    ((listIds === null || !LISTABLE.has(kind) || listIds.has(id)) &&
+      (currentIds === null || currentIds.has(id)));
   const byQuery = (a: { name: string }, b: { name: string }) =>
     a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||
     a.name.localeCompare(b.name);
@@ -809,19 +831,18 @@ function ChooserPopout({
       (o) =>
         possible(o) &&
         o.name.toLowerCase().includes(q) &&
-        inFilter(sparkId({ type: o.kind, key: o.key }))
+        inFilter(sparkId({ type: o.kind, key: o.key }), o.kind)
     );
     if (q === "") return hits;
     return hits.sort(byQuery);
   };
   // The pink rows under the same narrowing, over the parallel shape. No
   // possibility rule rides along: any node this chooser renders on can hold
-  // any pink — though a list can hold none, so under a list-only filter this
-  // section shows just a held-at-open pink, or nothing.
+  // any pink.
   const pinkHits = PINK_OPTIONS.filter(
     (o) =>
       o.name.toLowerCase().includes(q) &&
-      inFilter(sparkId({ type: "pink", aptitude: o.aptitude }))
+      inFilter(sparkId({ type: "pink", aptitude: o.aptitude }), "pink")
   );
   if (q !== "") pinkHits.sort(byQuery);
 
@@ -1001,12 +1022,14 @@ function ChooserPopout({
             >
               Current Sparks
             </button>
-            {/* Disabled with the ★, and for its reason: a snapshot cut from
-                lists the app has proven stale would filter against ghosts. */}
+            {/* Disabled with the ★, and for its reasons: a snapshot cut from
+                lists the app has proven stale would filter against ghosts,
+                and one cut mid-write would omit the spark just starred —
+                a row vanishing under the pointer the moment the pill lands. */}
             <ListFilter
               lists={sparkLists.lists}
               isPressed={(id) => filters.has(id)}
-              disabled={sparkLists.failed}
+              disabled={busy || sparkLists.failed}
               onToggle={toggleListFilter}
             />
           </div>

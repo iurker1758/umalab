@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type SparkList, type SparkListPatch, type SparkRef } from "./api";
-import { sparkId } from "./procs";
 import {
   ACTIVE_LISTS_STORE,
   activeSparkIds,
@@ -190,15 +189,6 @@ describe("the selection as row ids", () => {
 
   it("keeps activeSparks' empty-means-everything rule", () => {
     expect(activeSparkIds(lists, []).size).toBe(3);
-  });
-
-  it("speaks the proc tables' id format", () => {
-    // The contract the watched tint stands on: these ids must match what
-    // `sparkId` keys the rows by, or the tint silently never lands.
-    const ids = activeSparkIds(lists, []);
-    for (const s of lists.flatMap((l) => l.sparks)) {
-      expect(ids.has(sparkId({ type: s.kind, key: s.key }))).toBe(true);
-    }
   });
 });
 

@@ -205,6 +205,28 @@ describe("listRows", () => {
     { type: "race", key: 9, from: [2], chance: null },
   ];
 
+  it("passes blue, pink and green rows through unfiltered", () => {
+    // A list can't name those kinds, so the filter has no verdict on them —
+    // hiding a 3★ blue's 90% because the user hunts whites would misread
+    // the filter's vocabulary as a verdict on the spark.
+    const rows = listRows(
+      [
+        { type: "blue" as const, key: 1, chance: 89.2 },
+        { type: "pink" as const, aptitude: "mile" as const, chance: 11.3 },
+        { type: "unique" as const, key: 100_101, chance: 12.5 },
+        { type: "white" as const, key: 7, chance: 30.6 },
+        { type: "white" as const, key: 8, chance: 22.1 },
+      ],
+      [{ kind: "white", key: 7 }]
+    );
+    expect(rows.map(sparkId).sort()).toEqual([
+      "blue:1",
+      "pink:mile",
+      "unique:100101",
+      "white:7",
+    ]);
+  });
+
   it("keeps a carried spark's own row intact", () => {
     const [row] = listRows(outlooks, [{ kind: "white", key: 7 }]);
     expect(row).toBe(outlooks[0]);

@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  APTITUDE_KEYS,
   LIST_SPARK_KINDS,
   SLOT_FACTOR_KINDS,
+  type AptitudeKey,
   type FactorRef,
   type ListSparkKind,
+  type PinkSpark,
   type SlotFactor,
   type SlotFactorKind,
   type SparkList,
 } from "../api";
+import { APTITUDE_LABELS } from "../aptitude";
 import { deriveCharaId, factorsWith } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
 import {
@@ -20,7 +24,7 @@ import {
   type SparkListStore,
 } from "../sparks";
 
-// The EDITOR for a member's non-pink sparks: a popout that BROWSES the 437
+// The EDITOR for a member's sparks: a popout that BROWSES the 437
 // factors with your favorites on top (DECISIONS.md #35, #41). Adding includes
 // the LEVEL — three buttons per row, so a 3★ is one click at the moment you
 // are choosing the spark (#34) — and a held row keeps the same three buttons
@@ -45,11 +49,25 @@ import {
 // dump — so it only appears on hand-built nodes, and never inside a locked
 // branch.
 
-// The browse sections, in the order the spark tables group by (procs.ts),
-// minus the pink the document doesn't hand-enter.
+// The FACTOR browse sections, in the order the spark tables group by
+// (procs.ts). The pink browses too (#87), but through its own rows below —
+// its slot in this order is where the Pink section renders.
 const BROWSE_KINDS: SlotFactorKind[] = [...SLOT_FACTOR_KINDS].sort(
   (a, b) => SPARK_TYPE_ORDER[a] - SPARK_TYPE_ORDER[b]
 );
+
+// The pink rows: a PARALLEL shape to Option, not a sixth kind of it. The
+// document keys a pink by APTITUDE on the slot's own `spark` field — not a
+// factor key in `factors` — so these ten come from the client's aptitude
+// vocabulary (the Details editor's own), never from `/api/factors`, and none
+// of the keyed-factor machinery (refs, orphans, the green possibility rules)
+// applies to them.
+type PinkOption = { aptitude: AptitudeKey; name: string };
+
+const PINK_OPTIONS: PinkOption[] = APTITUDE_KEYS.map((aptitude) => ({
+  aptitude,
+  name: APTITUDE_LABELS[aptitude],
+}));
 
 // A green spark's factor key IS a card_id — `app/ingest.py` says so in its
 // header, the reference agrees (95 of the 97 released cards have a unique
@@ -462,9 +480,89 @@ function SparkRows({
   );
 }
 
+// The Pink section's rows (#87). The same three-button row shape with #86's
+// held-row rules — held-ness is row state, the pressed star a no-op, the ✕
+// slot reserved on every row — but REPLACE across the whole section, blue's
+// rule held one shape further (DECISIONS.md #40): a member holds exactly one
+// pink, so the ten rows are one radio and clicking any star moves it. Row
+// existence is trivially frozen: all ten aptitudes, always. No ★ ever —
+// pinks aren't listable (the server refuses them), a hunted build being
+// named by its skills, not its aptitude.
+function PinkRows({
+  options,
+  spark,
+  onSet,
+}: {
+  options: PinkOption[];
+  // Live off the document, like heldStars: the held row's controls track
+  // every write, wherever it came from — Details' select included.
+  spark: PinkSpark | null;
+  onSet: (spark: PinkSpark | null) => void;
+}) {
+  return (
+    <ul className="spark-matches">
+      {options.map((o) => {
+        const id = sparkId({ type: "pink", aptitude: o.aptitude });
+        const heldAt = spark?.aptitude === o.aptitude ? spark.stars : undefined;
+        return (
+          <li key={id}>
+            <span className="spark-fav-gap" aria-hidden="true" />
+            <span className="spark-hit">
+              <span className="proc-kind proc-kind-pink">
+                {SPARK_TYPE_LABELS.pink}
+              </span>
+              {o.name}
+            </span>
+            <span className="seg-group" role="group">
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  className={heldAt === n ? "seg active" : "seg"}
+                  data-spark={id}
+                  data-stars={n}
+                  aria-pressed={heldAt === n}
+                  aria-label={
+                    heldAt === undefined
+                      ? `Add ${o.name} at ${n}★`
+                      : `Set ${o.name} to ${n}★`
+                  }
+                  onClick={() => {
+                    if (heldAt !== n) onSet({ aptitude: o.aptitude, stars: n });
+                  }}
+                >
+                  {n}★
+                </button>
+              ))}
+            </span>
+            {/* Focus is captured before the click unmounts this button (#74),
+                exactly as the factor rows do. */}
+            {heldAt !== undefined ? (
+              <button
+                className="spark-drop"
+                data-spark={id}
+                aria-label={`Remove ${o.name}`}
+                onClick={(e) => {
+                  const restore = refocus(e.currentTarget);
+                  onSet(null);
+                  restore();
+                }}
+              >
+                ✕
+              </button>
+            ) : (
+              <span className="spark-drop-blank" aria-hidden="true" />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function ChooserPopout({
   label,
   factors,
+  spark,
   refs,
   sparkLists,
   cardId,
@@ -472,11 +570,13 @@ function ChooserPopout({
   cardOwner,
   onAdd,
   onRemove,
+  onSetSpark,
   onError,
   onClose,
 }: {
   label: string;
   factors: readonly SlotFactor[];
+  spark: PinkSpark | null;
   refs: readonly FactorRef[];
   sparkLists: SparkListStore;
   cardId: number | null;
@@ -484,6 +584,7 @@ function ChooserPopout({
   cardOwner: (cardId: number) => string | null;
   onAdd: (option: Option, stars: number) => void;
   onRemove: (option: Option) => void;
+  onSetSpark: (spark: PinkSpark | null) => void;
   onError: (message: string) => void;
   onClose: () => void;
 }) {
@@ -554,10 +655,17 @@ function ChooserPopout({
   }, [onClose]);
 
   // What she holds RIGHT NOW, with levels — live, so a row's controls track
-  // the document while the section it sits in stays frozen.
+  // the document while the section it sits in stays frozen. The pink joins
+  // the map for the Current Sparks pill — counted when the pill asks whether
+  // she holds anything, snapshotted with the rest when it is pressed — while
+  // her row reads the `spark` prop directly; no factor row ever carries a
+  // pink id.
   const heldStars = new Map(
     factors.map((f) => [sparkId({ type: f.kind, key: f.key }), f.stars])
   );
+  if (spark !== null) {
+    heldStars.set(sparkId({ type: "pink", aptitude: spark.aptitude }), spark.stars);
+  }
   // What she held when the popout OPENED. Row existence keys off this, never
   // the live map: exempted live, a foreign green's row unmounts with its own
   // ✕ click — gone from under the pointer, and gone from under the focus the
@@ -585,6 +693,9 @@ function ChooserPopout({
   // narrow, and hits rank by where the query lands in the name then
   // alphabetically — a no-op with no query, the reference arriving sorted
   // by (kind, name) already.
+  const byQuery = (a: { name: string }, b: { name: string }) =>
+    a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||
+    a.name.localeCompare(b.name);
   const matching = (options: Option[]): Option[] => {
     const hits = options.filter(
       (o) =>
@@ -593,12 +704,18 @@ function ChooserPopout({
         (onlyCurrent === null || onlyCurrent.has(sparkId({ type: o.kind, key: o.key })))
     );
     if (q === "") return hits;
-    return hits.sort(
-      (a, b) =>
-        a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||
-        a.name.localeCompare(b.name)
-    );
+    return hits.sort(byQuery);
   };
+  // The pink rows under the same narrowing, over the parallel shape. No
+  // possibility rule rides along: any node this chooser renders on can hold
+  // any pink.
+  const pinkHits = PINK_OPTIONS.filter(
+    (o) =>
+      o.name.toLowerCase().includes(q) &&
+      (onlyCurrent === null ||
+        onlyCurrent.has(sparkId({ type: "pink", aptitude: o.aptitude })))
+  );
+  if (q !== "") pinkHits.sort(byQuery);
 
   // Built from the frozen snapshot, so a row stays put when you un-star it.
   const favorites = matching(pinnedRows.map(optionFor));
@@ -704,6 +821,13 @@ function ChooserPopout({
     },
   };
 
+  const factorSection = (s: { kind: SlotFactorKind; options: Option[] }) => (
+    <div key={s.kind} className="spark-section">
+      <div className="spark-section-head">{SPARK_TYPE_LABELS[s.kind]}</div>
+      <SparkRows options={s.options} {...rowProps} />
+    </div>
+  );
+
   return (
     <>
       {/* Dismisses on mousedown, not click: Chrome freezes the OS cursor when
@@ -762,14 +886,23 @@ function ChooserPopout({
               <SparkRows options={favorites} {...rowProps} />
             </div>
           )}
-          {sections.map((s) => (
-            <div key={s.kind} className="spark-section">
-              <div className="spark-section-head">{SPARK_TYPE_LABELS[s.kind]}</div>
-              <SparkRows options={s.options} {...rowProps} />
+          {/* Pink takes its slot in the game's grouping order — between Blue
+              and Green, where SPARK_TYPE_ORDER already places it — rendered
+              from its own rows rather than through the factor sections. */}
+          {sections
+            .filter((s) => SPARK_TYPE_ORDER[s.kind] < SPARK_TYPE_ORDER.pink)
+            .map(factorSection)}
+          {pinkHits.length > 0 && (
+            <div className="spark-section">
+              <div className="spark-section-head">{SPARK_TYPE_LABELS.pink}</div>
+              <PinkRows options={pinkHits} spark={spark} onSet={onSetSpark} />
             </div>
-          ))}
+          )}
+          {sections
+            .filter((s) => SPARK_TYPE_ORDER[s.kind] > SPARK_TYPE_ORDER.pink)
+            .map(factorSection)}
         </div>
-        {sections.length === 0 && favorites.length === 0 && (
+        {sections.length === 0 && favorites.length === 0 && pinkHits.length === 0 && (
           <span className="empty">No sparks match.</span>
         )}
       </div>
@@ -780,17 +913,23 @@ function ChooserPopout({
 export function SparkChooser({
   label,
   factors,
+  spark,
   refs,
   sparkLists,
   cardId,
   charaId,
   cardOwner,
   onChange,
+  onSetSpark,
   onError,
 }: {
   // Distinguishes the choosers on one page for aria/testing.
   label: string;
   factors: readonly SlotFactor[];
+  // The member's pink, which lives on the slot's own `spark` field rather
+  // than in `factors`. The popout is a second writer of it (#87) — Details
+  // stays the causal display, letters beside the pink that bumps them.
+  spark: PinkSpark | null;
   refs: readonly FactorRef[];
   sparkLists: SparkListStore;
   // Who is cast in this node. A green's key IS a card_id, so these decide
@@ -799,6 +938,9 @@ export function SparkChooser({
   charaId: number | null;
   cardOwner: (cardId: number) => string | null;
   onChange: (update: (current: readonly SlotFactor[]) => SlotFactor[]) => void;
+  // A VALUE, unlike onChange's updater: the pink is one field, so every
+  // write carries its whole state and two clicks can't drop each other.
+  onSetSpark: (spark: PinkSpark | null) => void;
   onError: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -845,6 +987,7 @@ export function SparkChooser({
           key={sparkLists.epoch}
           label={label}
           factors={factors}
+          spark={spark}
           refs={refs}
           sparkLists={sparkLists}
           cardId={cardId}
@@ -852,6 +995,7 @@ export function SparkChooser({
           cardOwner={cardOwner}
           onAdd={add}
           onRemove={remove}
+          onSetSpark={onSetSpark}
           onError={onError}
           onClose={() => setOpen(false)}
         />

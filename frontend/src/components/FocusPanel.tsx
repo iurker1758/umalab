@@ -323,6 +323,7 @@ export function FocusPanel({
                 sort={ancestorSort}
                 onSort={setAncestorSort}
                 onSetFactors={onSetFactors}
+                onSetSpark={onSetSpark}
                 onError={onError}
               />
             ) : (
@@ -416,6 +417,7 @@ export function FocusPanel({
             sort={ancestorSort}
             onSort={setAncestorSort}
             onSetFactors={onSetFactors}
+            onSetSpark={onSetSpark}
             onError={onError}
           />
         )

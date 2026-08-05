@@ -974,6 +974,64 @@ try {
       (await page.locator(`.focus .proc-row[data-spark="blue:${wit.key}"]`).count()) === 1));
   // Put the loop's blue back, so every assertion below sees the list it built.
   await addSpark("G1-1", added.find((r) => r.kind === "blue"), 1);
+  // ---------- pink joins the popout (#87) ----------
+  // The popout becomes a second writer of the slot's own `spark` field — the
+  // one spark kind that used to force a tab switch mid-profile. The rows are
+  // the client's aptitude vocabulary, not /api/factors: the document keys a
+  // pink by aptitude, so their ids are pink:mile, never kind:number.
+  await openChooser("G1-1");
+  const pinkHeads = await page.locator(".spark-popout .spark-section-head").allTextContents();
+  const pinkThere = pinkHeads.includes("Pink");
+  check("a Pink section sits between Blue and Green — the game's own order",
+    pinkThere &&
+    pinkHeads.indexOf("Pink") === pinkHeads.indexOf("Blue") + 1 &&
+    pinkHeads.indexOf("Green") === pinkHeads.indexOf("Pink") + 1);
+  // No ★ ever: pinks aren't listable — the server refuses them, and a hunted
+  // build is named by its skills, not its aptitude.
+  check("ten aptitude rows in the game's vocabulary order, and no ★ on any",
+    (await sectionNamed("Pink").locator("li .spark-hit").allTextContents())
+      .map((t) => t.replace(/^\s*Pink\s*/, "").trim()).join(",") ===
+      "Turf,Dirt,Sprint,Mile,Medium,Long,Front,Pace,Late,End" &&
+    (await sectionNamed("Pink").locator(".spark-fav").count()) === 0);
+  // The 3★ Mile typed on the Details tab is held HERE too — one field, two
+  // writers.
+  check("the pink typed on Details reads as held, its level pressed",
+    (await rowForSpark("pink", "mile").locator('.seg[aria-pressed="true"][data-stars="3"]').count()) === 1 &&
+    (await rowForSpark("pink", "mile").locator(".spark-drop").count()) === 1);
+  // Guarded like the spare's block below: everything here clicks controls a
+  // failed render wouldn't have drawn.
+  if (pinkThere) {
+    // One member, one pink, ten rows it can sit on: an add on any aptitude
+    // MOVES the pink — blue's replace (DECISIONS.md #40), one shape further.
+    await sectionNamed("Pink").locator('button[data-spark="pink:turf"][data-stars="2"]').click();
+    check("a pink add moves the pink to the row that was clicked",
+      (await rowForSpark("pink", "turf").locator('.seg[aria-pressed="true"][data-stars="2"]').count()) === 1 &&
+      (await rowForSpark("pink", "turf").locator(".spark-drop").count()) === 1 &&
+      (await rowForSpark("pink", "mile").locator('.seg[aria-pressed="true"]').count()) === 0 &&
+      (await rowForSpark("pink", "mile").locator(".spark-drop").count()) === 0);
+    // The ✕ clears through the same field: the table behind loses its pink
+    // row while the popout's row stays put, add buttons back.
+    await rowForSpark("pink", "turf").locator(".spark-drop").click();
+    check("its ✕ clears the pink, and the row stays put",
+      (await until(async () =>
+        (await page.locator('.focus .proc-row[data-spark^="pink:"]').count()) === 0)) &&
+      (await rowForSpark("pink", "turf").count()) === 1 &&
+      (await rowForSpark("pink", "turf").locator(".spark-drop").count()) === 0);
+    // Put the Mile back the way the suite typed it — the bracket and proc
+    // assertions below read it.
+    await sectionNamed("Pink").locator('button[data-spark="pink:mile"][data-stars="3"]').click();
+    await closeChooser();
+    await openTab("Details");
+    check("Details shows the popout's write — the select follows the field",
+      (await page.locator('select[aria-label="Grandparent 1-1 pink spark"]').inputValue()) === "mile");
+    await openTab("Sparks");
+    check("and the table holds the one pink row again",
+      await until(async () =>
+        (await page.locator('.focus .proc-row[data-spark="pink:mile"]').count()) === 1 &&
+        (await page.locator('.focus .proc-row[data-spark^="pink:"]').count()) === 1));
+  } else {
+    await closeChooser();
+  }
   // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
   // 1/2/3, scenario 3/6/9, blue 70/80/90 — so a 1★ of each at one affinity
   // must produce distinct numbers, not one repeated. Blue's base dwarfs the
@@ -1231,15 +1289,17 @@ try {
     await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
     await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
     await page.locator(".spark-popout .spark-current").click();
+    // + 2, not + 1: the added five and the spare, plus the pink the filter
+    // counts with the rest since #87 — her Mile row narrows in too.
     check("the Current Sparks filter narrows the browse to what she holds right now",
       (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
-      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
-      (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === added.length + 1);
+      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 2 &&
+      (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === added.length + 2);
     await page.locator(`.spark-popout .spark-drop[data-spark="${spare.kind}:${spare.key}"]`).click();
     check("a ✕ under the filter leaves its row in place, add buttons back",
       (await until(async () =>
         (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
-      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
+      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 2 &&
       (await spareRow.locator(".seg").count()) === 3 &&
       (await spareRow.locator(".spark-drop").count()) === 0);
     await page.locator(".spark-popout .spark-current").click();

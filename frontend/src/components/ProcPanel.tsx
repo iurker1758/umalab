@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type {
   AffinityResult,
   FactorRef,
+  PinkSpark,
   SlotFactor,
 } from "../api";
 import type { SparkListStore } from "../sparks";
@@ -158,6 +159,7 @@ export function NodeProcs({
   sort,
   onSort,
   onSetFactors,
+  onSetSpark,
   onError,
 }: {
   design: Design;
@@ -178,6 +180,9 @@ export function NodeProcs({
   // render would otherwise each rebuild the list from one stale base, and the
   // later write would drop the earlier spark.
   onSetFactors: (i: number, update: (current: readonly SlotFactor[]) => SlotFactor[]) => void;
+  // The same updater Details' editor writes through (#87): the popout is a
+  // second writer of the slot's `spark` field, never a second store.
+  onSetSpark: (i: number, spark: PinkSpark | null) => void;
   onError: (message: string) => void;
 }) {
   const id = affinitySlotOf(index);
@@ -212,9 +217,10 @@ export function NodeProcs({
           )}
         </tbody>
       </table>
-      {/* The pink is edited on the Details tab, beside the letters it bumps at
-          career start; these feed nothing but these numbers, so they are
-          entered here. A locked node offers no entry at all (#28). */}
+      {/* The pink's home editor stays on the Details tab, beside the letters
+          it bumps at career start; the popout is its second entry point
+          (#87), so shaping a proc profile never forces a tab switch. A
+          locked node offers no entry at all (#28). */}
       {!locked && (
         <SparkChooser
           // Remounted per node: the open state and the query are component
@@ -224,6 +230,7 @@ export function NodeProcs({
           key={index}
           label={NAMED_SHORT[index]}
           factors={factors}
+          spark={sparkAt(design, index)}
           refs={factorRefs}
           sparkLists={sparkLists}
           // Which greens this node can hold at all. A green's key is a
@@ -233,6 +240,7 @@ export function NodeProcs({
           charaId={slot?.chara_id ?? null}
           cardOwner={cardOwner}
           onChange={(update) => onSetFactors(index, update)}
+          onSetSpark={(s) => onSetSpark(index, s)}
           onError={onError}
         />
       )}

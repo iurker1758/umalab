@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  SLOT_FACTOR_KINDS,
   type FactorRef,
   type SlotFactor,
   type SlotFactorKind,
@@ -18,7 +19,7 @@ import {
   type SparkListStore,
 } from "../sparks";
 
-// Hand entry for a member's non-pink sparks: a popout that BROWSES the 432
+// Hand entry for a member's non-pink sparks: a popout that BROWSES the 437
 // factors, with the ones you've favorited at the top (DECISIONS.md #35).
 //
 // ADDING is all it does, and adding includes the LEVEL — three buttons per
@@ -42,9 +43,9 @@ import {
 
 // The browse sections, in the order the spark tables group by (procs.ts),
 // minus the pink the document doesn't hand-enter.
-const BROWSE_KINDS: SlotFactorKind[] = (
-  ["white", "unique", "race", "scenario"] as SlotFactorKind[]
-).sort((a, b) => SPARK_TYPE_ORDER[a] - SPARK_TYPE_ORDER[b]);
+const BROWSE_KINDS: SlotFactorKind[] = [...SLOT_FACTOR_KINDS].sort(
+  (a, b) => SPARK_TYPE_ORDER[a] - SPARK_TYPE_ORDER[b]
+);
 
 // A green spark's factor key IS a card_id — `app/ingest.py` says so in its
 // header, the reference agrees (95 of the 97 released cards have a unique
@@ -525,7 +526,7 @@ function ChooserPopout({
           same. */}
       <div className="uma-popout-backdrop" onMouseDown={onClose} />
       <div className="uma-popout spark-popout" role="dialog" aria-label="Add a Spark">
-        {/* Sticky, so the query stays reachable while you scroll 432 rows past
+        {/* Sticky, so the query stays reachable while you scroll 437 rows past
             it. */}
         <div className="spark-search-band">
           <input

@@ -100,10 +100,9 @@ export interface PinkSpark {
   stars: number;
 }
 
-// The non-pink spark kinds a designed node can carry. Blue is absent on
-// purpose — stat sparks are inherited too, but nothing reads them yet and
-// their 70/80/90 bases would dominate every proc table.
-export const SLOT_FACTOR_KINDS = ["white", "unique", "race", "scenario"] as const;
+// The non-pink spark kinds a designed node can carry. Blue joined late
+// (DECISIONS.md #40 reversing #30).
+export const SLOT_FACTOR_KINDS = ["blue", "white", "unique", "race", "scenario"] as const;
 export type SlotFactorKind = (typeof SLOT_FACTOR_KINDS)[number];
 
 // One non-pink spark on a designed node, keyed by the game's factor key rather

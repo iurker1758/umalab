@@ -192,7 +192,7 @@ describe("pinkOf", () => {
 });
 
 describe("factorsOf", () => {
-  it("keeps the four non-pink kinds and drops everything else", () => {
+  it("keeps the five non-pink kinds and drops everything else", () => {
     const out = factorsOf([
       factor({ kind: "white", key: 700, star: 1 }),
       factor({ kind: "unique", key: 100_101, star: 2 }),
@@ -202,7 +202,13 @@ describe("factorsOf", () => {
       factor({ kind: "pink", key: 32, star: 3 }),
       factor({ kind: "other", key: 9, star: 3 }),
     ]);
-    expect(out.map((f) => f.kind).sort()).toEqual(["race", "scenario", "unique", "white"]);
+    expect(out.map((f) => f.kind).sort()).toEqual([
+      "blue",
+      "race",
+      "scenario",
+      "unique",
+      "white",
+    ]);
   });
 
   it("dedupes on kind AND key, keeping the strongest", () => {
@@ -735,7 +741,7 @@ describe("fromApi", () => {
     ],
     [
       "a malformed spark list",
-      { source: "catalog", chara_id: 1, card_id: 1, factors: [{ kind: "blue", key: 1, stars: 1 }] },
+      { source: "catalog", chara_id: 1, card_id: 1, factors: [{ kind: "pink", key: 32, stars: 1 }] },
     ],
     [
       "the same spark twice",

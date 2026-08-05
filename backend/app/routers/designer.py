@@ -103,8 +103,8 @@ PICKABLE_FACTORS = _pickable_factors()
 
 @router.get("/factors", response_model=list[PickableFactorOut])
 async def get_factors():
-    """Every non-pink spark a designed node can be given by hand — white,
-    unique (green), race and scenario."""
+    """Every non-pink spark a designed node can be given by hand — blue,
+    white, unique (green), race and scenario."""
     return PICKABLE_FACTORS
 
 

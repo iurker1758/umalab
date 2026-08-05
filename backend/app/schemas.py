@@ -286,10 +286,9 @@ class PinkSparkIn(BaseModel):
 
 
 # The inheritable spark kinds a designed node can carry, beside its pink.
-# Blue is absent on purpose: stat sparks are inherited too, but nothing in the
-# designer reads them yet and their 70/80/90 bases would dominate every proc
-# table. Adding one is a line here and a line in the frontend's rate map.
-SlotFactorKind = Literal["white", "unique", "race", "scenario"]
+# Blue joined late (DECISIONS.md #40 reversing #30). Adding a kind is a line
+# here and a line in the frontend's rate map.
+SlotFactorKind = Literal["blue", "white", "unique", "race", "scenario"]
 
 
 class SlotFactorIn(BaseModel):

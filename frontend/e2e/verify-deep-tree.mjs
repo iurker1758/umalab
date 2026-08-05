@@ -810,8 +810,8 @@ try {
   // already answer.
   const procPct = (type, stars, aff) => {
     const base = {
-      pink: [1, 3, 5], white: [3, 6, 9], unique: [5, 10, 15],
-      race: [1, 2, 3], scenario: [3, 6, 9],
+      blue: [70, 80, 90], pink: [1, 3, 5], white: [3, 6, 9],
+      unique: [5, 10, 15], race: [1, 2, 3], scenario: [3, 6, 9],
     }[type][stars - 1];
     const p = Math.min(base * (1 + aff / 100), 100) / 100;
     return 1 - (1 - p) ** 2;
@@ -886,7 +886,7 @@ try {
     await closeChooser();
   };
   const added = [];
-  for (const kind of ["white", "unique", "race", "scenario"]) {
+  for (const kind of ["white", "unique", "race", "scenario", "blue"]) {
     // The green is HERS, not an arbitrary one: a unique's key is a card_id,
     // so the chooser offers this node exactly one and the other 136 are
     // sparks she can never carry (DECISIONS.md #36).
@@ -902,8 +902,9 @@ try {
     (await page.locator(`.spark-popout li:has(.proc-kind-unique) .spark-held`).count()) === 1);
   await closeChooser();
   // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
-  // 1/2/3, scenario 3/6/9 — so a 1★ of each at one affinity must produce
-  // three distinct numbers, not one repeated.
+  // 1/2/3, scenario 3/6/9, blue 70/80/90 — so a 1★ of each at one affinity
+  // must produce distinct numbers, not one repeated. Blue alone is over the
+  // event cap at any real affinity, so its row is the cap on screen.
   const expected1Star = Object.fromEntries(
     added.map((r) => [r.kind, pct(procPct(r.kind, 1, expectedAff.g11_affinity))])
   );
@@ -928,7 +929,8 @@ try {
   // purpose. At one member's single affinity every chance is
   // min(base × (1 + aff/100), 100), a pure function of (kind, ★), so the
   // ranking is a tie for most of its length and the order inside a tie says
-  // nothing. Pink → Green → Race → White → Scenario, the game's own grouping.
+  // nothing. Blue → Pink → Green → Race → White → Scenario, the game's own
+  // grouping.
   const rowKinds = () =>
     page.locator(".focus .proc-table tbody tr").evaluateAll((rows) =>
       rows.map((r) => [...r.classList].find((c) => c.startsWith("proc-row-"))?.slice(9))
@@ -955,12 +957,12 @@ try {
       return on === undefined ? null : `${on.textContent.trim()}:${on.getAttribute("aria-sort")}`;
     });
   check("an ancestor's table groups by kind by default",
-    (await rowKinds()).join(",") === "pink,unique,race,white,scenario" &&
+    (await rowKinds()).join(",") === "blue,pink,unique,race,white,scenario" &&
     (await sortedBy()) === "Spark:other");
   await setSort("chance");
   check("and ranks by chance when its own header is clicked",
     (await rankedDown()) &&
-    (await rowKinds()).join(",") !== "pink,unique,race,white,scenario" &&
+    (await rowKinds()).join(",") !== "blue,pink,unique,race,white,scenario" &&
     (await sortedBy()) === "Est. Per Run:descending");
   await setSort("kind");
   // The headers carry the sort, so the tab keeps a single control on it.
@@ -1086,7 +1088,7 @@ try {
   //
   // Deliberately NOT a spark you already have: the pill is a toggle, so
   // running this against an existing favorite would assert on the wrong
-  // direction. 432 factors, so there is always one.
+  // direction. 437 factors, so there is always one.
   //
   // And never a GREEN: this runs on G1-1, which is cast, and a cast node
   // offers only its own card's unique — so a green target would simply not be
@@ -1255,7 +1257,7 @@ try {
         rows.map((r) => [...r.classList].find((c) => c.startsWith("proc-row-")))
       ))
     )].sort().join(",") ===
-      "proc-row-pink,proc-row-race,proc-row-scenario,proc-row-unique,proc-row-white");
+      "proc-row-blue,proc-row-pink,proc-row-race,proc-row-scenario,proc-row-unique,proc-row-white");
   // Which members carry it is deliberately NOT here: this table answers what
   // the trainee is likely to come out with, and the breakdown is one click
   // away on each member's own tab.
@@ -1433,7 +1435,7 @@ try {
     (await clipState()).clipped &&
     (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}` &&
     (await page.locator(".focus .proc-table tbody tr").evaluateAll((rows) => {
-      const order = ["pink", "unique", "race", "white", "scenario"];
+      const order = ["blue", "pink", "unique", "race", "white", "scenario"];
       const ks = rows.map((r) =>
         order.indexOf([...r.classList].find((c) => c.startsWith("proc-row-")).slice(9))
       );

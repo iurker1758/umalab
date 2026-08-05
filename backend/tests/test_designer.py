@@ -484,6 +484,7 @@ def test_named_slot_carries_sparks_of_every_pickable_kind() -> None:
                         {"kind": "unique", "key": 100201, "stars": 3},
                         {"kind": "race", "key": 10001, "stars": 1},
                         {"kind": "scenario", "key": 40001, "stars": 2},
+                        {"kind": "blue", "key": 1, "stars": 3},
                     ],
                 )
             }
@@ -492,14 +493,13 @@ def test_named_slot_carries_sparks_of_every_pickable_kind() -> None:
     named1 = body.slots.named[1]
     assert named1 is not None
     assert [(f.kind, f.stars) for f in named1.factors] == [
-        ("white", 2), ("unique", 3), ("race", 1), ("scenario", 2),
+        ("white", 2), ("unique", 3), ("race", 1), ("scenario", 2), ("blue", 3),
     ]
 
 
-def test_blue_sparks_are_not_a_slot_kind() -> None:
-    # Deliberately out: nothing reads stat sparks yet, and their 70/80/90
-    # bases would dominate every proc table if they were merely accepted.
-    _rejects(doc(named={1: slot(1002, factors=[{"kind": "blue", "key": 1, "stars": 3}])}),
+def test_pink_is_not_a_slot_kind() -> None:
+    # The pink lives in `spark`, the field the career-start brackets read.
+    _rejects(doc(named={1: slot(1002, factors=[{"kind": "pink", "key": 32, "stars": 3}])}),
              "kind")
 
 
@@ -646,7 +646,7 @@ def test_factor_reference_serves_every_pickable_kind() -> None:
     # What the hand-entry picker lists, from the same committed reference the
     # decoder reads.
     kinds = {f.kind for f in PICKABLE_FACTORS}
-    assert kinds == {"white", "unique", "race", "scenario"}
+    assert kinds == {"blue", "white", "unique", "race", "scenario"}
     # Grouped by kind, then alphabetical within it — the picker searches names
     # and shows the kind, so this is the order it renders in.
     assert sorted(PICKABLE_FACTORS, key=lambda f: (f.kind, f.name)) == PICKABLE_FACTORS
@@ -656,9 +656,11 @@ def test_factor_reference_serves_every_pickable_kind() -> None:
     # paths would disagree about what a spark is.
     assert ("white", 20035) in ids
     assert ("unique", 100101) in ids
-    # Pinks and blues have no place here: the pink has its own editor, and
-    # blue is not a slot kind at all.
-    assert all(f.kind not in {"pink", "blue"} for f in PICKABLE_FACTORS)
+    # All five stats, and nothing else under blue — the reference's type-0
+    # rows are exactly the stat sparks.
+    assert sorted(k for kd, k in ids if kd == "blue") == [1, 2, 3, 4, 5]
+    # The pink has no place here: it has its own ten-aptitude editor.
+    assert all(f.kind != "pink" for f in PICKABLE_FACTORS)
 
 
 async def test_factors_endpoint_serves_the_reference_over_http() -> None:

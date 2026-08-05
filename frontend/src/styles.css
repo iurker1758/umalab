@@ -729,9 +729,10 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    rather than being capped — the "N more — keep typing to narrow" line the
    inline search needed is gone with the cap that produced it. */
 .spark-popout { padding-top: 0; }
-/* The below-A echo between a section head and its rows: the shared style
-   only carries a top margin (in the focus panel it is the last element). */
-.spark-section .spark-warn { margin-bottom: 0.5rem; }
+/* The below-A echo, stuck to the popout's bottom edge. Full-bleed into the
+   popout's padding so nothing peeks under it; the popout's own border and
+   radius frame its outer edges, so only the top border separates. */
+.spark-popout .spark-warn-pinned { position: sticky; bottom: -0.9rem; z-index: 1; margin: 0.5rem -0.9rem -0.9rem; padding: 0.5rem 0.9rem; border-left: 0; border-right: 0; border-bottom: 0; border-radius: 0 0 11px 11px; }
 /* The box stays reachable while you scroll 447 rows past it, which is the
    difference between a browser and a list you have to leave to re-query. The
    band is a wrapper rather than the input itself: full-bleeding the input

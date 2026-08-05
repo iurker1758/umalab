@@ -3291,9 +3291,12 @@ marked in each.
   spark of a one-per-member section says so — "Replace Mile with
   Turf at 2★", pink and blue both — since the displaced row's change
   happens off-focus, where "Add" reads as a second spark. The below-A
-  guardrail echoes inside the section: the popout covers the focus
-  panel's own alert, so the second writer carries the warning at the
-  moment of the write (`undroppableSpark`, one rule on two surfaces).
+  guardrail echoes on a bar pinned to the popout's bottom edge — the
+  popout covers the focus panel's own alert, so the second writer
+  carries the warning at the moment of the write. Pinned, not in the
+  Pink section: appearing there shoved every row under the pointer
+  (#41's rule, vertical) and a query could hide it; and without
+  `role="alert"`, so the panel's copy stays the one live region.
   **The held row keeps the ✕**: every held row keeps one anatomy, and
   the popout can clear the one spark it could otherwise only move;
   Details' select staying a second clearer of the field is accepted.

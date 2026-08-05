@@ -194,3 +194,12 @@ export function undroppableSpark(rows: AptitudeRow[], design: Design, i: number)
   const idx = LETTER_ORDER.indexOf(final);
   return idx !== -1 && idx < CAP;
 }
+
+// The verdict's one wording, shared by every surface that shows it (the
+// focus panel's alert, the popout's pinned echo, the map chip's title) so a
+// reword can't leave one behind.
+export const UNDROPPABLE_TITLE =
+  "Pink sparks only generate on aptitudes the member reached A in.";
+export function undroppableMessage(aptitude: AptitudeKey): string {
+  return `${APTITUDE_LABELS[aptitude]} resolves below A — pinks only drop at A.`;
+}

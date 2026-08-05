@@ -12,7 +12,7 @@ import {
   type SlotFactorKind,
   type SparkList,
 } from "../api";
-import { APTITUDE_LABELS } from "../aptitude";
+import { APTITUDE_LABELS, UNDROPPABLE_TITLE, undroppableMessage } from "../aptitude";
 import { deriveCharaId, factorsWith } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
 import {
@@ -616,8 +616,9 @@ function ChooserPopout({
   factors: readonly SlotFactor[];
   spark: PinkSpark | null;
   // Whether the held pink resolves below A (the panel's own `undroppableSpark`
-  // verdict): this popout covers the panel's alert, so the Pink section echoes
-  // it — the second writer must carry the warning at the moment of the write.
+  // verdict): this popout covers the panel's alert, so a bar pinned to the
+  // popout's bottom edge echoes it — the second writer must carry the warning
+  // at the moment of the write.
   undroppable: boolean;
   refs: readonly FactorRef[];
   sparkLists: SparkListStore;
@@ -875,6 +876,27 @@ function ChooserPopout({
     </div>
   );
 
+  // Pink takes its slot in the game's grouping order — between Blue and
+  // Green, where SPARK_TYPE_ORDER already places it — rendered from its own
+  // rows rather than through the factor sections. One ordered walk emits
+  // every block, so the order lives in SPARK_TYPE_ORDER alone.
+  const pinkBlock = pinkHits.length > 0 && (
+    <div key="pink" className="spark-section">
+      <div className="spark-section-head">{SPARK_TYPE_LABELS.pink}</div>
+      <PinkRows options={pinkHits} spark={spark} onSet={onSetSpark} />
+    </div>
+  );
+  const blocks: ReactNode[] = [];
+  let pinkPlaced = false;
+  for (const s of sections) {
+    if (!pinkPlaced && SPARK_TYPE_ORDER[s.kind] > SPARK_TYPE_ORDER.pink) {
+      blocks.push(pinkBlock);
+      pinkPlaced = true;
+    }
+    blocks.push(factorSection(s));
+  }
+  if (!pinkPlaced) blocks.push(pinkBlock);
+
   return (
     <>
       {/* Dismisses on mousedown, not click: Chrome freezes the OS cursor when
@@ -933,33 +955,21 @@ function ChooserPopout({
               <SparkRows options={favorites} {...rowProps} />
             </div>
           )}
-          {/* Pink takes its slot in the game's grouping order — between Blue
-              and Green, where SPARK_TYPE_ORDER already places it — rendered
-              from its own rows rather than through the factor sections. */}
-          {sections
-            .filter((s) => SPARK_TYPE_ORDER[s.kind] < SPARK_TYPE_ORDER.pink)
-            .map(factorSection)}
-          {pinkHits.length > 0 && (
-            <div className="spark-section">
-              <div className="spark-section-head">{SPARK_TYPE_LABELS.pink}</div>
-              {undroppable && spark !== null && (
-                <p
-                  className="spark-warn"
-                  role="alert"
-                  title="Pink sparks only generate on aptitudes the member reached A in."
-                >
-                  {APTITUDE_LABELS[spark.aptitude]} resolves below A — pinks only drop at A.
-                </p>
-              )}
-              <PinkRows options={pinkHits} spark={spark} onSet={onSetSpark} />
-            </div>
-          )}
-          {sections
-            .filter((s) => SPARK_TYPE_ORDER[s.kind] > SPARK_TYPE_ORDER.pink)
-            .map(factorSection)}
+          {blocks}
         </div>
         {sections.length === 0 && favorites.length === 0 && pinkHits.length === 0 && (
           <span className="empty">No sparks match.</span>
+        )}
+        {/* Pinned to the popout's bottom edge rather than in the Pink
+            section: the verdict is about the document, not the rows, so a
+            query that empties the section must not hide it — and mounting
+            at the content's end moves no row under the pointer (#41's rule,
+            vertical). No role="alert": the panel's copy is the live region,
+            and a second one would announce every write twice. */}
+        {undroppable && spark !== null && (
+          <p className="spark-warn spark-warn-pinned" title={UNDROPPABLE_TITLE}>
+            {undroppableMessage(spark.aptitude)}
+          </p>
         )}
       </div>
     </>

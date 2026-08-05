@@ -230,11 +230,16 @@ export interface Blueprint extends BlueprintIn {
 
 // ---------- spark lists ----------
 
+// What a list may hold: what a hunt can be FOR. Narrower than the slot kinds
+// — every parent carries her blue and her own green regardless, so a list
+// naming one selects nothing. Mirrors the server's ListSparkKind.
+export type ListSparkKind = Exclude<SlotFactorKind, "blue" | "unique">;
+
 // One membership entry. No `stars`: a list records WHICH sparks you want, not
 // what level you last typed — the level belongs to the slot document
 // (DECISIONS.md #37).
 export interface SparkRef {
-  kind: SlotFactorKind;
+  kind: ListSparkKind;
   key: number;
 }
 

@@ -432,18 +432,20 @@ export function pinkOf(factors: readonly Factor[]): PinkSpark | null {
 
 // Every non-pink spark a dump member carries, strongest first. Deduped by
 // kind+key — the kinds number their keys independently, and a duplicate would
-// be counted twice when a spark's carriers are combined.
+// be counted twice when a spark's carriers are combined. Blue dedupes as a
+// KIND: a uma carries exactly one of the five stats, the server rejects a
+// member with two, and a pull must never build a document that can't save.
 //
 // The member's PINK is not in here: it lives in the slot's own `spark`, being
-// the one that also feeds the career-start brackets. Blue and anything the
-// reference couldn't classify are dropped — the document has no kind for them.
+// the one that also feeds the career-start brackets. Anything the reference
+// couldn't classify is dropped — the document has no kind for it.
 export function factorsOf(factors: readonly Factor[]): SlotFactor[] {
   const best = new Map<string, SlotFactor>();
   for (const f of factors) {
     if (!(SLOT_FACTOR_KINDS as readonly string[]).includes(f.kind)) continue;
     if (f.star < 1 || f.star > 3) continue;
     const kind = f.kind as SlotFactorKind;
-    const id = sparkId({ type: kind, key: f.key });
+    const id = kind === "blue" ? "blue" : sparkId({ type: kind, key: f.key });
     const seen = best.get(id);
     if (seen === undefined || f.star > seen.stars) {
       best.set(id, { kind, key: f.key, stars: f.star });
@@ -872,9 +874,10 @@ function factorsFromApi(raw: SlotFactor[] | undefined): SlotFactor[] {
       f.stars >= 1 &&
       f.stars <= 3;
     if (!ok) throw new Error("malformed spark");
-    // The same rule the server validates on write: one entry per spark, or
-    // combining its carriers would roll it against itself.
-    const id = sparkId({ type: f.kind, key: f.key });
+    // The same rules the server validates: one entry per spark, or combining
+    // its carriers would roll it against itself — and one blue per member,
+    // since a uma carries exactly one of the five stats.
+    const id = f.kind === "blue" ? "blue" : sparkId({ type: f.kind, key: f.key });
     if (seen.has(id)) throw new Error("duplicate spark");
     seen.add(id);
     out.push({ kind: f.kind, key: f.key, stars: f.stars });

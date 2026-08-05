@@ -344,6 +344,16 @@ async def test_an_unknown_kind_is_refused(client: Any, users: list[User]):
     assert (await patch(client, a, list_id, sparks=[spark("pink", 1)])).status_code == 422
 
 
+async def test_blues_and_greens_are_not_listable(client: Any, users: list[User]):
+    """Both are slot kinds a list still refuses: a list is a hunt, and every
+    parent carries her blue and her own green regardless (DECISIONS.md #40)."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    assert (await patch(client, a, list_id, sparks=[spark("blue", 1)])).status_code == 422
+    greens = [spark("unique", 100101)]
+    assert (await patch(client, a, list_id, sparks=greens)).status_code == 422
+
+
 async def test_a_mis_keyed_spark_entry_is_refused(client: Any, users: list[User]):
     a, _ = users
     list_id = await a_list(client, a)

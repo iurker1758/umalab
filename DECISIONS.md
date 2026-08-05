@@ -3164,13 +3164,23 @@ shape that was being refined in the wrong direction.
   slot 0 in `SPARK_TYPE_ORDER` — the position #30 reserved, above the
   pink. Everything else follows from where blue now flows: `factorsOf`
   keeps it on a pull, `/api/factors` serves the reference's five type-0
-  rows (Speed/Stamina/Power/Guts/Wit, keys 1–5) so stored blues resolve
-  to names instead of `Unknown (1)`, and the chooser's browse sections
-  derive from `SLOT_FACTOR_KINDS`, so blue is hand-enterable — Jason's
-  call, over the issue's pull-only lean: every real parent carries
-  exactly one blue, so a hand-built node's roll-up under-reports
-  without it, and a typed blue is no more a guess than the whites
-  already typed onto catalog nodes. A 1★ blue is over the per-event
+  rows so stored blues resolve to names instead of `Unknown (1)`, and
+  the chooser's browse sections derive from `SLOT_FACTOR_KINDS`, so
+  blue is hand-enterable — Jason's call, over the issue's pull-only
+  lean: every real parent carries exactly one blue, so a hand-built
+  node's roll-up under-reports without it. Three rules ride along.
+  **Blue browses in the game's stat order** (Speed/Stamina/Power/Guts/
+  Wit — its keys 1–5, the order `BLUE_ORDER` already sorts the roster
+  by), the one kind not alphabetized. **One blue per member**: a uma
+  carries exactly one stat spark, the slot model rejects a second, and
+  the chooser's add replaces the held blue — strict on READ, unlike
+  #39's green rule, because the rule lands in the same change that
+  admits the kind, so no stored row can predate it. **No ★ on blue or
+  green rows**: a list is a hunt and neither kind is hunted — every
+  parent carries her blue and her own green regardless — so lists
+  narrow to `ListSparkKind` (white/race/scenario), tightening #37's
+  `SparkRef`; strict on read too, a survey (2026-08-05, all owners)
+  finding zero stored blues or greens. A 1★ blue is over the per-event
   cap at any real affinity, so its row reads ~100% — true, and the cap
   finally visible on screen. The trainee's height clip (#34) needs no
   blue policy: it folds whatever order the sort produced.
@@ -3180,9 +3190,13 @@ shape that was being refined in the wrong direction.
   for five rows that would never drift anyway. A server rule rejecting
   blue on catalog slots, mirroring #39's green rule — the green rule
   rejects a factual impossibility; a typed blue is at worst optimistic,
-  and reads must stay permissive regardless.
+  and reads must stay permissive regardless. A write-only list rule for
+  blues and greens — #39's shape exists for data that might already be
+  stored, and the survey shows there is none.
 - **What would change my mind:** the trainee's chance-ranked roll-up
   drowning in near-certain blue rows across real designs — that argues
   for a display fold of the blues into one row, not for re-excluding
   the kind. A Global retune of the 70/80/90 bases — constants, so they
-  move without touching the shape.
+  move without touching the shape. A real use for pinning a blue or a
+  green in a list — widening `ListSparkKind` back is free; narrowing
+  it again would need another survey.

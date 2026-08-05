@@ -529,6 +529,18 @@ def test_duplicate_sparks_rejected() -> None:
     )
 
 
+def test_a_second_blue_is_rejected() -> None:
+    # A uma carries exactly one of the five stats. Distinct keys, so the
+    # duplicate rule above doesn't already catch it.
+    _rejects(
+        doc(named={1: slot(1002, factors=[
+            {"kind": "blue", "key": 1, "stars": 3},
+            {"kind": "blue", "key": 5, "stars": 1},
+        ])}),
+        "one blue",
+    )
+
+
 def test_the_same_key_under_two_kinds_is_legal() -> None:
     # The kinds number their keys independently — a race and a white can
     # collide on a number and still be different sparks.
@@ -648,17 +660,21 @@ def test_factor_reference_serves_every_pickable_kind() -> None:
     kinds = {f.kind for f in PICKABLE_FACTORS}
     assert kinds == {"blue", "white", "unique", "race", "scenario"}
     # Grouped by kind, then alphabetical within it — the picker searches names
-    # and shows the kind, so this is the order it renders in.
-    assert sorted(PICKABLE_FACTORS, key=lambda f: (f.kind, f.name)) == PICKABLE_FACTORS
+    # and shows the kind, so this is the order it renders in. Blue is the one
+    # exception: the game's stat order, which its keys already are.
+    non_blue = [f for f in PICKABLE_FACTORS if f.kind != "blue"]
+    assert sorted(non_blue, key=lambda f: (f.kind, f.name)) == non_blue
+    blue = [f for f in PICKABLE_FACTORS if f.kind == "blue"]
+    assert [f.name for f in blue] == ["Speed", "Stamina", "Power", "Guts", "Wit"]
+    # All five stats, and nothing else under blue — the reference's type-0
+    # rows are exactly the stat sparks.
+    assert [f.key for f in blue] == [1, 2, 3, 4, 5]
     ids = [(f.kind, f.key) for f in PICKABLE_FACTORS]
     assert len(set(ids)) == len(ids)
     # Keys a real dump decodes to must be pickable by hand as well, or the two
     # paths would disagree about what a spark is.
     assert ("white", 20035) in ids
     assert ("unique", 100101) in ids
-    # All five stats, and nothing else under blue — the reference's type-0
-    # rows are exactly the stat sparks.
-    assert sorted(k for kd, k in ids if kd == "blue") == [1, 2, 3, 4, 5]
     # The pink has no place here: it has its own ten-aptitude editor.
     assert all(f.kind != "pink" for f in PICKABLE_FACTORS)
 

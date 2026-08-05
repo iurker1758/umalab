@@ -67,7 +67,7 @@ afterEach(() => {
 describe("reads over the caller's lists", () => {
   const lists = [
     aList({ id: 1, name: "Front Runner", sparks: [spark("white", 700), spark("race", 700)] }),
-    aList({ id: 2, name: "Medium", sparks: [spark("white", 700), spark("unique", 100_101)] }),
+    aList({ id: 2, name: "Medium", sparks: [spark("white", 700), spark("scenario", 40_001)] }),
     aList({ id: 3, name: "Long", sparks: [] }),
   ];
 
@@ -82,7 +82,7 @@ describe("reads over the caller's lists", () => {
       "Front Runner",
       "Medium",
     ]);
-    expect(listsWith(lists, "unique", 100_101).map((l) => l.name)).toEqual(["Medium"]);
+    expect(listsWith(lists, "scenario", 40_001).map((l) => l.name)).toEqual(["Medium"]);
     expect(listsWith(lists, "scenario", 1)).toEqual([]);
   });
 
@@ -92,7 +92,7 @@ describe("reads over the caller's lists", () => {
     expect(union(lists)).toEqual([
       spark("white", 700),
       spark("race", 700),
-      spark("unique", 100_101),
+      spark("scenario", 40_001),
     ]);
   });
 

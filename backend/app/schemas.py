@@ -405,6 +405,12 @@ class BlueprintSlotIn(BaseModel):
         ids = [(f.kind, f.key) for f in self.factors]
         if len(set(ids)) != len(ids):
             raise ValueError("a slot can't carry the same spark twice")
+        # One blue per member — a uma carries exactly one of the five stats.
+        # Safe on READ, unlike the green rule (DECISIONS.md #39): this rule
+        # lands in the same change that admits the kind, so no stored row can
+        # predate it.
+        if sum(1 for f in self.factors if f.kind == "blue") > 1:
+            raise ValueError("a member carries one blue spark")
         return self
 
 
@@ -552,6 +558,15 @@ SparkListName = Annotated[
 MAX_LISTS_PER_OWNER = 50
 
 
+# The kinds a list may hold: what a hunt can be FOR. Narrower than
+# SlotFactorKind — blues and greens are excluded because every parent carries
+# her blue and her own green regardless, so a list naming one selects nothing.
+# Strict on read as well as write, which the loud-read rule below makes safe
+# only because a survey found zero stored blues or greens (2026-08-05, all
+# owners); widening this later is free, narrowing it again is not.
+ListSparkKind = Literal["white", "race", "scenario"]
+
+
 class SparkRef(BaseModel):
     """One membership entry: the identity every spark surface uses.
 
@@ -566,7 +581,7 @@ class SparkRef(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    kind: SlotFactorKind
+    kind: ListSparkKind
     # Bounded to int4 like `SlotFactorIn.key`, not because JSONB minds but
     # because an oversized key is unrepresentable everywhere else the app puts
     # a factor id — accepting one here stores something nothing downstream can

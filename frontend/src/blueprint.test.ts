@@ -211,6 +211,14 @@ describe("factorsOf", () => {
     ]);
   });
 
+  it("keeps one blue only, the strongest — a uma carries exactly one", () => {
+    const out = factorsOf([
+      factor({ kind: "blue", key: 1, star: 2 }),
+      factor({ kind: "blue", key: 5, star: 3 }),
+    ]);
+    expect(out).toEqual([{ kind: "blue", key: 5, stars: 3 }]);
+  });
+
   it("dedupes on kind AND key, keeping the strongest", () => {
     const out = factorsOf([
       factor({ kind: "white", key: 700, star: 1 }),
@@ -752,6 +760,18 @@ describe("fromApi", () => {
         factors: [
           { kind: "white", key: 7, stars: 1 },
           { kind: "white", key: 7, stars: 3 },
+        ],
+      },
+    ],
+    [
+      "a second blue",
+      {
+        source: "catalog",
+        chara_id: 1,
+        card_id: 1,
+        factors: [
+          { kind: "blue", key: 1, stars: 3 },
+          { kind: "blue", key: 5, stars: 1 },
         ],
       },
     ],

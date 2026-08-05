@@ -671,6 +671,9 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* Favoriting, and it is NOT what adding does — see SparkChooser. Sized for a
    thumb like the add buttons beside it. */
 .spark-fav { flex: none; width: 26px; padding: 0.3rem 0; font-size: 0.85rem; line-height: 1; color: inherit; background: transparent; border: 0; opacity: 0.35; cursor: pointer; }
+/* Blue and green rows take no ★; this holds its 26px so the kind tags stay
+   one column across sections. */
+.spark-fav-gap { flex: none; width: 26px; }
 .spark-fav:hover:not(:disabled) { opacity: 0.8; }
 .spark-fav.active { color: #ffd257; opacity: 1; }
 .spark-fav:disabled { opacity: 0.15; cursor: default; }

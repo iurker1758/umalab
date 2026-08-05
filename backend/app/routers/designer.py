@@ -95,7 +95,14 @@ def _pickable_factors() -> list[PickableFactorOut]:
             if kind == pickable:
                 out.append(PickableFactorOut(kind=pickable, key=key, name=info["name"]))
                 break
-    return sorted(out, key=lambda f: (f.kind, f.name))
+
+    # Grouped by kind, alphabetical within it — except blue, whose keys ARE
+    # the game's stat order (Speed 1 … Wit 5), which is how every other blue
+    # surface already sorts (domain.ts BLUE_ORDER).
+    def order(f: PickableFactorOut) -> tuple[str, int, str]:
+        return (f.kind, f.key, "") if f.kind == "blue" else (f.kind, 0, f.name)
+
+    return sorted(out, key=order)
 
 
 PICKABLE_FACTORS = _pickable_factors()

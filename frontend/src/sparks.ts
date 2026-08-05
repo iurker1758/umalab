@@ -1,4 +1,10 @@
-import { api, type SlotFactorKind, type SparkList, type SparkRef } from "./api";
+import {
+  api,
+  type ListSparkKind,
+  type SlotFactorKind,
+  type SparkList,
+  type SparkRef,
+} from "./api";
 import { writeStore } from "./storage";
 
 // The user's named spark lists — "Front Runner", "Medium" — and the reads
@@ -230,7 +236,7 @@ export class PartialWrite extends Error {
 export async function createListWith(
   lists: SparkList[],
   name: string,
-  kind: SlotFactorKind,
+  kind: ListSparkKind,
   key: number
 ): Promise<SparkList[]> {
   const created = await api.createSparkList(name);
@@ -288,7 +294,7 @@ export async function setMembership(
 export async function toggleMembership(
   lists: SparkList[],
   id: number,
-  kind: SlotFactorKind,
+  kind: ListSparkKind,
   key: number
 ): Promise<SparkList[]> {
   const list = listById(lists, id);

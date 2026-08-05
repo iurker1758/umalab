@@ -847,17 +847,16 @@ try {
     (await page.locator(".focus .proc-table tbody tr").allTextContents()).length === 1 &&
     (await chanceOf("Mile")) === pct(g11Pink));
   check("named as the spark it is, with its stars and its kind's colour",
-    (await rowFor("Mile").locator(".proc-name").textContent())?.trim() === "Mile" &&
-    (await rowFor("Mile").locator(".proc-level").textContent())?.trim() === "★★★" &&
+    ((await rowFor("Mile").locator(".proc-name").textContent()) ?? "").trim().startsWith("Mile") &&
+    (await rowFor("Mile").locator(".proc-name .proc-stars").textContent()) === "★★★" &&
     (await rowFor("Mile").getAttribute("class"))?.includes("proc-row-pink"));
   // The pink's editor is on Details, beside the letters it bumps at career
-  // start — so on an editable table it holds the level column with the same
-  // glyphs a locked table uses, rather than leaving a gap where every other
-  // row has a control. A value where the others are controls, not a missing
-  // control.
-  check("the pink row shows its level, and offers no ✕ — its editor is on Details",
-    (await rowFor("Mile").locator(".proc-drop").count()) === 0 &&
-    (await rowFor("Mile").locator(".proc-level .proc-stars").count()) === 1);
+  // start — and here she is one more two-column row. The table's ✕ and its
+  // level column retired to the popout (#86), so the pink stopped being the
+  // odd row out: no row carries a control for any other row to lack.
+  check("the pink row is a readout like every other — no control on any row",
+    (await rowFor("Mile").locator("button").count()) === 0 &&
+    (await rowFor("Mile").locator("td").count()) === 2);
   // The tab is where the other kinds are typed: they feed nothing but these
   // numbers, unlike the pink, which bumps the letters on the Details tab.
   // Driven off the served reference rather than hardcoded names, the same way
@@ -870,10 +869,12 @@ try {
   // The level is chosen on the match itself, so an add names both the spark
   // and its ★ — there is no "lands at 1★, then correct it" step to drive.
   //
-  // Entry is a POPOUT as of #35, not an inline search: the panel carries one
-  // "Add a Spark" button and the box, the browse sections and the ★ picker
-  // live behind it. The box keeps the aria-label the inline one had, so only
-  // the open and the dismiss are new here.
+  // The popout is the EDITOR as of #86: one "Edit Sparks" button on the
+  // panel, and adding, re-levelling and removing all live behind it — a held
+  // row carries the same three star buttons with the current level pressed
+  // plus the ✕, IN PLACE in its own section, and a Current Sparks pill in
+  // the search band filters the browse to the member's own. The box keeps
+  // the aria-label the inline search had.
   const openChooser = async (label) => {
     if ((await page.locator(".spark-popout").count()) === 0) {
       await page.locator(".focus .spark-open").click();
@@ -886,6 +887,14 @@ try {
       await page.waitForSelector(".spark-popout", { state: "detached" });
     }
   };
+  // A popout section by its head, never by index — what renders above a
+  // section varies with the lists and the query.
+  const sectionNamed = (head) =>
+    page.locator(".spark-popout .spark-section", {
+      has: page.locator(`.spark-section-head:text-is("${head}")`),
+    });
+  check("the panel's one entry point is the Edit Sparks button",
+    ((await page.locator(".focus .spark-open").textContent()) ?? "").trim() === "Edit Sparks");
   const addSpark = async (label, ref, stars = 1) => {
     await openChooser(label);
     await page.locator(`.spark-popout input[aria-label="${label} spark search"]`).fill(ref.name);
@@ -903,17 +912,23 @@ try {
     await addSpark("G1-1", ref);
     added.push(ref);
   }
-  // The rule itself, on screen: one green offered on a cast node, not 137.
+  // The rule itself, on screen: one green offered on a cast node, not 137 —
+  // and she is HELD now, in her own section (held-ness is row state, never
+  // row position), the level she was added at pressed.
   await openChooser("G1-1");
   const greensOffered = await page.locator(".spark-popout .proc-kind-unique").count();
   check("a cast node is offered only her own green, which she now holds",
     greensOffered === 1 &&
-    (await page.locator(`.spark-popout li:has(.proc-kind-unique) .spark-held`).count()) === 1);
-  // Blue browses in the game's stat order — its keys, not the alphabet.
+    (await sectionNamed("Green")
+      .locator('li .seg[aria-pressed="true"][data-stars="1"]')
+      .count()) === 1);
+  // Blue browses in the game's stat order — its keys, not the alphabet. The
+  // held Speed sits where it always sat, pressed.
   check("the Blue section lists the stats in game order",
-    (await page.locator(".spark-popout li:has(.proc-kind-blue) .spark-hit").allTextContents())
+    (await sectionNamed("Blue").locator("li .spark-hit").allTextContents())
       .map((t) => t.replace(/^\s*Blue\s*/, "").trim()).join(",") ===
-      "Speed,Stamina,Power,Guts,Wit");
+      "Speed,Stamina,Power,Guts,Wit" &&
+    (await sectionNamed("Blue").locator('li .seg[aria-pressed="true"]').count()) === 1);
   // A list is a hunt, and neither blues nor greens are hunted — their rows
   // carry no ★ at all, while the huntable kinds keep theirs.
   check("no ★ on blue or green rows; whites keep theirs",
@@ -924,7 +939,30 @@ try {
   // A blue REPLACES the blue she holds: a uma carries one of the five stats,
   // and the server rejects a member with two.
   const wit = factorRef.find((f) => f.kind === "blue" && f.name === "Wit");
-  await addSpark("G1-1", wit, 2);
+  await openChooser("G1-1");
+  const witStar = page.locator(
+    `.spark-matches button[data-spark="blue:${wit.key}"][data-stars="2"]`
+  );
+  // Where the button sits BEFORE the click: the ✕ slot is reserved on every
+  // row, so the ✕ appearing must move nothing — measured before the slot,
+  // the stars shoved 27px left under the pointer that had just clicked
+  // them. Geometry, because this is a claim about where things are drawn.
+  const witStarX = Math.round((await witStar.boundingBox()).x);
+  await witStar.click();
+  // Wit turns held on the browse row that was clicked — pressed star and ✕
+  // appearing in place, in its reserved slot — while the replaced Speed's
+  // row goes back to add buttons. Nothing moves under the pointer that
+  // clicked it (#34's invariant, kept by #86).
+  const speedKey = added.find((r) => r.kind === "blue").key;
+  check("an add lands on the row that was clicked, which stays put",
+    (await sectionNamed("Blue").locator(`li:has(button[data-spark="blue:${wit.key}"])`).count()) === 1 &&
+    (await sectionNamed("Blue").locator('.seg[aria-pressed="true"][data-stars="2"]').count()) === 1 &&
+    (await sectionNamed("Blue").locator(".spark-drop").count()) === 1 &&
+    Math.round((await witStar.boundingBox()).x) === witStarX);
+  check("and the replace-on-add reads on the replaced row too",
+    (await page.locator(`.spark-popout li:has(button[data-spark="blue:${speedKey}"]) .spark-drop`).count()) === 0 &&
+    (await page.locator(`.spark-popout li:has(button[data-spark="blue:${speedKey}"]) .seg[aria-pressed="true"]`).count()) === 0);
+  await closeChooser();
   check("adding a second blue replaces the first",
     await until(async () =>
       (await page.locator('.focus .proc-row[data-spark^="blue:"]').count()) === 1 &&
@@ -1003,13 +1041,12 @@ try {
   // Asserted against what's RENDERED between the tabs and the table — not
   // against the class names of the pill this replaced, which would report
   // "no second switch" however many switches a later change put there under
-  // different classes. The panel's own `seg-group`s are the ★ pickers, one
-  // per non-pink row, and the tab bar itself.
+  // different classes.
   check("and the sort lives on the headers, with no second switch under the tabs",
     (await sortedBy()) === "Spark:other" &&
     (await page.locator(".focus .proc-table thead .proc-h").count()) === 2 &&
-    // The tab bar is the panel's only segmented control now: the row's ★
-    // picker is gone, and the match rows' only appear while searching.
+    // The tab bar is the panel's only segmented control now: the rows' ★
+    // pickers all live in the popout, which is closed here.
     (await page.locator(".focus .seg-group").count()) === 1 &&
     (await page.locator(".focus").evaluate((f) => {
       const tabs = f.querySelector(".focus-tabs");
@@ -1021,33 +1058,31 @@ try {
       }
       return between.length;
     })) === 0);
-  // NOTHING in the table can change a chance: the level is chosen on the
-  // match row when the spark is added, and the table only shows it. That is
-  // what lets both sorts stay live on a table you edit — a control that moved
-  // a number would re-rank its own row out from under the pointer that
-  // clicked it. Measured before this landed: index 2 → 0 while GROUPED (the
-  // sort that was supposed to make it safe), 4 → 0 while ranked, with a
-  // different spark left under the cursor both times.
+  // NOTHING in the table can change anything: the level is chosen in the
+  // popout when the spark is added, re-levelled there and removed there
+  // (#86), so the only buttons the table carries are its two sort headers.
+  // That is what lets both sorts stay live on a table whose member you edit
+  // — a control that moved a number would re-rank its own row out from
+  // under the pointer that clicked it. Measured before #34 landed: index
+  // 2 → 0 while GROUPED (the sort that was supposed to make it safe),
+  // 4 → 0 while ranked, with a different spark left under the cursor both
+  // times.
   check("no control in the table can move a row",
     (await page.locator(".focus .proc-table .seg").count()) === 0 &&
+    (await page.locator(".focus .proc-table tbody button").count()) === 0 &&
     (await page.locator(".focus .proc-table button").count()) ===
-      (await page.locator(".focus .proc-table .proc-drop").count()) +
-        (await page.locator(".focus .proc-table thead .proc-h").count()));
-  // Every row carries the level it was added at, glyphs on the pink and the
-  // rest alike — the ✕ is the only thing that differs.
+      (await page.locator(".focus .proc-table thead .proc-h").count()));
+  // Every row carries the level it was added at, glyphs beside the name on
+  // the pink and the rest alike — the shape a locked table always had.
   check("every row shows the level it was added at",
-    (await page.locator(".focus .proc-table tbody .proc-stars").count()) === added.length + 1 &&
-    (await page.locator(".focus .proc-drop").count()) === added.length);
-  // The pink carries no ✕, so its row has to hold that space anyway — or her
-  // ★ run to the cell edge and the column stops lining up. Geometry, because
-  // this is a claim about where things are drawn.
-  check("the ★ line up down the column, ✕ or no ✕",
-    await page.locator(".focus .proc-table tbody").evaluate((el) => {
-      const rights = [...el.querySelectorAll(".proc-stars")].map(
-        (s) => Math.round(s.getBoundingClientRect().right)
-      );
-      return rights.length > 1 && Math.max(...rights) - Math.min(...rights) <= 1;
-    }));
+    (await page.locator(".focus .proc-table tbody .proc-name .proc-stars").count()) ===
+      added.length + 1);
+  // An editable member's table renders EXACTLY what a locked one does — two
+  // columns, stars in the name cell, no third column to give back (#86).
+  // The only per-node difference left is whether Edit Sparks exists below.
+  check("an editable table is the locked table's shape",
+    (await page.locator(".focus .proc-table thead th").count()) === 2 &&
+    (await page.locator(".focus .proc-table tbody tr").first().locator("td").count()) === 2);
   //
   // The table IS the editor: one row per spark, not a ranked row plus a
   // second entry in a differently-ordered held list 30px below it. Counted
@@ -1061,13 +1096,14 @@ try {
         (await page.locator(".focus", { hasText: r.name }).count()) > 0 &&
         (await page.locator(`.focus :text-is("${r.name.replace(/"/g, '\\"')}")`).count()) === 1
       )
-    )).every(Boolean) &&
-    // One ✕ per non-pink spark, and none anywhere but the rows.
-    (await page.locator(".focus .proc-drop").count()) === added.length &&
-    (await page.locator(".focus .proc-table .proc-drop").count()) === added.length);
+    )).every(Boolean));
   // ✕ removes it, from the same row that set its level — the held list's only
   // other job. Added and dropped again so the design is left as it was.
-  const spare = factorRef.filter((f) => f.kind === "white").at(-1);
+  // Not a baseline favorite: a favorited row renders in the Favorites
+  // section, and the assertions below look for this one in White.
+  const spare = factorRef
+    .filter((f) => f.kind === "white" && !baselineFavorites.has(`${f.kind}:${f.key}`))
+    .at(-1);
   // A DIFFERENT white from the one already held, or the add is a no-op and
   // the ✕ below waits 30s for a row that never appeared — a timeout on an
   // unrelated-looking selector instead of a readable failure here.
@@ -1083,7 +1119,7 @@ try {
     withSpare &&
     (await until(async () =>
       (await chanceOf(spare.name)) === pct(procPct("white", 3, expectedAff.g11_affinity)))) &&
-    (await rowFor(spare.name).locator(".proc-level .proc-stars").textContent()) === "★★★");
+    (await rowFor(spare.name).locator(".proc-name .proc-stars").textContent()) === "★★★");
   // And SURVIVES the save, which the rendered glyphs can't tell you: the
   // level is the one field whose default (1★) would mask a drop on the way
   // to the server, so a non-default one has to be read back from the API.
@@ -1095,13 +1131,103 @@ try {
       (f) => f.kind === spare.kind && f.key === spare.key && f.stars === 3
     ));
   // A held spark answers its own search instead of vanishing from it —
-  // typing a correct name and getting an empty box reads as "no such spark".
+  // typing a correct name and getting an empty box reads as "no such
+  // spark". It answers with its own CONTROLS (#86): the row sits in its own
+  // kind section as always, the level it was added at pressed, the ✕
+  // beside it.
   await openChooser("G1-1");
   await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(spare.name);
+  const spareRow = page.locator(
+    `.spark-popout li:has(button[data-spark="${spare.kind}:${spare.key}"])`
+  );
   check("searching a spark you already hold says so, rather than nothing",
-    (await until(async () => (await page.locator(".spark-held").count()) === 1)) &&
-    (await page.locator(".spark-matches li", { hasText: spare.name })
-      .locator(".seg").count()) === 0);
+    (await until(async () =>
+      (await spareRow.locator('.seg[aria-pressed="true"][data-stars="3"]').count()) === 1)) &&
+    (await spareRow.locator(".spark-drop").count()) === 1 &&
+    (await sectionNamed("White").locator(`li:has(button[data-spark="${spare.kind}:${spare.key}"])`).count()) === 1);
+
+  // ---------- the popout is the editor: re-level, no-op, remove ----------
+  // A mis-level is one click on the same row — the held row's stars are
+  // live. The chance updates in the table behind it, and the row moves in
+  // NEITHER surface: the popout's sections are frozen, and the table's sort
+  // key (kind, at one member's single affinity) doesn't change with stars.
+  await spareRow.locator('.seg[data-stars="1"]').click();
+  check("a held row re-levels in place — one click, no drop-and-re-add",
+    (await until(async () =>
+      (await chanceOf(spare.name)) === pct(procPct("white", 1, expectedAff.g11_affinity)))) &&
+    (await spareRow.locator('.seg[aria-pressed="true"][data-stars="1"]').count()) === 1 &&
+    (await spareRow.locator(".spark-drop").count()) === 1);
+  // And it re-levels the DOCUMENT — one row, not an appended duplicate the
+  // server would then reject. Read back from the API: pressed glyphs can't
+  // tell you what the autosave wrote.
+  await settled();
+  const reLevelled = (await (await fetch(`${BASE}/api/blueprints`)).json())
+    .find((b) => b.name === bpName);
+  const spareFactors = (reLevelled?.slots.named[3]?.factors ?? []).filter(
+    (f) => f.kind === spare.kind && f.key === spare.key
+  );
+  check("and the new level reaches the server as one row",
+    spareFactors.length === 1 && spareFactors[0]?.stars === 1);
+  // The pressed star is a NO-OP, never a toggle-off: the most common idle
+  // click must not be destructive.
+  await spareRow.locator('.seg[data-stars="1"]').click();
+  check("clicking the pressed star changes nothing",
+    (await spareRow.locator('.seg[aria-pressed="true"][data-stars="1"]').count()) === 1 &&
+    (await page.locator(`.focus .proc-row[data-spark="${spare.kind}:${spare.key}"]`).count()) === 1);
+  // ✕ removes it, from the same row that set its level — and the ROW STAYS,
+  // add buttons back, because held membership is frozen per open. It could
+  // be re-added without closing anything.
+  await spareRow.locator(".spark-drop").click();
+  check("✕ drops the spark; its row stays put with the add buttons back",
+    (await until(async () =>
+      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+    (await spareRow.count()) === 1 &&
+    (await spareRow.locator(".spark-drop").count()) === 0 &&
+    (await spareRow.locator('.seg[aria-pressed="true"]').count()) === 0 &&
+    (await spareRow.locator(".seg").count()) === 3);
+  // The #74 unmount variant, driven by keyboard: the focused ✕ leaves the
+  // DOM with its own click, and focus must land back in the row rather than
+  // dropping to <body> — where the next Tab restarts from the top of a
+  // 437-row popout.
+  await spareRow.locator('.seg[data-stars="3"]').click();
+  await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
+  await spareRow.locator(".spark-drop").focus();
+  await page.keyboard.press("Enter");
+  check("removing by keyboard keeps focus in the row (#74's unmount variant)",
+    (await until(async () =>
+      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+    (await until(async () =>
+      page.evaluate(() => {
+        const a = document.activeElement;
+        return a !== null && a !== document.body && a.closest(".spark-matches li") !== null;
+      }))));
+
+  // ---------- the Current Sparks filter ----------
+  // A filter, not a section: rows keep their sections and positions whether
+  // held or not, and the pill in the search band narrows the browse to the
+  // member's own. Membership snapshots when it is PRESSED — so the spare
+  // re-added a moment ago is already in it, the staleness a frozen held
+  // section had — while a ✕ under it leaves its row in place rather than
+  // vanishing the list out from under the pointer.
+  await spareRow.locator('.seg[data-stars="2"]').click();
+  await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
+  await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
+  await page.locator(".spark-popout .spark-current").click();
+  check("the Current Sparks filter narrows the browse to what she holds right now",
+    (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
+    (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
+    (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === added.length + 1);
+  await page.locator(`.spark-popout .spark-drop[data-spark="${spare.kind}:${spare.key}"]`).click();
+  check("a ✕ under the filter leaves its row in place, add buttons back",
+    (await until(async () =>
+      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+    (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
+    (await spareRow.locator(".seg").count()) === 3 &&
+    (await spareRow.locator(".spark-drop").count()) === 0);
+  await page.locator(".spark-popout .spark-current").click();
+  check("and toggling it off restores the full browse",
+    (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "false" &&
+    (await page.locator(".spark-popout .spark-matches li").count()) > added.length + 1);
   // Favoriting is a separate control from adding, and adding never writes
   // one: a filler white typed onto every node must not reach #27's uncapped
   // watched block (DECISIONS.md #35).
@@ -1200,6 +1326,17 @@ try {
         const list = await ourList();
         return list !== undefined && list.sparks.length === 0;
       }));
+    // The #74 disable variant: the write disables the pill mid-flight, a
+    // disabled element cannot hold focus, and the browser drops it to
+    // <body>. Once the write lands and the pill re-enables, focus must be
+    // back on it — captured in the click handler, not in an effect
+    // observing `busy`, which runs after the disable commits and was the
+    // reverted no-op.
+    check("the write hands focus back to the pill (#74's disable variant)",
+      await until(async () =>
+        page.evaluate(() =>
+          document.activeElement !== null &&
+          document.activeElement.classList.contains("spark-list-pill"))));
     // Put it back, so the Favorites assertions below have something to show.
     await ourPill.click();
     await until(async () => (await ourList())?.sparks.length === 1);
@@ -1239,23 +1376,10 @@ try {
     check("and emptying its lists leaves the row where it is",
       (await until(async () => (await ourList())?.sparks.length === 0)) &&
       (await page.locator(favStar).count()) === 1 &&
-      (await page.locator(".spark-popout .spark-section").first()
+      (await sectionNamed("Favorites")
         .locator(`.spark-fav[data-spark="${favSel}"]`).count()) === 1);
   }
   await closeChooser();
-  // Guarded: clicking unconditionally after a failed `until` aborts the run
-  // and skips every assertion below it.
-  if (withSpare) {
-    // By id, not by the displayed name: the reference holds two distinct
-    // whites both called "Pressure", so a name-matched ✕ is ambiguous the
-    // moment a member carries both.
-    await page
-      .locator(`.focus .proc-row[data-spark="${spare.kind}:${spare.key}"] .proc-drop`)
-      .click();
-    check("and ✕ drops it from that row too",
-      await until(async () =>
-        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1));
-  }
 
   // The trainee's tab answers a different question: what she is likely to
   // come out with, per spark rather than per member.
@@ -2169,14 +2293,13 @@ try {
     check("and no spark editor — that pink is the horse's own",
       (await page.locator('select[aria-label="Grandparent 1-1 pink spark"]').count()) === 0 &&
       (await page.locator(".spark-static").count()) === 1);
-    // Her sparks tab is the same two-column readout it always was: the ★
-    // control folded into the row on nodes you BUILD, and a pulled branch
-    // builds nothing. No level column, no ✕, no search box.
+    // Her sparks tab is the two-column readout EVERY table renders now
+    // (#86): what a pulled branch lacks is the Edit Sparks button, not a
+    // column. No ✕, no search box, no entry point.
     await page.locator(".focus-tabs .focus-tab", { hasText: "Sparks" }).click();
     check("her sparks are a readout, with no controls anywhere on the table",
       (await page.locator(".focus .proc-table tbody tr").count()) > 0 &&
-      (await page.locator(".focus .proc-level").count()) === 0 &&
-      (await page.locator(".focus .proc-drop").count()) === 0 &&
+      (await page.locator(".focus .proc-table tbody button").count()) === 0 &&
       (await page.locator(".focus .spark-add").count()) === 0 &&
       (await page.locator(".focus .proc-table tbody tr").first().locator("td").count()) === 2);
     // The level still reads on the row, as glyphs in the name cell — the

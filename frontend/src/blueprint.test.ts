@@ -240,6 +240,22 @@ describe("factorsWith", () => {
     ]);
   });
 
+  it("re-levels a held spark in place rather than appending a duplicate", () => {
+    const out = factorsWith(held, { kind: "white", key: 700, stars: 3 });
+    expect(out).toEqual([
+      { kind: "blue", key: 1, stars: 1 },
+      { kind: "white", key: 700, stars: 3 },
+    ]);
+  });
+
+  it("re-levels the held blue in place too, same stat and all", () => {
+    const out = factorsWith(held, { kind: "blue", key: 1, stars: 2 });
+    expect(out).toEqual([
+      { kind: "blue", key: 1, stars: 2 },
+      { kind: "white", key: 700, stars: 2 },
+    ]);
+  });
+
   it("dedupes on kind AND key, keeping the strongest", () => {
     const out = factorsOf([
       factor({ kind: "white", key: 700, star: 1 }),

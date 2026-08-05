@@ -3,7 +3,6 @@ import type {
   AffinityResult,
   FactorRef,
   SlotFactor,
-  SlotFactorKind,
 } from "../api";
 import type { SparkListStore } from "../sparks";
 import { APTITUDE_LABELS } from "../aptitude";
@@ -78,12 +77,9 @@ const ChanceBar = ({ type, chance }: { type: SparkRef["type"]; chance: number | 
 const SparkHead = ({
   sort,
   onSort,
-  level,
 }: {
   sort: SparkSort;
   onSort: (s: SparkSort) => void;
-  // Whether the table carries the ★ column, which never sorts anything.
-  level: boolean;
 }) => (
   <thead>
     <tr>
@@ -99,9 +95,6 @@ const SparkHead = ({
           Spark
         </button>
       </th>
-      {/* Blank on screen — the glyphs under it already say what it is — but
-          named for anyone who reaches the cell through its column header. */}
-      {level && <th scope="col" className="proc-level" aria-label="Stars" />}
       {/* The tooltip sits on the cell, so the sort button inside doesn't need
           one of its own competing with it. */}
       <th
@@ -120,12 +113,13 @@ const SparkHead = ({
 
 // One row: the spark named in its kind's colour, and the chance beside it in a
 // bar filled to match. The kind is carried by colour alone here — the chooser
-// keeps its spelled-out tags, where you are picking BETWEEN kinds.
+// keeps its spelled-out tags, where you are picking BETWEEN kinds. No control
+// anywhere in the body: every table is this same two-column readout, editable
+// member or not, and the edits live in the Edit Sparks popout (#41).
 const SparkRow = ({
   spark,
   name,
   stars,
-  level,
 }: {
   spark: SparkRef & { chance: number | null };
   name: string;
@@ -133,37 +127,14 @@ const SparkRow = ({
   // hold this spark at different levels — see SparkOutlook. An ancestor's own
   // table always has one, and it is what her chance is computed from.
   stars: number | null;
-  // Null on tables with no level column: the trainee's roll-up and a pulled
-  // ancestor's, both two-column readouts. `onRemove` null is the pink, whose
-  // editor is on Details beside the letters it bumps — so she differs by
-  // lacking a ✕, not by lacking a control the other rows have.
-  level: null | { onRemove: (() => void) | null };
 }) => (
   // The spark's identity on the row, so anything driving this table picks by
   // (kind, key) rather than by displayed name — the reference holds two
   // distinct whites both called "Pressure".
   <tr className={`proc-row proc-row-${spark.type}`} data-spark={sparkId(spark)}>
     <td className="proc-name">
-      {/* The glyphs move into the level column when there is one, rather than
-          being printed twice. */}
-      {stars === null || level !== null ? name : <>{name} <Stars n={stars} /></>}
+      {stars === null ? name : <>{name} <Stars n={stars} /></>}
     </td>
-    {level !== null && (
-      <td className="proc-level">
-        {stars !== null && <Stars n={stars} />}
-        {/* The slot is held on the pink's row too, empty: without it her ★ run
-            to the cell edge while every other row's stop short of a ✕, and a
-            column of stars that doesn't line up reads as a rendering fault
-            rather than as one row being read-only. */}
-        {level.onRemove === null ? (
-          <span className="proc-drop-blank" />
-        ) : (
-          <button className="proc-drop" aria-label={`Remove ${name}`} onClick={level.onRemove}>
-            ×
-          </button>
-        )}
-      </td>
-    )}
     <td className="proc-chance">
       <ChanceBar type={spark.type} chance={spark.chance} />
     </td>
@@ -172,9 +143,9 @@ const SparkRow = ({
 
 // One ancestor's own sparks: what each is worth as a contribution to the
 // trainee, at this member's individual affinity (DECISIONS.md #29). The row
-// shows the level and can drop the spark; the level itself is chosen when the
-// spark is added, so nothing here can change a chance and no row reorders
-// under a pointer (DECISIONS.md #34).
+// shows the level beside the name; adding, re-levelling and removing all live
+// in the Edit Sparks popout (#41), so nothing here can change a chance and no
+// row reorders under a pointer (DECISIONS.md #34).
 export function NodeProcs({
   design,
   affinity,
@@ -214,23 +185,18 @@ export function NodeProcs({
   const slot = design.named[index];
   const factors = slot?.factors ?? [];
   const rows = sortSparks(memberSparks(sparkAt(design, index), factors, share), sort);
-  const drop = (kind: SlotFactorKind, key: number) =>
-    onSetFactors(index, (current) =>
-      current.filter((x) => !(x.kind === kind && x.key === key))
-    );
   return (
     <>
-      {/* The modifier buys the level column its width back off the chance
-          column, and ONLY here: a locked table and the trainee's roll-up keep
-          the width #30 measured. */}
-      <table className={locked ? "proc-table" : "proc-table proc-table-edit"}>
+      <table className="proc-table">
         {/* A pulled ancestor's table sorts too; she just gains no editing
-            control, which is what DECISIONS.md #28 makes read-only. */}
-        <SparkHead sort={sort} onSort={onSort} level={!locked} />
+            control, which is what DECISIONS.md #28 makes read-only — and an
+            editable member's table renders identically to hers, the popout
+            below being the only difference (#41). */}
+        <SparkHead sort={sort} onSort={onSort} />
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td className="proc-name proc-empty" colSpan={locked ? 2 : 3}>
+              <td className="proc-name proc-empty" colSpan={2}>
                 No sparks on this member yet.
               </td>
             </tr>
@@ -241,11 +207,6 @@ export function NodeProcs({
                 spark={r}
                 name={sparkName(r, sparkNames)}
                 stars={r.stars}
-                level={
-                  locked
-                    ? null
-                    : { onRemove: r.type === "pink" ? null : () => drop(r.type, r.key) }
-                }
               />
             ))
           )}
@@ -366,7 +327,7 @@ export function TraineeProcs({
     <>
       <div className={clipped ? "proc-clip proc-clipped" : "proc-clip"}>
         <table ref={tableRef} className="proc-table">
-          <SparkHead sort={sort} onSort={onSort} level={false} />
+          <SparkHead sort={sort} onSort={onSort} />
           <tbody>
             {/* Which members carry each spark is deliberately not a column: this
                 table answers "what am I likely to come out with", and the
@@ -376,10 +337,9 @@ export function TraineeProcs({
                 key={sparkId(o)}
                 spark={o}
                 name={sparkName(o, sparkNames)}
+                // No level on this table: the carriers may hold a spark at
+                // different levels, and the chance is the union across them.
                 stars={null}
-                // No level column: this table has no level to show (the
-                // carriers may differ) and nothing here is edited.
-                level={null}
               />
             ))}
           </tbody>

@@ -3102,3 +3102,38 @@ shape that was being refined in the wrong direction.
   injectable, which retires the subprocess. The test engine growing pool
   settings of its own, which reopens the warm-up's coupling to the
   default pool_size that `CONCURRENT_CREATES` documents.
+
+## 39. The green rule server-side: rejected on write only
+
+- **Requirements:** issue #58, the server half of #36's rule — a green
+  spark's factor key IS the `card_id`, so `BlueprintSlotIn` accepting
+  Silence Suzuka's green on a Special Week node stores a spark that
+  member can never carry, with a proc estimate reading off it. CLAUDE.md
+  makes `app/schemas.py` the authority for tree rules, but `BlueprintOut`
+  is strict and one unparseable row 500s the whole blueprint list — the
+  rule must land without making any saved document unopenable.
+- **Choice:** the check lives in `BlueprintIn._validate`, not
+  `BlueprintSlotIn` — `BlueprintOut` embeds `BlueprintSlotsIn` directly
+  and never passes through `BlueprintIn`, so the write path (POST/PUT
+  both take `BlueprintIn`) rejects while the read path stays permissive,
+  by construction rather than by a mode flag. A slot with no character
+  is uncheckable and stays legal (#36's uncast tier). The check is
+  purely structural — `key == card_id`, no reference lookup — so it is
+  not the unknown-key leniency of #30 in disguise: that accepts keys the
+  reference hasn't caught up to; this rejects a key contradicting the
+  slot it sits on. Surveyed before landing: 4 saved blueprints, zero
+  greens on named slots, so no data migration and nothing becomes
+  unwritable.
+- **Alternatives rejected:** the check in `BlueprintSlotIn` with a
+  validation-context flag — the write-only split becomes invisible
+  runtime state instead of model structure, and a future caller that
+  forgets the flag breaks reads. A data migration stripping mismatched
+  greens — mutates user documents to fix rows the survey shows don't
+  exist. Validating the key against the factor reference too — reopens
+  exactly the reference-gap failure #30 closed.
+- **What would change my mind:** a pre-rule mismatched row surfacing in
+  a real database after all — its next full save 422s, which the client
+  surfaces as a failed autosave; that would justify a one-off strip
+  migration. The game shipping a card whose unique factor key is not its
+  own card id (the two known exceptions are unreleased `91xxxxx` NPCs) —
+  that breaks the identity the rule is built on, not just this check.

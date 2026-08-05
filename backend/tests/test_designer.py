@@ -483,7 +483,7 @@ def test_named_slot_carries_sparks_of_every_pickable_kind() -> None:
                     spark=pink(),
                     factors=[
                         white(),
-                        {"kind": "unique", "key": 100101, "stars": 3},
+                        {"kind": "unique", "key": 100201, "stars": 3},
                         {"kind": "race", "key": 10001, "stars": 1},
                         {"kind": "scenario", "key": 40001, "stars": 2},
                     ],
@@ -579,6 +579,47 @@ def test_trainee_cannot_carry_non_pink_sparks_either() -> None:
         doc(named={0: slot(1001, factors=[white()])}),
         "the trainee slot can't carry a spark",
     )
+
+
+def test_foreign_green_rejected_on_a_cast_slot() -> None:
+    # A green's key IS the card_id (DECISIONS.md #36/#39) — Silence Suzuka's
+    # green on a Special Week node is a spark that member can never carry,
+    # and it was producing a proc estimate before this rule.
+    _rejects(
+        doc(named={1: slot(1002, factors=[{"kind": "unique", "key": 100101, "stars": 3}])}),
+        "own unique",
+    )
+
+
+def test_green_on_a_characterless_slot_stays_legal() -> None:
+    # "Whatever carries this green" is a plan (#30, #36's uncast tier) — with
+    # no card there is nothing to check the key against.
+    body = BlueprintIn.model_validate(
+        doc(named={1: {"source": "catalog", "chara_id": None, "card_id": None,
+                       "factors": [{"kind": "unique", "key": 100101, "stars": 3}]}})
+    )
+    parent1 = body.slots.named[1]
+    assert parent1 is not None
+    assert parent1.factors[0].key == 100101
+
+
+def test_a_pre_rule_mismatched_green_still_reads() -> None:
+    # The rule is write-only (DECISIONS.md #39): BlueprintOut must keep
+    # parsing a row saved before it landed, or one document would 500 the
+    # whole blueprint list.
+    body = BlueprintIn.model_validate(doc(named={1: slot(1002)}))
+    stored = body.slots.model_dump()
+    named1 = stored["named"][1]
+    assert named1 is not None
+    named1["factors"] = [{"kind": "unique", "key": 100101, "stars": 3}]
+    now = dt.datetime(2026, 8, 5, 12, 0, 0, tzinfo=dt.UTC)
+    out = BlueprintOut.model_validate(
+        {"id": 1, "name": body.name, "slots": stored,
+         "created_at": now, "updated_at": now}
+    )
+    named1_out = out.slots.named[1]
+    assert named1_out is not None
+    assert named1_out.factors[0].key == 100101
 
 
 def test_unknown_spark_key_accepted() -> None:

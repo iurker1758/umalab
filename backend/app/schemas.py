@@ -468,6 +468,26 @@ class BlueprintIn(BaseModel):
                     if parent < 3
                     else "two slots sharing a parent must be different characters"
                 )
+
+        # A green's factor key IS the card_id (DECISIONS.md #36): a member can
+        # learn another uma's unique during a run, but she can never carry the
+        # SPARK for one — zero exceptions across 1,372 real roster rows. A slot
+        # with no character stays legal: "whatever carries this green" is a
+        # plan (#30), and there is nothing to check it against.
+        #
+        # Checked HERE and not in BlueprintSlotIn, because BlueprintOut embeds
+        # BlueprintSlotsIn — the slot model must stay permissive so a row saved
+        # before this rule can't 500 the whole blueprint list on read
+        # (DECISIONS.md #39). This is not the unknown-key leniency of #30:
+        # no reference lookup is involved, the key contradicts the slot itself.
+        for slot in self.slots.named:
+            if slot is None or slot.card_id is None:
+                continue
+            for factor in slot.factors:
+                if factor.kind == "unique" and factor.key != slot.card_id:
+                    raise ValueError(
+                        f"green {factor.key} is not card {slot.card_id}'s own unique"
+                    )
         return self
 
     def _chara_at(self, i: int) -> int | None:

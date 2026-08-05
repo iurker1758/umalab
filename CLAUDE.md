@@ -20,7 +20,8 @@ delivered #28 — spark entry is a popout browser with your favorites on top,
 replacing the inline search and reversing #30's "an add-one affordance, not a
 browser" in writing (DECISIONS.md #35), corrected in #36 — a green spark's
 factor key IS a `card_id`, so a cast node is offered only her own green.
-Issue #58 holds the server half of the green rule.
+The server half of the green rule shipped with #58 (DECISIONS.md #39):
+`BlueprintIn` rejects a foreign green on write, reads stay permissive.
 
 **Spark lists (issue #39, DECISIONS.md #37) replaced the watched-spark list
 of #33, which had the axis backwards.** A `hunting` bit stored per spark what

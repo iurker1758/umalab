@@ -113,8 +113,10 @@ const unknownOption = (spark: { kind: SlotFactorKind; key: number }): Option => 
 // <body> — that shape shipped as a no-op and was reverted (#74, do not
 // re-attempt). Captured at the ROW as well as the control, so one fix covers
 // both variants: focus returns to the control where it survived (the pill,
-// re-enabled), else to the row's first live button (the ✕'s row, back in its
-// add-buttons shape).
+// re-enabled), else to the row ITSELF — never the row's first live button,
+// which in a ✕'s row is the 1★ add: Enter auto-repeats, so a held or doubled
+// press on the ✕ would remove a 3★ and silently re-add it at 1★. The li is
+// inert under Enter, and the next Tab walks into the row's own controls.
 const refocus = (control: HTMLElement | null): (() => void) => {
   const row = control?.closest("li") ?? null;
   return () => {
@@ -124,15 +126,17 @@ const refocus = (control: HTMLElement | null): (() => void) => {
       const active = document.activeElement;
       // Only where focus was actually dropped: the user may have moved on.
       if (active !== null && active !== document.body) return;
-      const target =
+      if (
         control !== null &&
         control.isConnected &&
         !(control as HTMLButtonElement).disabled
-          ? control
-          : (row?.querySelector<HTMLElement>(".seg:not([disabled])") ??
-            row?.querySelector<HTMLElement>("button:not([disabled])") ??
-            null);
-      target?.focus();
+      ) {
+        control.focus();
+      } else if (row !== null && row.isConnected) {
+        // Focusable programmatically only — rows never join the Tab order.
+        row.tabIndex = -1;
+        row.focus();
+      }
     });
   };
 };
@@ -275,6 +279,7 @@ function ListPicker({
 function SparkRows({
   options,
   heldStars,
+  addable,
   lists,
   listsFailed,
   busy,
@@ -291,6 +296,11 @@ function SparkRows({
   // snapshotted. Which SECTION a row sits in is frozen per open; what its
   // controls show is the document as it stands.
   heldStars: Map<string, number>;
+  // Whether an UNHELD row's add buttons are live. False only for a green the
+  // cast can't take, on screen because she was held when the popout opened:
+  // her ✕ must not vanish the row (see `possible`), and her adds must not
+  // offer what the server refuses.
+  addable: (option: Option) => boolean;
   lists: SparkList[];
   listsFailed: boolean;
   busy: boolean;
@@ -377,7 +387,11 @@ function SparkRows({
                 (and under focus) survives its own click. Not a `radiogroup`
                 on an unheld row: there these are three different add actions,
                 each naming its own outcome, because "3★" alone is meaningless
-                read out of the row it sits in. */}
+                read out of the row it sits in. `aria-pressed` is present in
+                BOTH states — absent-when-unheld makes the add flip the
+                control's role from button to toggle button as a side effect
+                of its own click; false keeps the role while the state and
+                label carry the change. */}
             <span className="seg-group" role="group">
               {[1, 2, 3].map((n) => (
                 <button
@@ -385,7 +399,8 @@ function SparkRows({
                   className={heldAt === n ? "seg active" : "seg"}
                   data-spark={id}
                   data-stars={n}
-                  aria-pressed={heldAt === undefined ? undefined : heldAt === n}
+                  disabled={heldAt === undefined && !addable(o)}
+                  aria-pressed={heldAt === n}
                   aria-label={
                     heldAt === undefined
                       ? `Add ${o.name} at ${n}★`
@@ -496,6 +511,20 @@ function ChooserPopout({
   // empty union mid-fetch without needing an effect or a ref read at render.
   const [pinnedRows] = useState(() => unionOf(sparkLists.lists));
   const pinned = new Set(pinnedRows.map((w) => sparkId({ type: w.kind, key: w.key })));
+  // Held sparks the reference can't name, frozen per open like everything
+  // else that decides which rows EXIST. Each gets a degraded row in its kind
+  // section: this popout is the only remove surface, so a held spark with no
+  // row is stuck on the member — counted by every estimate — until the whole
+  // node is cleared. The pinned ones already surface through Favorites via
+  // `optionFor`.
+  const [orphanRows] = useState(() =>
+    factors
+      .filter((f) => {
+        const id = sparkId({ type: f.kind, key: f.key });
+        return !names.has(id) && !pinned.has(id);
+      })
+      .map((f) => ({ kind: f.kind, key: f.key }))
+  );
   // The Current Sparks FILTER: null browses everything; a Set narrows the
   // popout to the member's own rows, in their own sections. A filter, not a
   // section (Jason's call over the held section built first — frozen at open
@@ -525,16 +554,29 @@ function ChooserPopout({
   const heldStars = new Map(
     factors.map((f) => [sparkId({ type: f.kind, key: f.key }), f.stars])
   );
+  // What she held when the popout OPENED. Row existence keys off this, never
+  // the live map: exempted live, a foreign green's row unmounts with its own
+  // ✕ click — gone from under the pointer, and gone from under the focus the
+  // ✕ was about to hand back (#74).
+  const [heldAtOpen] = useState(() => new Set(heldStars.keys()));
   const q = query.trim().toLowerCase();
   // Applied to the favorites too, though a list can no longer hold a green:
-  // one section exempt from the rule would be the one place it leaks. HELD
-  // rows are exempt instead: this popout is the only place a spark can be
-  // removed, and an old document can hold a green the current cast couldn't
-  // take (reads stay permissive, DECISIONS.md #39) — filtered out, she'd be
-  // invisible and unremovable while the server refuses every save that
-  // carries her.
+  // one section exempt from the rule would be the one place it leaks. Rows
+  // held AT OPEN are exempt instead: this popout is the only place a spark
+  // can be removed, and an old document can hold a green the current cast
+  // couldn't take (reads stay permissive, DECISIONS.md #39) — filtered out,
+  // she'd be invisible and unremovable while the server refuses every save
+  // that carries her. Once removed she stays for the life of the open, adds
+  // dead (`addable`): she can't legally come back, and her row can't vanish
+  // mid-interaction either.
   const greenPossible = greenFilter(cardId, charaId);
   const possible = (o: Option): boolean =>
+    heldAtOpen.has(sparkId({ type: o.kind, key: o.key })) || greenPossible(o);
+  // Live, unlike `possible`: held rows re-level whatever they hold, and the
+  // one row shown-but-unaddable is the foreign green after her ✕ — offering
+  // her add buttons would put the client on the wrong side of the rule the
+  // server enforces (DECISIONS.md #39).
+  const addable = (o: Option): boolean =>
     heldStars.has(sparkId({ type: o.kind, key: o.key })) || greenPossible(o);
   // One rule for every section: the query and the Current Sparks filter
   // narrow, and hits rank by where the query lands in the name then
@@ -562,13 +604,14 @@ function ChooserPopout({
   // star". The snapshot decides, so nothing disappears from under the pointer.
   const sections = BROWSE_KINDS.map((kind) => ({
     kind,
-    options: matching(
-      refs
+    options: matching([
+      ...refs
         .filter(
           (r) => r.kind === kind && !pinned.has(sparkId({ type: r.kind, key: r.key }))
         )
-        .map(optionOf)
-    ),
+        .map(optionOf),
+      ...orphanRows.filter((f) => f.kind === kind).map(unknownOption),
+    ]),
   })).filter((s) => s.options.length > 0);
 
   // Non-optimistic: `sparks.ts` returns the list the server ended up with, so
@@ -620,6 +663,7 @@ function ChooserPopout({
 
   const rowProps = {
     heldStars,
+    addable,
     lists: sparkLists.lists,
     listsFailed: sparkLists.failed,
     busy,
@@ -679,6 +723,12 @@ function ChooserPopout({
           <button
             className={onlyCurrent === null ? "spark-current" : "spark-current active"}
             aria-pressed={onlyCurrent !== null}
+            // On a member holding nothing the press empties the popout to
+            // the same "No sparks match." a typo produces, with nothing on
+            // screen naming the cause. Only while INACTIVE: removing the
+            // last spark under the filter must leave the pill able to
+            // toggle off.
+            disabled={onlyCurrent === null && heldStars.size === 0}
             onClick={() =>
               setOnlyCurrent(onlyCurrent === null ? new Set(heldStars.keys()) : null)
             }

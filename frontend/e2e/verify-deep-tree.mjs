@@ -1097,8 +1097,9 @@ try {
         (await page.locator(`.focus :text-is("${r.name.replace(/"/g, '\\"')}")`).count()) === 1
       )
     )).every(Boolean));
-  // ✕ removes it, from the same row that set its level — the held list's only
-  // other job. Added and dropped again so the design is left as it was.
+  // A spare white, added and dropped again so the design is left as it was —
+  // the guarded block below drives re-level, no-op, remove, keyboard focus
+  // and the Current Sparks filter through its row.
   // Not a baseline favorite: a favorited row renders in the Favorites
   // section, and the assertions below look for this one in White.
   const spare = factorRef
@@ -1146,88 +1147,103 @@ try {
     (await spareRow.locator(".spark-drop").count()) === 1 &&
     (await sectionNamed("White").locator(`li:has(button[data-spark="${spare.kind}:${spare.key}"])`).count()) === 1);
 
-  // ---------- the popout is the editor: re-level, no-op, remove ----------
-  // A mis-level is one click on the same row — the held row's stars are
-  // live. The chance updates in the table behind it, and the row moves in
-  // NEITHER surface: the popout's sections are frozen, and the table's sort
-  // key (kind, at one member's single affinity) doesn't change with stars.
-  await spareRow.locator('.seg[data-stars="1"]').click();
-  check("a held row re-levels in place — one click, no drop-and-re-add",
-    (await until(async () =>
-      (await chanceOf(spare.name)) === pct(procPct("white", 1, expectedAff.g11_affinity)))) &&
-    (await spareRow.locator('.seg[aria-pressed="true"][data-stars="1"]').count()) === 1 &&
-    (await spareRow.locator(".spark-drop").count()) === 1);
-  // And it re-levels the DOCUMENT — one row, not an appended duplicate the
-  // server would then reject. Read back from the API: pressed glyphs can't
-  // tell you what the autosave wrote.
-  await settled();
-  const reLevelled = (await (await fetch(`${BASE}/api/blueprints`)).json())
-    .find((b) => b.name === bpName);
-  const spareFactors = (reLevelled?.slots.named[3]?.factors ?? []).filter(
-    (f) => f.kind === spare.kind && f.key === spare.key
-  );
-  check("and the new level reaches the server as one row",
-    spareFactors.length === 1 && spareFactors[0]?.stars === 1);
-  // The pressed star is a NO-OP, never a toggle-off: the most common idle
-  // click must not be destructive.
-  await spareRow.locator('.seg[data-stars="1"]').click();
-  check("clicking the pressed star changes nothing",
-    (await spareRow.locator('.seg[aria-pressed="true"][data-stars="1"]').count()) === 1 &&
-    (await page.locator(`.focus .proc-row[data-spark="${spare.kind}:${spare.key}"]`).count()) === 1);
-  // ✕ removes it, from the same row that set its level — and the ROW STAYS,
-  // add buttons back, because held membership is frozen per open. It could
-  // be re-added without closing anything.
-  await spareRow.locator(".spark-drop").click();
-  check("✕ drops the spark; its row stays put with the add buttons back",
-    (await until(async () =>
-      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
-    (await spareRow.count()) === 1 &&
-    (await spareRow.locator(".spark-drop").count()) === 0 &&
-    (await spareRow.locator('.seg[aria-pressed="true"]').count()) === 0 &&
-    (await spareRow.locator(".seg").count()) === 3);
-  // The #74 unmount variant, driven by keyboard: the focused ✕ leaves the
-  // DOM with its own click, and focus must land back in the row rather than
-  // dropping to <body> — where the next Tab restarts from the top of a
-  // 437-row popout.
-  await spareRow.locator('.seg[data-stars="3"]').click();
-  await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
-  await spareRow.locator(".spark-drop").focus();
-  await page.keyboard.press("Enter");
-  check("removing by keyboard keeps focus in the row (#74's unmount variant)",
-    (await until(async () =>
-      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
-    (await until(async () =>
-      page.evaluate(() => {
-        const a = document.activeElement;
-        return a !== null && a !== document.body && a.closest(".spark-matches li") !== null;
-      }))));
+  // Guarded: every stanza below clicks the spare's held-row controls, and
+  // clicking unconditionally after a failed `until` aborts the run at a
+  // 30s timeout on `.spark-drop` — an opaque locator error in place of the
+  // readable failed check above, with every assertion after it skipped.
+  if (withSpare) {
+    // ---------- the popout is the editor: re-level, no-op, remove ----------
+    // A mis-level is one click on the same row — the held row's stars are
+    // live. The chance updates in the table behind it, and the row moves in
+    // NEITHER surface: the popout's sections are frozen, and the table's sort
+    // key (kind, at one member's single affinity) doesn't change with stars.
+    await spareRow.locator('.seg[data-stars="1"]').click();
+    check("a held row re-levels in place — one click, no drop-and-re-add",
+      (await until(async () =>
+        (await chanceOf(spare.name)) === pct(procPct("white", 1, expectedAff.g11_affinity)))) &&
+      (await spareRow.locator('.seg[aria-pressed="true"][data-stars="1"]').count()) === 1 &&
+      (await spareRow.locator(".spark-drop").count()) === 1);
+    // And it re-levels the DOCUMENT — one row, not an appended duplicate the
+    // server would then reject. Read back from the API: pressed glyphs can't
+    // tell you what the autosave wrote.
+    await settled();
+    const reLevelled = (await (await fetch(`${BASE}/api/blueprints`)).json())
+      .find((b) => b.name === bpName);
+    const spareFactors = (reLevelled?.slots.named[3]?.factors ?? []).filter(
+      (f) => f.kind === spare.kind && f.key === spare.key
+    );
+    check("and the new level reaches the server as one row",
+      spareFactors.length === 1 && spareFactors[0]?.stars === 1);
+    // The pressed star is a NO-OP, never a toggle-off: the most common idle
+    // click must not be destructive.
+    await spareRow.locator('.seg[data-stars="1"]').click();
+    check("clicking the pressed star changes nothing",
+      (await spareRow.locator('.seg[aria-pressed="true"][data-stars="1"]').count()) === 1 &&
+      (await page.locator(`.focus .proc-row[data-spark="${spare.kind}:${spare.key}"]`).count()) === 1);
+    // ✕ removes it, from the same row that set its level — and the ROW STAYS,
+    // add buttons back, because held membership is frozen per open. It could
+    // be re-added without closing anything.
+    await spareRow.locator(".spark-drop").click();
+    check("✕ drops the spark; its row stays put with the add buttons back",
+      (await until(async () =>
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+      (await spareRow.count()) === 1 &&
+      (await spareRow.locator(".spark-drop").count()) === 0 &&
+      (await spareRow.locator('.seg[aria-pressed="true"]').count()) === 0 &&
+      (await spareRow.locator(".seg").count()) === 3);
+    // The #74 unmount variant, driven by keyboard: the focused ✕ leaves the
+    // DOM with its own click, and focus must land back in the row rather than
+    // dropping to <body> — where the next Tab restarts from the top of a
+    // 437-row popout.
+    await spareRow.locator('.seg[data-stars="3"]').click();
+    await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
+    await spareRow.locator(".spark-drop").focus();
+    await page.keyboard.press("Enter");
+    check("removing by keyboard keeps focus in the row (#74's unmount variant)",
+      (await until(async () =>
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+      (await until(async () =>
+        page.evaluate(() => {
+          const a = document.activeElement;
+          return a !== null && a !== document.body && a.closest(".spark-matches li") !== null;
+        }))));
+    // And what focus lands ON is inert under Enter. It used to be the row's
+    // first live button — the 1★ add — and Enter auto-repeats, so a held or
+    // doubled press on the ✕ removed a 3★ and silently re-added it at 1★.
+    // Asserted by doing it: a second Enter changes nothing.
+    await page.keyboard.press("Enter");
+    check("and a second Enter re-adds nothing",
+      (await spareRow.locator('.seg[aria-pressed="true"]').count()) === 0 &&
+      (await spareRow.locator(".spark-drop").count()) === 0 &&
+      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1);
 
-  // ---------- the Current Sparks filter ----------
-  // A filter, not a section: rows keep their sections and positions whether
-  // held or not, and the pill in the search band narrows the browse to the
-  // member's own. Membership snapshots when it is PRESSED — so the spare
-  // re-added a moment ago is already in it, the staleness a frozen held
-  // section had — while a ✕ under it leaves its row in place rather than
-  // vanishing the list out from under the pointer.
-  await spareRow.locator('.seg[data-stars="2"]').click();
-  await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
-  await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
-  await page.locator(".spark-popout .spark-current").click();
-  check("the Current Sparks filter narrows the browse to what she holds right now",
-    (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
-    (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
-    (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === added.length + 1);
-  await page.locator(`.spark-popout .spark-drop[data-spark="${spare.kind}:${spare.key}"]`).click();
-  check("a ✕ under the filter leaves its row in place, add buttons back",
-    (await until(async () =>
-      (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
-    (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
-    (await spareRow.locator(".seg").count()) === 3 &&
-    (await spareRow.locator(".spark-drop").count()) === 0);
-  await page.locator(".spark-popout .spark-current").click();
-  check("and toggling it off restores the full browse",
-    (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "false" &&
-    (await page.locator(".spark-popout .spark-matches li").count()) > added.length + 1);
+    // ---------- the Current Sparks filter ----------
+    // A filter, not a section: rows keep their sections and positions whether
+    // held or not, and the pill in the search band narrows the browse to the
+    // member's own. Membership snapshots when it is PRESSED — so the spare
+    // re-added a moment ago is already in it, the staleness a frozen held
+    // section had — while a ✕ under it leaves its row in place rather than
+    // vanishing the list out from under the pointer.
+    await spareRow.locator('.seg[data-stars="2"]').click();
+    await until(async () => (await spareRow.locator(".spark-drop").count()) === 1);
+    await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
+    await page.locator(".spark-popout .spark-current").click();
+    check("the Current Sparks filter narrows the browse to what she holds right now",
+      (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
+      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
+      (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === added.length + 1);
+    await page.locator(`.spark-popout .spark-drop[data-spark="${spare.kind}:${spare.key}"]`).click();
+    check("a ✕ under the filter leaves its row in place, add buttons back",
+      (await until(async () =>
+        (await page.locator(".focus .proc-table tbody tr").count()) === added.length + 1)) &&
+      (await page.locator(".spark-popout .spark-matches li").count()) === added.length + 1 &&
+      (await spareRow.locator(".seg").count()) === 3 &&
+      (await spareRow.locator(".spark-drop").count()) === 0);
+    await page.locator(".spark-popout .spark-current").click();
+    check("and toggling it off restores the full browse",
+      (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "false" &&
+      (await page.locator(".spark-popout .spark-matches li").count()) > added.length + 1);
+  }
   // Favoriting is a separate control from adding, and adding never writes
   // one: a filler white typed onto every node must not reach #27's uncapped
   // watched block (DECISIONS.md #35).
@@ -1796,6 +1812,29 @@ try {
     mine?.slots?.sparks?.some((s) => s?.aptitude === "dirt" && s?.stars === 1) === true,
     JSON.stringify(mine?.slots?.sparks?.filter(Boolean)));
 
+  // A held spark the reference can't name: a dump ahead of the committed
+  // reference, or a reference regenerated without a key some document still
+  // carries. Injected through the API onto G1-1 (named[3]) — the UI only
+  // writes keys the popout offered, which is exactly why the case needs
+  // covering — and picked up by the reload below. Removed again right after
+  // it, through the UI, which is the assertion.
+  const orphanKey = Math.max(...factorRef.map((f) => f.key)) + 1;
+  await fetch(`${BASE}/api/blueprints/${mine.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: mine.name,
+      slots: {
+        ...mine.slots,
+        named: mine.slots.named.map((s, i) =>
+          i === 3
+            ? { ...s, factors: [...(s.factors ?? []), { kind: "white", key: orphanKey, stars: 2 }] }
+            : s
+        ),
+      },
+    }),
+  });
+
   // ---------- reload reopens the same blueprint ----------
   await page.reload();
   await page.waitForSelector(".designer-autosave", { timeout: 5000 });
@@ -1808,6 +1847,39 @@ try {
   check("reload reopens the blueprint that was open",
     (await pickerLabel()) === bpName &&
     (await mapChip("Sparks 3-1").getAttribute("aria-label")) === "Sparks 3-1 — 3★ Mile");
+
+  // The popout is the only remove surface (#86), so a held spark the
+  // reference can't name must still get a row — degraded to Unknown in its
+  // kind section, level pressed, ✕ live. Rows come from the DOCUMENT as well
+  // as the reference: built from the reference alone she'd be invisible in
+  // here and unremovable everywhere, while every estimate keeps counting
+  // her.
+  await selectNode("Grandparent 1-1");
+  await openTab("Sparks");
+  check("a spark the reference can't name still shows in the table",
+    await until(async () => (await rowFor(`Unknown (${orphanKey})`).count()) === 1));
+  const preDropRows = await page.locator(".focus .proc-table tbody tr").count();
+  await openChooser("G1-1");
+  const orphanRow = page.locator(
+    `.spark-popout li:has(button[data-spark="white:${orphanKey}"])`
+  );
+  check("and gets a degraded row in its kind section, held and removable",
+    (await sectionNamed("White")
+      .locator(`li:has(button[data-spark="white:${orphanKey}"])`).count()) === 1 &&
+    (await orphanRow.locator('.seg[aria-pressed="true"][data-stars="2"]').count()) === 1 &&
+    (await orphanRow.locator(".spark-drop").count()) === 1);
+  await orphanRow.locator(".spark-drop").click();
+  check("its ✕ removes it, and the row stays put like any other",
+    (await until(async () =>
+      (await page.locator(".focus .proc-table tbody tr").count()) === preDropRows - 1)) &&
+    (await orphanRow.count()) === 1 &&
+    (await orphanRow.locator(".spark-drop").count()) === 0);
+  await closeChooser();
+  await settled();
+  check("and the removal reaches the server",
+    ((await (await fetch(`${BASE}/api/blueprints`)).json())
+      .find((b) => b.name === bpName)?.slots.named[3]?.factors ?? [])
+      .every((f) => f.key !== orphanKey));
 
   // Switch away and back, so the design comes from the server rather than
   // from the page's own state.

@@ -78,6 +78,22 @@ def doc(
     }
 
 
+def out_of(body: BlueprintIn, stored: dict[str, Any] | None = None) -> BlueprintOut:
+    """What the router does on read: the stored JSONB document — the body's
+    own dump unless a test hands a mutated one — re-validated through
+    BlueprintOut."""
+    now = dt.datetime(2026, 7, 31, 12, 0, 0, tzinfo=dt.UTC)
+    return BlueprintOut.model_validate(
+        {
+            "id": 1,
+            "name": body.name,
+            "slots": body.slots.model_dump() if stored is None else stored,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+
 FULL_TRIANGLE = {
     0: slot(1001),
     1: slot(1002, spark=pink()),
@@ -422,16 +438,7 @@ def test_pulled_document_round_trips_through_blueprint_out() -> None:
             sparks={7: {**pink("dirt", 2), "card_id": 100601}},
         )
     )
-    now = dt.datetime(2026, 7, 31, 12, 0, 0, tzinfo=dt.UTC)
-    out = BlueprintOut.model_validate(
-        {
-            "id": 1,
-            "name": body.name,
-            "slots": body.slots.model_dump(),
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
+    out = out_of(body)
     assert out.slots == body.slots
     assert out.slots.sparks[0] == PinkSparkIn(aptitude="dirt", stars=2, card_id=100601)
     named3 = out.slots.named[3]
@@ -450,16 +457,7 @@ def test_v2_document_round_trips_through_blueprint_out() -> None:
     body = BlueprintIn.model_validate(
         doc(named=FULL_TRIANGLE, sparks={7: pink(), 18: pink("dirt", 2)})
     )
-    now = dt.datetime(2026, 7, 31, 12, 0, 0, tzinfo=dt.UTC)
-    out = BlueprintOut.model_validate(
-        {
-            "id": 1,
-            "name": body.name,
-            "slots": body.slots.model_dump(),
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
+    out = out_of(body)
     assert out.slots == body.slots
     named1 = out.slots.named[1]
     assert named1 is not None
@@ -483,7 +481,7 @@ def test_named_slot_carries_sparks_of_every_pickable_kind() -> None:
                     spark=pink(),
                     factors=[
                         white(),
-                        {"kind": "unique", "key": 100101, "stars": 3},
+                        {"kind": "unique", "key": 100201, "stars": 3},
                         {"kind": "race", "key": 10001, "stars": 1},
                         {"kind": "scenario", "key": 40001, "stars": 2},
                     ],
@@ -519,17 +517,7 @@ def test_factors_survive_the_document_round_trip() -> None:
     body = BlueprintIn.model_validate(
         doc(named={1: slot(1002, factors=[white(), white(20141, 1)])})
     )
-    now = dt.datetime(2026, 8, 1, 12, 0, 0, tzinfo=dt.UTC)
-    out = BlueprintOut.model_validate(
-        {
-            "id": 1,
-            "name": body.name,
-            "slots": body.slots.model_dump(),
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
-    assert out.slots == body.slots
+    assert out_of(body).slots == body.slots
 
 
 def test_duplicate_sparks_rejected() -> None:
@@ -579,6 +567,69 @@ def test_trainee_cannot_carry_non_pink_sparks_either() -> None:
         doc(named={0: slot(1001, factors=[white()])}),
         "the trainee slot can't carry a spark",
     )
+
+
+def test_foreign_green_rejected_on_a_cast_slot() -> None:
+    # A green's key IS the card_id (DECISIONS.md #36/#39) — Silence Suzuka's
+    # green on a Special Week node is a spark that member can never carry,
+    # and it was producing a proc estimate before this rule.
+    _rejects(
+        doc(named={1: slot(1002, factors=[{"kind": "unique", "key": 100101, "stars": 3}])}),
+        "own unique",
+    )
+
+
+def test_foreign_green_rejected_on_a_pulled_slot_too() -> None:
+    # The pull path copies the dump's factors verbatim, so the rule must
+    # reach lineage/roster slots — a source check slipped in front of the
+    # loop would exempt exactly the branch the client marks read-only.
+    _rejects(
+        doc(named={3: slot(1004, source="lineage", trained_chara_id=900001,
+                           position_id=10,
+                           factors=[{"kind": "unique", "key": 100101, "stars": 3}])}),
+        "own unique",
+    )
+
+
+def test_npc_variant_card_green_is_uncheckable_and_stays_legal() -> None:
+    # The two 7-digit NPC copies in cards.json have no unique factor at their
+    # own id — no green can satisfy "her own" there, and a pulled branch's
+    # sparks are locked client-side, so rejecting would leave the document
+    # permanently unsavable (DECISIONS.md #39).
+    body = BlueprintIn.model_validate(
+        doc(named={1: {"source": "catalog", "chara_id": 1001, "card_id": 9100101,
+                       "factors": [{"kind": "unique", "key": 100101, "stars": 3}]}})
+    )
+    parent1 = body.slots.named[1]
+    assert parent1 is not None
+    assert parent1.factors[0].key == 100101
+
+
+def test_green_on_a_characterless_slot_stays_legal() -> None:
+    # "Whatever carries this green" is a plan (#30, #36's uncast tier) — with
+    # no card there is nothing to check the key against.
+    body = BlueprintIn.model_validate(
+        doc(named={1: {"source": "catalog", "chara_id": None, "card_id": None,
+                       "factors": [{"kind": "unique", "key": 100101, "stars": 3}]}})
+    )
+    parent1 = body.slots.named[1]
+    assert parent1 is not None
+    assert parent1.factors[0].key == 100101
+
+
+def test_a_pre_rule_mismatched_green_still_reads() -> None:
+    # The rule is write-only (DECISIONS.md #39): BlueprintOut must keep
+    # parsing a row saved before it landed, or one document would 500 the
+    # whole blueprint list.
+    body = BlueprintIn.model_validate(doc(named={1: slot(1002)}))
+    stored = body.slots.model_dump()
+    named1 = stored["named"][1]
+    assert named1 is not None
+    named1["factors"] = [{"kind": "unique", "key": 100101, "stars": 3}]
+    out = out_of(body, stored)
+    named1_out = out.slots.named[1]
+    assert named1_out is not None
+    assert named1_out.factors[0].key == 100101
 
 
 def test_unknown_spark_key_accepted() -> None:
@@ -727,16 +778,7 @@ def test_a_deep_slot_keeps_its_source_through_the_round_trip() -> None:
     body = BlueprintIn.model_validate(
         doc(sparks={7: {"card_id": 100201, "source": "lineage", **pink("long", 2)}})
     )
-    out = BlueprintOut.model_validate(
-        {
-            "id": 1,
-            "name": body.name,
-            "slots": body.slots.model_dump(),
-            "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
-            "updated_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
-        }
-    )
-    got = out.slots.sparks[0]
+    got = out_of(body).slots.sparks[0]
     assert got is not None
     assert got.source == "lineage"
     assert got.card_id == 100201

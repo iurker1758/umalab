@@ -24,10 +24,8 @@ import type { AptitudeKey, PinkSpark, SlotFactor, SlotFactorKind } from "./api";
 // Base per-event chance by ★, before affinity. Measured (Polaris's
 // compatibility-0 study, cross-checked against uma.moe's implementation —
 // RESOURCES.md has both).
-//
-// Blue (70/80/90) is the one kind missing: stat sparks are inherited too, but
-// the document has no kind for them and their bases would dominate every table.
 export const SPARK_BASE = {
+  blue: [70, 80, 90],
   pink: [1, 3, 5],
   white: [3, 6, 9],
   unique: [5, 10, 15],
@@ -40,6 +38,7 @@ export type SparkType = keyof typeof SPARK_BASE;
 // "Green" is what players call a unique-skill spark; `unique` is the
 // reference's word, kept in the document because it is the game's own.
 export const SPARK_TYPE_LABELS: Record<SparkType, string> = {
+  blue: "Blue",
   pink: "Pink",
   white: "White",
   unique: "Green",
@@ -180,17 +179,14 @@ export function combineOutlooks(
 // the rows below it can include a high-chance white.
 export type SparkSort = "chance" | "kind";
 
-// Pink → Green → Race → White → Scenario, the game's own grouping. Not
+// Blue → Pink → Green → Race → White → Scenario, the game's own grouping. Not
 // alphabetical and not the reference's (kind, name), which buries whites
 // behind races.
-//
-// Numbered from 1, leaving 0 for blue: stat sparks aren't a kind the document
-// holds, but when they are added they group ABOVE the pink. Adding `blue` to
-// SPARK_BASE won't compile until it is placed here, which is the point.
 //
 // The chooser's browse sections use this too, so the order you pick sparks in
 // and the order the tables group them in are one order, held once.
 export const SPARK_TYPE_ORDER: Record<SparkType, number> = {
+  blue: 0,
   pink: 1,
   unique: 2,
   race: 3,

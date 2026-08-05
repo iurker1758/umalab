@@ -561,6 +561,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-none { display: block; text-align: right; padding-right: 0.35rem; opacity: 0.55; }
 /* Each spark's own colour, dimmed enough that the number stays legible where
    the fill runs under it. */
+.proc-fill-blue { background: #2b4d76; }
 .proc-fill-pink { background: #7d2f4d; }
 .proc-fill-white { background: #46505d; }
 .proc-fill-unique { background: #2c5c41; }
@@ -569,6 +570,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* The kind, carried by colour rather than a word: the spark's name takes it
    and the bar beside it is filled to match, so naming it as well said the
    same thing a third time. Colours follow the game's own spark colours. */
+.proc-row-blue .proc-name { color: #4da3ff; }
 .proc-row-pink .proc-name { color: #ff7fb8; }
 .proc-row-white .proc-name { color: #d7dee8; }
 .proc-row-unique .proc-name { color: #7fdba2; }
@@ -579,6 +581,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    kinds rather than reading your own — several race and scenario sparks share
    wording with skills. */
 .proc-kind { display: inline-block; min-width: 3.3em; margin-right: 0.3rem; padding: 0 0.24rem; border-radius: 3px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; text-align: center; vertical-align: 0.08em; }
+.proc-kind-blue { background: #1e3a5f; color: #4da3ff; }
 .proc-kind-pink { background: #40202f; color: #ff7fb8; }
 .proc-kind-white { background: #262d36; color: #d7dee8; }
 .proc-kind-unique { background: #1e3527; color: #7fdba2; }
@@ -620,7 +623,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .proc-more { width: 100%; margin-top: 0.45rem; padding: 0.32rem; font-size: 0.78rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #223040; border-radius: 5px; opacity: 0.8; cursor: pointer; }
 .proc-more:hover { opacity: 1; background: #1d2b3a; }
 
-/* Hand entry: one button on the panel, and a popout that browses all 432
+/* Hand entry: one button on the panel, and a popout that browses all 437
    factors with your favorites at the top (DECISIONS.md #35, reversing #30's
    "an add-one affordance, not a browser"). The held list that used to sit
    here is gone: the sparks are in the table, with their levels (#34). */
@@ -630,7 +633,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    sit beside it. */
 .spark-open { width: 100%; padding: 0.36rem; font-size: 0.82rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; cursor: pointer; opacity: 0.85; }
 .spark-open:hover { opacity: 1; background: #1d2b3a; }
-/* Sections inside the popout: Favorites, then the four kinds in the order
+/* Sections inside the popout: Favorites, then the five kinds in the order
    the spark tables group by. A heading rather than a tab strip — the list
    scrolls, so a reader passes them all, and five tabs would hide four of
    them. */
@@ -668,6 +671,9 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* Favoriting, and it is NOT what adding does — see SparkChooser. Sized for a
    thumb like the add buttons beside it. */
 .spark-fav { flex: none; width: 26px; padding: 0.3rem 0; font-size: 0.85rem; line-height: 1; color: inherit; background: transparent; border: 0; opacity: 0.35; cursor: pointer; }
+/* Blue and green rows take no ★; this holds its 26px so the kind tags stay
+   one column across sections. */
+.spark-fav-gap { flex: none; width: 26px; }
 .spark-fav:hover:not(:disabled) { opacity: 0.8; }
 .spark-fav.active { color: #ffd257; opacity: 1; }
 .spark-fav:disabled { opacity: 0.15; cursor: default; }
@@ -726,7 +732,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    rather than being capped — the "N more — keep typing to narrow" line the
    inline search needed is gone with the cap that produced it. */
 .spark-popout { padding-top: 0; }
-/* The box stays reachable while you scroll 432 rows past it, which is the
+/* The box stays reachable while you scroll 437 rows past it, which is the
    difference between a browser and a list you have to leave to re-query. The
    band is a wrapper rather than the input itself: full-bleeding the input
    would stretch its own border and radius across the popout. */

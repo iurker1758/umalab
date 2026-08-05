@@ -305,7 +305,7 @@ async def test_an_unreadable_entry_fails_the_read_rather_than_vanishing(
             text(
                 "UPDATE spark_lists SET sparks = CAST(:s AS jsonb) WHERE id = :i"
             ).bindparams(
-                s='[{"kind": "white", "key": 10}, {"kind": "blue", "key": 70}]',
+                s='[{"kind": "white", "key": 10}, {"kind": "pink", "key": 70}]',
                 i=first,
             )
         )
@@ -337,10 +337,21 @@ async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
 
 
 async def test_an_unknown_kind_is_refused(client: Any, users: list[User]):
-    """`kind` decides the proc base rate, so unlike `key` it is closed."""
+    """`kind` decides the proc base rate, so unlike `key` it is closed. The
+    pink stays outside it — it has its own editor, never a list."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    assert (await patch(client, a, list_id, sparks=[spark("pink", 1)])).status_code == 422
+
+
+async def test_blues_and_greens_are_not_listable(client: Any, users: list[User]):
+    """Both are slot kinds a list still refuses: a list is a hunt, and every
+    parent carries her blue and her own green regardless (DECISIONS.md #40)."""
     a, _ = users
     list_id = await a_list(client, a)
     assert (await patch(client, a, list_id, sparks=[spark("blue", 1)])).status_code == 422
+    greens = [spark("unique", 100101)]
+    assert (await patch(client, a, list_id, sparks=greens)).status_code == 422
 
 
 async def test_a_mis_keyed_spark_entry_is_refused(client: Any, users: list[User]):

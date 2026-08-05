@@ -285,11 +285,11 @@ class PinkSparkIn(BaseModel):
         return self
 
 
-# The inheritable spark kinds a designed node can carry, beside its pink.
-# Blue is absent on purpose: stat sparks are inherited too, but nothing in the
-# designer reads them yet and their 70/80/90 bases would dominate every proc
-# table. Adding one is a line here and a line in the frontend's rate map.
-SlotFactorKind = Literal["white", "unique", "race", "scenario"]
+# The inheritable spark kinds a designed node can carry, beside its pink
+# (DECISIONS.md #40). Adding a kind is a line here and a line in the
+# frontend's rate map — and a deliberate decision about ListSparkKind below,
+# which does NOT follow this set.
+SlotFactorKind = Literal["blue", "white", "unique", "race", "scenario"]
 
 
 class SlotFactorIn(BaseModel):
@@ -357,7 +357,7 @@ class BlueprintSlotIn(BaseModel):
     # aptitudes at all. All ten keys or none, since the client reads the map as
     # a whole and refuses a partial one.
     aptitudes: dict[AptitudeKey, AptitudeLetter] | None = None
-    # The member's other sparks — white, unique (green), race, scenario.
+    # The member's other sparks — blue, white, unique (green), race, scenario.
     # Optional and defaulted, which is the one way this document is allowed to
     # grow (DECISIONS.md #28). Unlike `spark`, these feed only the proc
     # estimates: inherited or not, never projected onto career-start letters.
@@ -406,6 +406,12 @@ class BlueprintSlotIn(BaseModel):
         ids = [(f.kind, f.key) for f in self.factors]
         if len(set(ids)) != len(ids):
             raise ValueError("a slot can't carry the same spark twice")
+        # One blue per member — a uma carries exactly one of the five stats.
+        # Safe on READ, unlike the green rule (DECISIONS.md #39): this rule
+        # lands in the same change that admits the kind, so no stored row can
+        # predate it.
+        if sum(1 for f in self.factors if f.kind == "blue") > 1:
+            raise ValueError("a member carries one blue spark")
         return self
 
 
@@ -553,6 +559,16 @@ SparkListName = Annotated[
 MAX_LISTS_PER_OWNER = 50
 
 
+# The kinds a list may hold: what a hunt can be FOR. Narrower than
+# SlotFactorKind — blues and greens are excluded because every parent carries
+# her blue and her own green regardless, so a list naming one selects nothing.
+# Strict on read as well as write, which the loud-read rule below makes safe
+# only because migration a7c4e2b91f55 deletes any entry outside this set at
+# upgrade — the strict read can never meet a row that predates the rule.
+# Widening this later is free; narrowing it again needs another migration.
+ListSparkKind = Literal["white", "race", "scenario"]
+
+
 class SparkRef(BaseModel):
     """One membership entry: the identity every spark surface uses.
 
@@ -567,7 +583,7 @@ class SparkRef(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    kind: SlotFactorKind
+    kind: ListSparkKind
     # Bounded to int4 like `SlotFactorIn.key`, not because JSONB minds but
     # because an oversized key is unrepresentable everywhere else the app puts
     # a factor id — accepting one here stores something nothing downstream can

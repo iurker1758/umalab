@@ -810,8 +810,8 @@ try {
   // already answer.
   const procPct = (type, stars, aff) => {
     const base = {
-      pink: [1, 3, 5], white: [3, 6, 9], unique: [5, 10, 15],
-      race: [1, 2, 3], scenario: [3, 6, 9],
+      blue: [70, 80, 90], pink: [1, 3, 5], white: [3, 6, 9],
+      unique: [5, 10, 15], race: [1, 2, 3], scenario: [3, 6, 9],
     }[type][stars - 1];
     const p = Math.min(base * (1 + aff / 100), 100) / 100;
     return 1 - (1 - p) ** 2;
@@ -833,6 +833,15 @@ try {
   await openTab("Sparks");
   const rowFor = (name) => page.locator(".focus .proc-table tbody tr", { hasText: name });
   const chanceOf = (name) => rowFor(name).locator(".proc-chance").textContent();
+  // By id for anything the hand-entry loop added: `rowFor` is a substring
+  // match, and a blue's bare stat name ("Speed") can sit inside a green or
+  // white's name on a future catalog, which strict mode turns into an abort
+  // rather than a failed check. NOT named rowById — that is the API helper
+  // the persistence section resolves blueprints with, and shadowing it here
+  // hands that section a Locator.
+  const procRow = (r) =>
+    page.locator(`.focus .proc-table tbody tr[data-spark="${r.kind}:${r.key}"]`);
+  const procChance = (r) => procRow(r).locator(".proc-chance").textContent();
   const g11Pink = procPct("pink", 3, expectedAff.g11_affinity);
   check(`g11's 3★ pink at ${expectedAff.g11_affinity} affinity estimates ${pct(g11Pink)}`,
     (await page.locator(".focus .proc-table tbody tr").allTextContents()).length === 1 &&
@@ -886,7 +895,7 @@ try {
     await closeChooser();
   };
   const added = [];
-  for (const kind of ["white", "unique", "race", "scenario"]) {
+  for (const kind of ["white", "unique", "race", "scenario", "blue"]) {
     // The green is HERS, not an arbitrary one: a unique's key is a card_id,
     // so the chooser offers this node exactly one and the other 136 are
     // sparks she can never carry (DECISIONS.md #36).
@@ -900,16 +909,39 @@ try {
   check("a cast node is offered only her own green, which she now holds",
     greensOffered === 1 &&
     (await page.locator(`.spark-popout li:has(.proc-kind-unique) .spark-held`).count()) === 1);
+  // Blue browses in the game's stat order — its keys, not the alphabet.
+  check("the Blue section lists the stats in game order",
+    (await page.locator(".spark-popout li:has(.proc-kind-blue) .spark-hit").allTextContents())
+      .map((t) => t.replace(/^\s*Blue\s*/, "").trim()).join(",") ===
+      "Speed,Stamina,Power,Guts,Wit");
+  // A list is a hunt, and neither blues nor greens are hunted — their rows
+  // carry no ★ at all, while the huntable kinds keep theirs.
+  check("no ★ on blue or green rows; whites keep theirs",
+    (await page.locator(".spark-popout li:has(.proc-kind-blue) .spark-fav").count()) === 0 &&
+    (await page.locator(".spark-popout li:has(.proc-kind-unique) .spark-fav").count()) === 0 &&
+    (await page.locator(".spark-popout li:has(.proc-kind-white) .spark-fav").count()) > 0);
   await closeChooser();
+  // A blue REPLACES the blue she holds: a uma carries one of the five stats,
+  // and the server rejects a member with two.
+  const wit = factorRef.find((f) => f.kind === "blue" && f.name === "Wit");
+  await addSpark("G1-1", wit, 2);
+  check("adding a second blue replaces the first",
+    await until(async () =>
+      (await page.locator('.focus .proc-row[data-spark^="blue:"]').count()) === 1 &&
+      (await page.locator(`.focus .proc-row[data-spark="blue:${wit.key}"]`).count()) === 1));
+  // Put the loop's blue back, so every assertion below sees the list it built.
+  await addSpark("G1-1", added.find((r) => r.kind === "blue"), 1);
   // Every kind rolls on its OWN base — white 3/6/9, green 5/10/15, race
-  // 1/2/3, scenario 3/6/9 — so a 1★ of each at one affinity must produce
-  // three distinct numbers, not one repeated.
+  // 1/2/3, scenario 3/6/9, blue 70/80/90 — so a 1★ of each at one affinity
+  // must produce distinct numbers, not one repeated. Blue's base dwarfs the
+  // rest, so its row sits at or near the event cap whatever the cast's
+  // affinity turns out to be.
   const expected1Star = Object.fromEntries(
     added.map((r) => [r.kind, pct(procPct(r.kind, 1, expectedAff.g11_affinity))])
   );
   check(`each kind rolls on its own base (${added.map((r) => `${r.kind} ${expected1Star[r.kind]}`).join(", ")})`,
     await until(async () =>
-      (await Promise.all(added.map((r) => chanceOf(r.name)))).join(",") ===
+      (await Promise.all(added.map((r) => procChance(r)))).join(",") ===
         added.map((r) => expected1Star[r.kind]).join(",")));
   check("green outruns white, and race trails both, at the same star and affinity",
     Number(expected1Star.unique.replace("%", "")) >
@@ -918,8 +950,11 @@ try {
       Number(expected1Star.race.replace("%", "")));
   check("each is named from the reference and coloured by its kind",
     (await Promise.all(
-      added.map(async (r) => (await rowFor(r.name).getAttribute("class")))
-    )).every((cls, i) => cls?.includes(`proc-row-${added[i].kind}`)));
+      added.map(async (r) => ({
+        cls: await procRow(r).getAttribute("class"),
+        named: (await procRow(r).locator(".proc-name").textContent())?.includes(r.name),
+      }))
+    )).every((row, i) => row.named && row.cls?.includes(`proc-row-${added[i].kind}`)));
   // The kind is colour and bar fill only — spelling it out cost the names
   // width they need, and the tables never repeat it as a word.
   check("no spelled-out kind in the spark column",
@@ -928,7 +963,8 @@ try {
   // purpose. At one member's single affinity every chance is
   // min(base × (1 + aff/100), 100), a pure function of (kind, ★), so the
   // ranking is a tie for most of its length and the order inside a tie says
-  // nothing. Pink → Green → Race → White → Scenario, the game's own grouping.
+  // nothing. Blue → Pink → Green → Race → White → Scenario, the game's own
+  // grouping.
   const rowKinds = () =>
     page.locator(".focus .proc-table tbody tr").evaluateAll((rows) =>
       rows.map((r) => [...r.classList].find((c) => c.startsWith("proc-row-"))?.slice(9))
@@ -955,12 +991,12 @@ try {
       return on === undefined ? null : `${on.textContent.trim()}:${on.getAttribute("aria-sort")}`;
     });
   check("an ancestor's table groups by kind by default",
-    (await rowKinds()).join(",") === "pink,unique,race,white,scenario" &&
+    (await rowKinds()).join(",") === "blue,pink,unique,race,white,scenario" &&
     (await sortedBy()) === "Spark:other");
   await setSort("chance");
   check("and ranks by chance when its own header is clicked",
     (await rankedDown()) &&
-    (await rowKinds()).join(",") !== "pink,unique,race,white,scenario" &&
+    (await rowKinds()).join(",") !== "blue,pink,unique,race,white,scenario" &&
     (await sortedBy()) === "Est. Per Run:descending");
   await setSort("kind");
   // The headers carry the sort, so the tab keeps a single control on it.
@@ -1086,16 +1122,18 @@ try {
   //
   // Deliberately NOT a spark you already have: the pill is a toggle, so
   // running this against an existing favorite would assert on the wrong
-  // direction. 432 factors, so there is always one.
+  // direction. 437 factors, so there is always one.
   //
-  // And never a GREEN: this runs on G1-1, which is cast, and a cast node
-  // offers only its own card's unique — so a green target would simply not be
-  // in the popout and the click below would hang for 30s and abort the run
-  // before the cleanup that keeps this suite baseline-relative. Reachable
-  // only on a database where every race and scenario spark is already
-  // favorited, which is why it isn't what fails today.
+  // And never a BLUE or a GREEN: neither kind's rows carry a ★ at all, so
+  // the click below would hang for 30s on a locator with nothing to match
+  // and abort the run before the cleanup that keeps this suite
+  // baseline-relative. (A green would miss for a second reason: this runs on
+  // G1-1, which is cast, and a cast node offers only her own card's unique.)
   const favTarget = factorRef.find(
-    (f) => f.kind !== "unique" && !baselineFavorites.has(`${f.kind}:${f.key}`)
+    (f) =>
+      f.kind !== "unique" &&
+      f.kind !== "blue" &&
+      !baselineFavorites.has(`${f.kind}:${f.key}`)
   );
   const favSel = `${favTarget.kind}:${favTarget.key}`;
   await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(favTarget.name);
@@ -1255,7 +1293,7 @@ try {
         rows.map((r) => [...r.classList].find((c) => c.startsWith("proc-row-")))
       ))
     )].sort().join(",") ===
-      "proc-row-pink,proc-row-race,proc-row-scenario,proc-row-unique,proc-row-white");
+      "proc-row-blue,proc-row-pink,proc-row-race,proc-row-scenario,proc-row-unique,proc-row-white");
   // Which members carry it is deliberately NOT here: this table answers what
   // the trainee is likely to come out with, and the breakdown is one click
   // away on each member's own tab.
@@ -1282,22 +1320,28 @@ try {
     (await page.locator(".focus .proc-table thead th").allTextContents()).join(",") ===
       "Spark,Est. Per Run");
   // The number rides on a bar filled in the spark's own colour, and the bar
-  // is the chance: 0–100 absolutely, so an unlikely spark reads as a sliver
-  // rather than filling because nothing beat it.
+  // is the chance. With the blue holding this table's maximum at or near
+  // 100%, absolute and table-relative scaling compute almost identical
+  // widths HERE — the discriminating check lives on Parent 2's whites-only
+  // table below, whose maximum is nowhere near full. This one pins the
+  // formula on the two ends of the range.
   const topRow = page.locator(".focus .proc-table tbody tr").first();
   check("each chance is drawn as a bar in its spark's colour",
     (await page.locator(".focus .proc-table .proc-bar").count()) ===
       (await page.locator(".focus .proc-table tbody tr").count()) &&
-    (await topRow.locator(".proc-fill").getAttribute("class"))?.includes("proc-fill-pink"));
-  check("the bar's width is the chance itself, not a rank",
-    await topRow.locator(".proc-bar").evaluate((el) => {
+    (await topRow.locator(".proc-fill").getAttribute("class"))?.includes("proc-fill-blue"));
+  const ridesItsOwnPct = (row) =>
+    row.locator(".proc-bar").evaluate((el) => {
       const pct = Number(el.querySelector(".proc-pct").textContent.replace("%", ""));
       const bar = el.getBoundingClientRect().width;
       const fill = el.querySelector(".proc-fill").getBoundingClientRect().width;
-      // The top row is the highest chance; a table-relative scale would make
-      // it full. Within a pixel of its own percentage instead.
-      return Math.abs(fill - (bar * pct) / 100) < 1 && fill < bar * 0.9;
-    }));
+      return Math.abs(fill - (bar * pct) / 100) < 1.5;
+    });
+  check("the blue and the pink each ride their own percentage",
+    (await ridesItsOwnPct(topRow)) &&
+    (await ridesItsOwnPct(
+      page.locator('.focus .proc-table tbody tr[data-spark="pink:mile"]')
+    )));
   // The proc table must not answer to the link table's selectors: those
   // checks assert the run decomposes into exactly seven links, and a second
   // table sharing their classes would silently break that claim.
@@ -1433,7 +1477,7 @@ try {
     (await clipState()).clipped &&
     (await page.locator(".focus .proc-more").textContent()) === `Show All ${allRows}` &&
     (await page.locator(".focus .proc-table tbody tr").evaluateAll((rows) => {
-      const order = ["pink", "unique", "race", "white", "scenario"];
+      const order = ["blue", "pink", "unique", "race", "white", "scenario"];
       const ks = rows.map((r) =>
         order.indexOf([...r.classList].find((c) => c.startsWith("proc-row-")).slice(9))
       );
@@ -1461,6 +1505,22 @@ try {
     (await page.locator(".focus .proc-row").count()) === filler.length &&
     (await page.locator(".focus .proc-clip").count()) === 0 &&
     (await page.locator(".focus .proc-more").count()) === 0);
+  // The absolute-scale proof, on the one table fit to give it: every row here
+  // is a 1★ white miles from 100%, so a table-relative scale would draw the
+  // leader full where the absolute one draws its own percentage. The
+  // trainee's table can't discriminate — its blue holds the maximum at or
+  // near 100%, where the two scales all but agree.
+  check("the bar's width is the chance itself, not a rank",
+    await page
+      .locator(".focus .proc-table tbody tr")
+      .first()
+      .locator(".proc-bar")
+      .evaluate((el) => {
+        const pct = Number(el.querySelector(".proc-pct").textContent.replace("%", ""));
+        const bar = el.getBoundingClientRect().width;
+        const fill = el.querySelector(".proc-fill").getBoundingClientRect().width;
+        return pct > 0 && Math.abs(fill - (bar * pct) / 100) < 1 && fill < bar * 0.9;
+      }));
   await selectNode("Trainee");
   await openTab("Details");
   const stripMile = mapChip("Trainee").locator('.apt-cell[title^="Mile:"] b');

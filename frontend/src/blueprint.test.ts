@@ -13,6 +13,7 @@ import {
   emptyDesign,
   factorsOf,
   factorsSurviving,
+  factorsWith,
   fromApi,
   genOf,
   halfOf,
@@ -192,7 +193,7 @@ describe("pinkOf", () => {
 });
 
 describe("factorsOf", () => {
-  it("keeps the four non-pink kinds and drops everything else", () => {
+  it("keeps the five non-pink kinds and drops everything else", () => {
     const out = factorsOf([
       factor({ kind: "white", key: 700, star: 1 }),
       factor({ kind: "unique", key: 100_101, star: 2 }),
@@ -202,7 +203,41 @@ describe("factorsOf", () => {
       factor({ kind: "pink", key: 32, star: 3 }),
       factor({ kind: "other", key: 9, star: 3 }),
     ]);
-    expect(out.map((f) => f.kind).sort()).toEqual(["race", "scenario", "unique", "white"]);
+    expect(out.map((f) => f.kind).sort()).toEqual([
+      "blue",
+      "race",
+      "scenario",
+      "unique",
+      "white",
+    ]);
+  });
+
+  it("keeps one blue only, the strongest — a uma carries exactly one", () => {
+    const out = factorsOf([
+      factor({ kind: "blue", key: 1, star: 2 }),
+      factor({ kind: "blue", key: 5, star: 3 }),
+    ]);
+    expect(out).toEqual([{ kind: "blue", key: 5, stars: 3 }]);
+  });
+});
+
+describe("factorsWith", () => {
+  const held = [
+    { kind: "blue" as const, key: 1, stars: 1 },
+    { kind: "white" as const, key: 700, stars: 2 },
+  ];
+
+  it("appends any kind but blue", () => {
+    const out = factorsWith(held, { kind: "race", key: 5, stars: 3 });
+    expect(out).toEqual([...held, { kind: "race", key: 5, stars: 3 }]);
+  });
+
+  it("replaces the held blue — a uma carries exactly one", () => {
+    const out = factorsWith(held, { kind: "blue", key: 5, stars: 3 });
+    expect(out).toEqual([
+      { kind: "white", key: 700, stars: 2 },
+      { kind: "blue", key: 5, stars: 3 },
+    ]);
   });
 
   it("dedupes on kind AND key, keeping the strongest", () => {
@@ -735,7 +770,7 @@ describe("fromApi", () => {
     ],
     [
       "a malformed spark list",
-      { source: "catalog", chara_id: 1, card_id: 1, factors: [{ kind: "blue", key: 1, stars: 1 }] },
+      { source: "catalog", chara_id: 1, card_id: 1, factors: [{ kind: "pink", key: 32, stars: 1 }] },
     ],
     [
       "the same spark twice",
@@ -746,6 +781,18 @@ describe("fromApi", () => {
         factors: [
           { kind: "white", key: 7, stars: 1 },
           { kind: "white", key: 7, stars: 3 },
+        ],
+      },
+    ],
+    [
+      "a second blue",
+      {
+        source: "catalog",
+        chara_id: 1,
+        card_id: 1,
+        factors: [
+          { kind: "blue", key: 1, stars: 3 },
+          { kind: "blue", key: 5, stars: 1 },
         ],
       },
     ],

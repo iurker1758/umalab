@@ -1533,11 +1533,11 @@ Keep adding entries as the build evolves. This file is the interview.
   whole list, so a reference gap must not become a design nobody can
   open.
 
-  **Blue is deliberately not a kind.** Stat sparks are inherited too,
-  but nothing in the designer reads them, and at 70/80/90 they would sit
-  at the top of every table and never move — the ranking would stop
-  telling you anything. Adding one is a line in `SlotFactorKind` and a
-  row in `SPARK_BASE`.
+  **Blue was deliberately not a kind** — reversed by #40 after #34
+  moved the ancestor tables to kind grouping, which is the ranking
+  objection's own premise gone. The original reasoning: stat sparks are
+  inherited too, but at 70/80/90 they would sit at the top of every
+  table and never move — the ranking would stop telling you anything.
 
   **A Sparks tab on each of the seven named panels** (labelled "Procs"
   until #34 renamed it; the tab id, `procs.ts` and the `.proc-*` styles
@@ -1651,7 +1651,8 @@ Keep adding entries as the build evolves. This file is the interview.
 
   **The rates, all measured** (Polaris, cross-checked against uma.moe —
   RESOURCES.md): pink 1/3/5, white 3/6/9, green 5/10/15, race 1/2/3,
-  scenario 3/6/9 by ★, with blue 70/80/90 recorded for whoever adds it.
+  scenario 3/6/9 by ★, with blue 70/80/90 recorded for whoever adds it
+  (#40 did).
 
   **Every number is per RUN, and the header says so** — "Est. per run".
   The per-event chance is the model's intermediate value and never
@@ -3150,3 +3151,60 @@ shape that was being refined in the wrong direction.
   exemption tightens to it. The game shipping a regular card whose
   unique factor key is not its own card id — that breaks the identity
   the rule is built on, not just this check.
+
+## 40. Blue joins the document, hand-enterable like the rest
+
+- **Requirements:** issue #36 — a pulled node's blue sparks recorded
+  and shown on its Sparks tab, reversing #30's exclusion; the ranking
+  objection behind that exclusion ruled out in the issue itself, since
+  #34 grouped the ancestor tables by kind. Additive document growth
+  only (#28's invariant): absent must read as none.
+- **Choice:** `blue` in `SlotFactorKind` (`app/schemas.py`) and
+  `SLOT_FACTOR_KINDS` (`api.ts`), base 70/80/90 in `SPARK_BASE`, and
+  slot 0 in `SPARK_TYPE_ORDER` — the position #30 reserved, above the
+  pink. Everything else follows from where blue now flows: `factorsOf`
+  keeps it on a pull, `/api/factors` serves the reference's five type-0
+  rows so stored blues resolve to names instead of `Unknown (1)`, and
+  the chooser's browse sections derive from `SLOT_FACTOR_KINDS`, so
+  blue is hand-enterable — Jason's call, over the issue's pull-only
+  lean: every real parent carries exactly one blue, so a hand-built
+  node's roll-up under-reports without it. Three rules ride along.
+  **Blue browses in the game's stat order** (Speed/Stamina/Power/Guts/
+  Wit — its keys 1–5, the order `BLUE_ORDER` already sorts the roster
+  by), the one kind not alphabetized. **One blue per member**: a uma
+  carries exactly one stat spark, the slot model rejects a second, and
+  the chooser's add replaces the held blue — strict on READ, unlike
+  #39's green rule, because the rule lands in the same change that
+  admits the kind, so no stored row can predate it. **No ★ on blue or
+  green rows**: a list is a hunt and neither kind is hunted — every
+  parent carries her blue and her own green regardless — so lists
+  narrow to `ListSparkKind` (white/race/scenario), tightening #37's
+  `SparkRef`; strict on read too, which a data migration makes safe: it
+  deletes any entry outside the set at upgrade, so the strict read can
+  never meet a row that predates the rule (a survey found zero, but a
+  survey is one database at one instant). A 1★ blue is over the
+  per-event cap at any real affinity, so its row reads ~100% — true,
+  and the cap finally visible on screen. The trainee's height clip
+  (#34) needs no blue policy: it folds whatever order the sort
+  produced. Two rollout facts, accepted: a pulled branch saved before
+  this carries no blue until it is cleared and re-pulled — the same
+  rollout #30's factors had, and the document's absent-reads-as-none
+  makes it silent; and a client build predating the kind refuses a
+  blue-carrying document until its service worker updates — unreachable
+  while hosting is local-only, worth remembering at deployment.
+- **Alternatives rejected:** pull-only entry (above). Serving blue
+  names client-side from a constant instead of `/api/factors` — splits
+  the name pipeline #30 built on "one regen keeps both paths in step"
+  for five rows that would never drift anyway. A server rule rejecting
+  blue on catalog slots, mirroring #39's green rule — the green rule
+  rejects a factual impossibility; a typed blue is at worst optimistic,
+  and reads must stay permissive regardless. A write-only list rule for
+  blues and greens — #39's shape exists for data that might already be
+  stored, and the survey shows there is none.
+- **What would change my mind:** the trainee's chance-ranked roll-up
+  drowning in near-certain blue rows across real designs — that argues
+  for a display fold of the blues into one row, not for re-excluding
+  the kind. A Global retune of the 70/80/90 bases — constants, so they
+  move without touching the shape. A real use for pinning a blue or a
+  green in a list — widening `ListSparkKind` back is free; narrowing
+  it again would need another survey.

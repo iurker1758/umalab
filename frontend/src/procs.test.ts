@@ -18,6 +18,7 @@ import type { SlotFactor } from "./api";
 // silent edit to SPARK_BASE fails here rather than quietly re-rating every
 // design in the app (DECISIONS.md #30).
 const MEASURED: Record<string, [number, number, number]> = {
+  blue: [70, 80, 90],
   pink: [1, 3, 5],
   white: [3, 6, 9],
   unique: [5, 10, 15],
@@ -38,15 +39,15 @@ describe("SPARK_BASE", () => {
     expect(SPARK_BASE).toEqual(MEASURED);
   });
 
-  it("groups pink → green → race → white → scenario, leaving 0 for blue", () => {
+  it("groups blue → pink → green → race → white → scenario", () => {
     expect(Object.entries(SPARK_TYPE_ORDER).sort((a, b) => a[1] - b[1]).map(([k]) => k)).toEqual([
+      "blue",
       "pink",
       "unique",
       "race",
       "white",
       "scenario",
     ]);
-    expect(Math.min(...Object.values(SPARK_TYPE_ORDER))).toBe(1);
   });
 });
 
@@ -62,6 +63,8 @@ describe("eventChance", () => {
     expect(eventChance("white", 3, 1000)).toBeCloseTo(0.99, 10);
     expect(eventChance("white", 3, 1100)).toBe(1);
     expect(eventChance("white", 3, 10_000)).toBe(1);
+    // A 3★ blue is over the cap at affinities every real tree reaches.
+    expect(eventChance("blue", 3, 12)).toBe(1);
   });
 
   it("is zero for a star level the scale has no rate for", () => {
@@ -72,7 +75,7 @@ describe("eventChance", () => {
 
 describe("runChance", () => {
   it("is 1 − (1−p)² over the two events that vary with compatibility", () => {
-    for (const type of ["pink", "white", "unique", "race", "scenario"] as const) {
+    for (const type of ["blue", "pink", "white", "unique", "race", "scenario"] as const) {
       for (const stars of [1, 2, 3]) {
         for (const aff of [0, 37, 150, 300]) {
           expect(runChance(type, stars, aff)).toBeCloseTo(expected(type, stars, aff), 10);

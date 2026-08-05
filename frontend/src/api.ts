@@ -100,10 +100,8 @@ export interface PinkSpark {
   stars: number;
 }
 
-// The non-pink spark kinds a designed node can carry. Blue is absent on
-// purpose — stat sparks are inherited too, but nothing reads them yet and
-// their 70/80/90 bases would dominate every proc table.
-export const SLOT_FACTOR_KINDS = ["white", "unique", "race", "scenario"] as const;
+// The non-pink spark kinds a designed node can carry (DECISIONS.md #40).
+export const SLOT_FACTOR_KINDS = ["blue", "white", "unique", "race", "scenario"] as const;
 export type SlotFactorKind = (typeof SLOT_FACTOR_KINDS)[number];
 
 // One non-pink spark on a designed node, keyed by the game's factor key rather
@@ -231,11 +229,20 @@ export interface Blueprint extends BlueprintIn {
 
 // ---------- spark lists ----------
 
+// What a list may hold: what a hunt can be FOR. Narrower than the slot kinds
+// — every parent carries her blue and her own green regardless, so a list
+// naming one selects nothing. Mirrors the server's ListSparkKind, and spelled
+// out rather than derived from SLOT_FACTOR_KINDS: an Exclude<> would silently
+// widen when a slot kind is added, offering a ★ the server then refuses —
+// a new kind stays unlistable until both ends admit it.
+export const LIST_SPARK_KINDS = ["white", "race", "scenario"] as const;
+export type ListSparkKind = (typeof LIST_SPARK_KINDS)[number];
+
 // One membership entry. No `stars`: a list records WHICH sparks you want, not
 // what level you last typed — the level belongs to the slot document
 // (DECISIONS.md #37).
 export interface SparkRef {
-  kind: SlotFactorKind;
+  kind: ListSparkKind;
   key: number;
 }
 

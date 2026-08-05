@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncGenerator
+from contextvars import ContextVar
 
 import httpx
 import pytest
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from starlette.types import Receive, Scope, Send
 
 from app.auth import current_user
 from app.config import settings
@@ -128,6 +130,12 @@ async def users(sessions: async_sessionmaker[AsyncSession]) -> list[User]:
         return rows
 
 
+# Set by each client's ASGI shim for the span of one request. Deliberately no
+# default: a request that reaches the app without a shim must fail (see
+# `request_user` below), not run as whoever was bound last.
+_request_user: ContextVar[User] = ContextVar("_request_user")
+
+
 @pytest.fixture
 def client(sessions: async_sessionmaker[AsyncSession], users: list[User]):
     """A factory: `client(user)` makes a client that authenticates as `user`.
@@ -135,6 +143,16 @@ def client(sessions: async_sessionmaker[AsyncSession], users: list[User]):
     `current_user` itself is overridden rather than driven with a token —
     what it produces from a request is test_auth.py's subject, and what the
     routes do with the result is these modules'.
+
+    Identity travels with the client, not the process: each client wraps the
+    app in a shim that binds its user into a context variable around every
+    request, and the one override reads that. The app carries a single
+    `dependency_overrides` dict, so anything written there is last-writer-
+    wins across every open client — a cross-user test holding two clients at
+    once would compare a user against herself (issue #53). A separate
+    FastAPI instance per user was the other candidate; rejected because the
+    routers close over module singletons anyway, so a second app costs
+    re-running setup without isolating anything more than the override dict.
     """
     async def override_session() -> AsyncGenerator[AsyncSession, None]:
         async with sessions() as session:
@@ -142,10 +160,31 @@ def client(sessions: async_sessionmaker[AsyncSession], users: list[User]):
 
     app.dependency_overrides[get_session] = override_session
 
+    # `async def`, so the ContextVar is read on the event loop where the shim
+    # set it — FastAPI dispatches a sync override to a worker thread, where it
+    # resolves only because anyio copies the caller's context. (Nor can it be
+    # `_request_user.get` itself: FastAPI reads the override's signature, and
+    # the builtin's is unparseable by `inspect`.)
+    async def request_user() -> User:
+        try:
+            return _request_user.get()
+        except LookupError as e:
+            raise RuntimeError(
+                "request reached the app without going through client(user)"
+            ) from e
+
+    app.dependency_overrides[current_user] = request_user
+
     def as_user(user: User) -> httpx.AsyncClient:
-        app.dependency_overrides[current_user] = lambda: user
+        async def bound_app(scope: Scope, receive: Receive, send: Send) -> None:
+            token = _request_user.set(user)
+            try:
+                await app(scope, receive, send)
+            finally:
+                _request_user.reset(token)
+
         return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=bound_app), base_url="http://test"
         )
 
     yield as_user

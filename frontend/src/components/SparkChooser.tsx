@@ -790,39 +790,40 @@ function ChooserPopout({
   // no-op with no query, the reference arriving sorted by (kind, name)
   // already.
   //
-  // The two filter dimensions compose by AND — lists say WHICH sparks are
-  // in play, Current Sparks says WHOSE — so pressing the pill always
-  // narrows; under a union a press could only ever widen, making "show me
-  // only what she holds" unreachable while any list was pressed. Within
-  // the list dimension pressed lists union: a week can be about two builds.
+  // Pressed sources UNION — whatever is selected, all of it shows. The
+  // pills are sources, not dimensions: pressing Current Sparks beside a
+  // list ADDS her held rows to the view, it doesn't intersect them away
+  // (an AND composition shipped briefly and was reversed — a press that
+  // removes rows another pressed pill promised reads as broken).
   //
-  // The list dimension only speaks white/race/scenario, so every other
-  // kind passes it — filtered, a pink would be unaddable and a member
-  // could never be given a blue while any list was pressed.
+  // Blue, pink and green answer ONLY to Current Sparks: a list cannot name
+  // those kinds, so under a list-only selection they pass untouched —
+  // filtered, a pink would be unaddable and a member could never be given
+  // a blue while any list was pressed.
   //
-  // A list dimension whose flattened set is EMPTY imposes no filter — the
-  // corrupt-key rule again: a selection that would show nothing (every
-  // pressed list emptied on another device or surface) degrades to showing
-  // more than asked, never to "No sparks match." over an untouched node.
+  // A union that flattens EMPTY imposes no filter — the corrupt-key rule
+  // again: a selection that would show nothing (every pressed list emptied
+  // on another device or surface) degrades to showing more than asked,
+  // never to "No sparks match." over an untouched node.
   //
-  // Rows held AT OPEN are exempt from both membership terms — under a list
+  // Rows held AT OPEN are exempt from the membership terms — under a list
   // filter, a held foreign green in none of the selected lists would
   // otherwise be invisible but unremovable, the :possible exemption's
   // failure over again. Uniform across sources, which extends it to Current
   // Sparks: a row removed before the pill was pressed now stays visible
   // rather than vanishing with the snapshot. The query still applies to
   // held rows.
-  const listIds = (() => {
-    const flat = new Set(
-      [...filters].flatMap(([key, set]) => (key === "current" ? [] : [...set]))
-    );
+  const shownIds = (() => {
+    if (filters.size === 0) return null;
+    const flat = new Set([...filters.values()].flatMap((set) => [...set]));
     return flat.size === 0 ? null : flat;
   })();
   const currentIds = filters.get("current") ?? null;
   const inFilter = (id: string, kind: string) =>
     heldAtOpen.has(id) ||
-    ((listIds === null || !LISTABLE.has(kind) || listIds.has(id)) &&
-      (currentIds === null || currentIds.has(id)));
+    (LISTABLE.has(kind)
+      ? shownIds === null || shownIds.has(id)
+      : currentIds === null || currentIds.has(id));
   const byQuery = (a: { name: string }, b: { name: string }) =>
     a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||
     a.name.localeCompare(b.name);

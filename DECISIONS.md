@@ -3339,13 +3339,13 @@ marked in each.
   control sits on every Sparks panel and in the popout's sticky band,
   where a flat row grows with the count. In the chooser it joins
   Current Sparks (transient, per-member) in the band; list presses
-  persist as the active selection, and the two dimensions compose by
-  **AND** — lists say WHICH sparks, Current Sparks says WHOSE, so a
-  press always narrows — with held-at-open rows exempt so nothing
-  becomes invisible but unremovable. **The filter only speaks the
-  listable kinds**: blue, pink and green pass every surface untouched,
-  because a list cannot name them — filtered, a pink is unaddable and
-  a member's 90% blue vanishes, the vocabulary misread as a verdict.
+  persist as the active selection, and pressed sources **union** —
+  whatever is selected, all of it shows — with held-at-open rows
+  exempt so nothing becomes invisible but unremovable. **The filter
+  only speaks the listable kinds**: blue, pink and green answer to
+  Current Sparks alone, because a list cannot name them — filtered by
+  one, a pink is unaddable and a member's 90% blue vanishes, the
+  vocabulary misread as a verdict.
   An **empty union imposes no filter** (every chosen list emptied
   elsewhere) — the corrupt-key rule: more than asked, never an empty
   surface. Every proc table — the trainee's AND each member's — takes
@@ -3367,7 +3367,10 @@ marked in each.
   what's hidden is the least likely. *A hue-carrying tint* — reads
   as a seventh kind. *A flat always-visible pill row* — the first
   cut; fine at four lists, unusable at forty, and it was on every
-  panel. *Fallback-to-all inside `chosenLists`* — deselecting the
+  panel. *AND composition of the pills* — shipped for one round; a
+  press that removes rows another pressed pill promised reads as
+  broken, and the pills are sources, not dimensions.
+  *Fallback-to-all inside `chosenLists`* — deselecting the
   last pill would then re-filter to everything as if selected; "no
   selection = no filter" needs the empty case honest.
 - **What would change my mind:** the selection needing to roam

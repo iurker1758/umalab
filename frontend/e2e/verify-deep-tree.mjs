@@ -1717,13 +1717,14 @@ try {
       (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 0 &&
       (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 1 &&
       (await page.locator('.spark-popout .spark-matches button[data-stars="1"][data-spark^="pink:"]').count()) === 10);
-    // Current Sparks composes with the lists by AND — WHICH sparks ∩ WHOSE —
-    // so pressing it narrows to what she holds of the chosen lists; a union
-    // would widen on press and make "only her own" unreachable.
+    // Pressed sources union — whatever is selected, all of it shows: with a
+    // list pressed, Current Sparks ADDS her held rows and takes nothing the
+    // list promised, so the chosen-but-unheld spark stays put.
     await page.locator(".spark-popout .spark-current").click();
-    check("Current Sparks narrows within the list filter, never widens",
+    check("Current Sparks unions with the pressed lists",
       (await rowForSpark(carried.kind, carried.key).count()) === 1 &&
-      (await rowForSpark(uncarried.kind, uncarried.key).count()) === 0);
+      (await rowForSpark(uncarried.kind, uncarried.key).count()) === 1 &&
+      (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 0);
     await page.locator(".spark-popout .spark-current").click();
     // Toggling OFF in the popout exercises the write path from this surface;
     // the two controls press one stored selection.

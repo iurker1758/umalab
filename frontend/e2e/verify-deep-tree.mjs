@@ -1340,6 +1340,20 @@ try {
       (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
       (await page.locator(".spark-popout .spark-matches li").count()) === underFilter &&
       (await page.locator('.spark-popout .seg[aria-pressed="true"]').count()) === underFilter);
+    // The query narrows WITHIN a solo Current Sparks, never past it: with no
+    // list pressed there is no write path at stake, and a match she doesn't
+    // hold appearing under a pressed pill named Current Sparks would offer
+    // an add the pill claims filtered.
+    const unheldWhite = factorRef.find(
+      (f) =>
+        f.kind === "white" &&
+        f.key !== spare.key &&
+        !added.some((a) => a.kind === f.kind && a.key === f.key)
+    );
+    await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(unheldWhite.name);
+    check("the query narrows within Current Sparks alone",
+      (await rowForSpark(unheldWhite.kind, unheldWhite.key).count()) === 0);
+    await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
     await page.locator(`.spark-popout .spark-drop[data-spark="${spare.kind}:${spare.key}"]`).click();
     check("a ✕ under the filter leaves its row in place, add buttons back",
       (await until(async () =>
@@ -1616,12 +1630,20 @@ try {
   // below the fold would be reachable but invisible (DECISIONS.md #34).
   // Structural, so it can't rot into a coincidence of current heights.
   const panelLists = ".focus .proc-list-pills .spark-list-disclose";
-  await page.locator(panelLists).click();
-  check("the Lists disclosure opens one pill per list, outside the clip",
-    (await page.locator(panelLists).getAttribute("aria-expanded")) === "true" &&
-    (await page.locator(".focus .spark-list-menu .spark-list-filter").count()) ===
-      (await getJson("/api/spark-lists")).length &&
-    (await page.locator(".focus .proc-clip .proc-list-pills").count()) === 0);
+  // Guarded like `created` and `list2`: with zero lists (the favorites
+  // section's create failed against a clean baseline) the disclosure
+  // legitimately doesn't render, and an unguarded click would abort every
+  // section below on a locator timeout rather than failing one check.
+  if ((await page.locator(panelLists).count()) === 0) {
+    check("the Lists disclosure opens one pill per list, outside the clip", false);
+  } else {
+    await page.locator(panelLists).click();
+    check("the Lists disclosure opens one pill per list, outside the clip",
+      (await page.locator(panelLists).getAttribute("aria-expanded")) === "true" &&
+      (await page.locator(".focus .spark-list-menu .spark-list-filter").count()) ===
+        (await getJson("/api/spark-lists")).length &&
+      (await page.locator(".focus .proc-clip .proc-list-pills").count()) === 0);
+  }
   // The filter list is built THROUGH the chooser, never by bare fetch: the
   // page's list state was fetched at mount and this suite never reloads, so
   // a row the client didn't write would have no pill. One carried spark and
@@ -1736,11 +1758,12 @@ try {
     await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
     // Pressed sources union — whatever is selected, all of it shows: with a
     // list pressed, Current Sparks ADDS her held rows and takes nothing the
-    // list promised, so the chosen-but-unheld spark stays put.
+    // list promised — including the blues the list has no verdict on.
     await page.locator(".spark-popout .spark-current").click();
     check("Current Sparks unions with the pressed lists",
       (await rowForSpark(carried.kind, carried.key).count()) === 1 &&
       (await rowForSpark(uncarried.kind, uncarried.key).count()) === 1 &&
+      (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 1 &&
       (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 0);
     await page.locator(".spark-popout .spark-current").click();
     // Escape is layered: the open menu takes the press and the popout — and

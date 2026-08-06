@@ -30,6 +30,10 @@ import {
 // it untouched, since a list could never name one.
 const LISTABLE = new Set<string>(LIST_SPARK_KINDS);
 
+// One list's membership as row ids — what a pressed pill contributes.
+const membershipIds = (list: SparkList): Set<string> =>
+  new Set(list.sparks.map((s) => sparkId({ type: s.kind, key: s.key })));
+
 // The EDITOR for a member's sparks: a popout that BROWSES the 437
 // factors with your favorites on top (DECISIONS.md #35, #41). Adding includes
 // the LEVEL — three buttons per row, so a 3★ is one click at the moment you
@@ -707,12 +711,7 @@ function ChooserPopout({
     const init = new Map<"current" | number, Set<string>>();
     for (const id of sparkLists.active) {
       const list = listById(sparkLists.lists, id);
-      if (list !== undefined) {
-        init.set(
-          id,
-          new Set(list.sparks.map((s) => sparkId({ type: s.kind, key: s.key })))
-        );
-      }
+      if (list !== undefined) init.set(id, membershipIds(list));
     }
     return init;
   });
@@ -723,10 +722,7 @@ function ChooserPopout({
         next.delete(id);
       } else {
         const list = listById(sparkLists.lists, id);
-        next.set(
-          id,
-          new Set((list?.sparks ?? []).map((s) => sparkId({ type: s.kind, key: s.key })))
-        );
+        next.set(id, list === undefined ? new Set() : membershipIds(list));
       }
       return next;
     });
@@ -792,44 +788,45 @@ function ChooserPopout({
   //
   // Pressed sources UNION — whatever is selected, all of it shows. The
   // pills are sources, not dimensions: pressing Current Sparks beside a
-  // list ADDS her held rows to the view, it doesn't intersect them away
-  // (an AND composition shipped briefly and was reversed — a press that
-  // removes rows another pressed pill promised reads as broken).
+  // list ADDS her held rows to the view and takes nothing another pressed
+  // pill was showing. Alone, Current Sparks keeps its original meaning —
+  // an exact snapshot of what she holds, the query narrowing WITHIN it.
   //
-  // Blue, pink and green answer ONLY to Current Sparks: a list cannot name
-  // those kinds, so under a list-only selection they pass untouched —
-  // filtered, a pink would be unaddable and a member could never be given
-  // a blue while any list was pressed.
+  // Blue, pink and green narrow only when Current Sparks is the SOLE
+  // active source: a list cannot name those kinds, so a pressed list has
+  // no verdict on them — filtered by one, a pink would be unaddable — and
+  // under union a second press must never remove the rows that verdictless
+  // pass was showing.
   //
-  // A union that flattens EMPTY imposes no filter — the corrupt-key rule
-  // again: a selection that would show nothing (every pressed list emptied
-  // on another device or surface) degrades to showing more than asked,
-  // never to "No sparks match." over an untouched node.
+  // A list whose flattened union is EMPTY imposes no filter — the
+  // corrupt-key rule again: a selection that would show nothing (every
+  // pressed list emptied on another device or surface) degrades to showing
+  // more than asked, never to "No sparks match." over an untouched node.
   //
-  // Rows held AT OPEN are exempt from the LIST terms — under a list filter,
-  // a held white in none of the selected lists would otherwise be invisible
-  // but unremovable, the :possible exemption's failure over again. The
-  // exemption does NOT extend to Current Sparks alone: that pill is an
-  // exact snapshot of what she holds at press, and rows she no longer held
-  // reappearing under it would read as removals that didn't take.
-  //
-  // The QUERY bypasses the membership terms entirely: the pills shape the
-  // unqueried browse, but a typed name is an explicit ask — and this popout
+  // While lists are active, the QUERY bypasses their terms — this popout
   // is the only place a spark can be ADDED, so a persisted selection that
   // made an unlisted spark unfindable by its exact name would let a view
-  // control on a read surface silently disable the one write path.
-  const listsPressed = [...filters.keys()].some((key) => key !== "current");
-  const shownIds = (() => {
-    if (filters.size === 0) return null;
-    const flat = new Set([...filters.values()].flatMap((set) => [...set]));
+  // control on a read surface silently disable the one write path — and
+  // rows held now OR at open are exempt: held-at-open so a remove doesn't
+  // tear the row out from under the pointer, held-now so a spark added
+  // through the query bypass stays reachable when the query clears (its ✕
+  // lives here and nowhere else).
+  const listIds = (() => {
+    const flat = new Set(
+      [...filters].flatMap(([key, set]) => (key === "current" ? [] : [...set]))
+    );
     return flat.size === 0 ? null : flat;
   })();
   const currentIds = filters.get("current") ?? null;
-  const inFilter = (id: string, kind: string) =>
-    q !== "" ||
-    (LISTABLE.has(kind)
-      ? shownIds === null || shownIds.has(id) || (listsPressed && heldAtOpen.has(id))
-      : currentIds === null || currentIds.has(id));
+  const inCurrent = (id: string) => currentIds !== null && currentIds.has(id);
+  const heldEver = (id: string) => heldAtOpen.has(id) || heldStars.has(id);
+  const inFilter = (id: string, kind: string) => {
+    if (!LISTABLE.has(kind)) {
+      return currentIds === null || listIds !== null || inCurrent(id);
+    }
+    if (listIds === null) return currentIds === null || inCurrent(id);
+    return q !== "" || listIds.has(id) || heldEver(id) || inCurrent(id);
+  };
   const byQuery = (a: { name: string }, b: { name: string }) =>
     a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||
     a.name.localeCompare(b.name);

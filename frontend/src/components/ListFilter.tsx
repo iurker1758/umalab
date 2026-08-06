@@ -34,9 +34,13 @@ export function ListFilter({
   // Dismissal registered only while open. Escape CAPTURES and stops the
   // event so the chooser popout's own unconditional Escape (a window bubble
   // listener) never sees the press — the menu must close without taking the
-  // whole editor and its typed query with it. Outside presses close too, on
-  // mousedown like the popout backdrop, so a press on that backdrop closes
-  // both layers in one gesture.
+  // whole editor and its typed query with it. Outside dismissal is on
+  // CLICK, not the backdrop's mousedown: this menu is an in-flow box, so
+  // closing it shifts everything below it up by its height — on mousedown
+  // that happens before mouseup, and the click the user was making lands
+  // on whatever moved under the pointer. On click, the target's own click
+  // has already run. (The backdrop can use mousedown precisely because it
+  // occupies no layout.)
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -45,7 +49,7 @@ export function ListFilter({
         setOpen(false);
       }
     };
-    const onDown = (e: MouseEvent) => {
+    const onClick = (e: MouseEvent) => {
       if (
         e.target instanceof Node &&
         !(buttonRef.current?.contains(e.target) ?? false) &&
@@ -55,10 +59,10 @@ export function ListFilter({
       }
     };
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener("mousedown", onDown);
+    window.addEventListener("click", onClick);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("click", onClick);
     };
   }, [open]);
   const count = lists.filter((list) => isPressed(list.id)).length;

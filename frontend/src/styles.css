@@ -602,17 +602,16 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* The one place the fold's height is written. TraineeProcs reads it back off
    this custom property to decide whether anything is hidden, so the clip and
    the button can't disagree. */
-/* The active-list pills above the trainee's table (#67) — same control as
-   the popout band's, placed OUTSIDE .proc-clip: clipped rows stay in the
-   DOM, and a hidden control is worse than a hidden row (DECISIONS.md #34,
-   #43). */
-.proc-list-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.6rem; }
 .proc-clip { --proc-clip: 24rem; overflow: clip; }
 .proc-clipped {
   max-height: var(--proc-clip);
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
 }
+/* The active-list control above the tables (#67) — same control as the
+   popout band's, placed OUTSIDE .proc-clip: clipped rows stay in the DOM,
+   and a hidden control is worse than a hidden row (DECISIONS.md #34, #43). */
+.proc-list-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.6rem; }
 
 /* Lifts the clip off the trainee's table. Full width so it reads as the end
    of the list rather than an action on the last row. */

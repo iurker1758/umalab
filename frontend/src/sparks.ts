@@ -5,6 +5,7 @@ import {
   type SparkList,
   type SparkRef,
 } from "./api";
+import { sparkId } from "./procs";
 import { writeStore } from "./storage";
 
 // The user's named spark lists — "Front Runner", "Medium" — and the reads
@@ -49,7 +50,10 @@ export type SparkListStore = {
   // Non-optimistic: the mutators return what the server ended up with, so a
   // checkbox only moves once the row says so.
   onChange: (next: SparkList[]) => void;
-  onActiveChange: (next: number[]) => void;
+  // A toggle, not a value setter: two presses resolved against one render
+  // would each compute the next selection from the same stale array and the
+  // later write would drop the earlier press — the onSetFactors rule.
+  onToggleActive: (id: number) => void;
   // Re-fetch, for the chooser opening after a FAILED fetch. Not a general
   // staleness fix: it bumps `epoch`, so calling it while the popout is open
   // rebuilds it and discards the user's search and any picker they had open.
@@ -59,7 +63,10 @@ export type SparkListStore = {
 const sameSpark = (spark: SparkRef, kind: SlotFactorKind, key: number) =>
   spark.kind === kind && spark.key === key;
 
-const refId = (spark: SparkRef) => `${spark.kind}:${spark.key}`;
+// Delegates rather than restating the format: `activeSparkIds` feeds these
+// straight into row lookups keyed by `sparkId`, so a second copy of the
+// literal would be a byte-for-byte contract only a test could police.
+const refId = (spark: SparkRef) => sparkId({ type: spark.kind, key: spark.key });
 
 // ---------- reads ----------
 // Pure over the lists the caller already has in state, so a row can be
@@ -104,6 +111,15 @@ export const union = (lists: SparkList[]): SparkRef[] => {
 export const favorites = (lists: SparkList[]): SparkRef[] => union(lists);
 
 /**
+ * The lists the selection actually names — selected ∩ existing, in list
+ * order. Unlike `activeSparks` there is deliberately NO fallback-to-all:
+ * empty here means "no filter", and each caller decides what that renders —
+ * for the filter surfaces, the whole unfiltered view (DECISIONS.md #43).
+ */
+export const chosenLists = (lists: SparkList[], active: number[]): SparkList[] =>
+  lists.filter((list) => active.includes(list.id));
+
+/**
  * The sparks in play: the union of the ACTIVE lists.
  *
  * **Nothing selected means everything.** Every user starts with no lists and
@@ -115,14 +131,16 @@ export const activeSparks = (
   lists: SparkList[],
   active: number[]
 ): SparkRef[] => {
-  const chosen = lists.filter((list) => active.includes(list.id));
+  const chosen = chosenLists(lists, active);
   return union(chosen.length === 0 ? lists : chosen);
 };
 
-/** Every list name in use, in the user's order — what the active-list
- *  selector (#67) renders. No in-app caller yet; not dead code. */
-export const listNames = (lists: SparkList[]): string[] =>
-  lists.map((list) => list.name);
+/** `activeSparks` as a membership test, ids in the `kind:key` format the
+ *  proc tables key their rows by — what the watched tint checks. */
+export const activeSparkIds = (
+  lists: SparkList[],
+  active: number[]
+): Set<string> => new Set(activeSparks(lists, active).map(refId));
 
 // ---------- the active selection (device-local) ----------
 

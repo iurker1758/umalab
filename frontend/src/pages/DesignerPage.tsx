@@ -27,6 +27,7 @@ import {
   loadActiveLists,
   loadSparkLists,
   saveActiveLists,
+  toggleActive,
   type SparkListStore,
 } from "../sparks";
 import { FocusPanel } from "../components/FocusPanel";
@@ -163,10 +164,13 @@ export function DesignerPage({
   // Device-local, not a column: which lists you are working against is a view.
   // Empty means every list.
   const [activeLists, setActiveLists] = useState<number[]>(() => loadActiveLists());
-  const onActiveListsChange = useCallback((next: number[]) => {
-    setActiveLists(next);
-    saveActiveLists(next);
-  }, []);
+  // Persisted by effect so the toggle's updater stays pure; the mount write
+  // re-saves what was just loaded, which is idempotent.
+  useEffect(() => saveActiveLists(activeLists), [activeLists]);
+  const onToggleActiveList = useCallback(
+    (id: number) => setActiveLists((prev) => toggleActive(prev, id)),
+    []
+  );
   // How many writes have come back from the chooser. A fetch already in flight
   // when one lands is stale BY DEFINITION — the server handed the newer list to
   // the write as its response — and applying the older one would empty a star
@@ -451,8 +455,11 @@ export function DesignerPage({
       if (lists.status === "fulfilled") {
         if (sparkListWrites.current === writes) setSparkLists(lists.value);
       }
-      // No toast, unlike the reference below: the chooser is the only reader
-      // and says so itself when you open it.
+      // No toast, unlike the reference below: each reading surface says so
+      // itself where the loss lands — the chooser inline when you open it,
+      // and the Sparks panels in place of the Lists control whenever a
+      // persisted selection is at stake (a filter that silently vanished
+      // is indistinguishable from having no lists).
       else setSparkListsFailed(true);
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {
@@ -566,7 +573,7 @@ export function DesignerPage({
       failed: sparkListsFailed,
       active: activeLists,
       onChange: onSparkListsChange,
-      onActiveChange: onActiveListsChange,
+      onToggleActive: onToggleActiveList,
       onReload: reloadSparkLists,
     }),
     [
@@ -575,7 +582,7 @@ export function DesignerPage({
       sparkListsFailed,
       activeLists,
       onSparkListsChange,
-      onActiveListsChange,
+      onToggleActiveList,
       reloadSparkLists,
     ]
   );

@@ -33,10 +33,14 @@ sparks)` per owner, with `GET`/`POST`/`PATCH`/`DELETE` under
 expression index; stored as typed). Favorites in the chooser is the **union**
 of the lists, and which lists are *active* is a device-local `localStorage`
 view, not a column. The chooser's ★ opens a picker of your lists rather than
-toggling one flag — that is the only list UI so far, and it can only
-**create**. Rename, delete and bulk editing are #70's management page;
-choosing the active lists is #67. **#27 is the first consumer that makes the
-active selection mean anything**, so it and #67 may want to land together.
+toggling one flag; list UI beyond that is the **Lists filter disclosure**
+(#67 + #27, DECISIONS.md #43): one selection, one control, every proc
+surface — the chooser's band, where pressed lists narrow the browse
+alongside Current Sparks, and every Sparks-tab table (trainee and
+members), where nothing selected keeps the table's own rows with listed
+sparks tinted and a selection swaps the rows for the union of the chosen
+lists, "—" for a spark not carried. The picker can only **create**;
+rename, delete and bulk editing are #70's management page.
 
 Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation

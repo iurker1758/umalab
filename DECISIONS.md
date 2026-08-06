@@ -3319,3 +3319,54 @@ marked in each.
   semantics and the single-`spark` field fall with it. Pinks
   becoming huntable (say the skill-spark scoring milestone reaching
   aptitudes) would argue the ★ and list membership back.
+
+## 43. The active lists are a filter, on every spark surface
+
+- **Requirements:** issues #67 + #27. #37's device-local selection
+  needs a control and a consumer: something must set which lists are
+  in play, and the proc tables must be readable against what you are
+  hunting — including a spark no ancestor carries, which ranking can
+  never surface. Empty selection means everything (#37); rename and
+  delete stay on #70's page; no server persistence (#37). No hue for
+  the highlight (the kind colours are the game's own, #41); nothing
+  focusable inside the clipped table (#34); and the popout is the
+  only add path, so no selection may make a spark unaddable.
+- **Choice:** one selection, one **Lists disclosure** — a counting
+  button ("Lists · 2") opening a scrolling menu of `aria-pressed`
+  pills, since lists cap at 50 and the control sits on every Sparks
+  panel and the popout's sticky band. Pressed sources **union**:
+  whatever is selected, all of it shows; Current Sparks alone stays
+  an exact held snapshot, the query narrowing within it. **The
+  filter only speaks the listable kinds** — blue, pink and green
+  narrow only under a solo Current Sparks, since a list cannot name
+  them and a verdictless pass must survive a second press. Under
+  lists, the **query bypasses** their terms and held rows (at open
+  or now) are exempt, so nothing is unfindable, unreachable or torn
+  from under a pointer. An **empty union imposes no filter**, and
+  the unfiltered tint stays the union of ALL lists — never a pressed
+  control over an untouched table. Every proc table takes two states
+  through one derivation (`filterProcRows`): unselected, own rows
+  with listed sparks tinted (lightness and weight only); selected,
+  the listable rows swap for the chosen union, "—" where uncarried,
+  members keeping ★ levels, **never clipped** (bounded by the lists,
+  and the fold's honesty rule inverts over rows sorted "—"-last).
+  Popout presses snapshot membership; the panels' are live — those
+  tables have no pointer targets. Filter-on is the `.seg.active`
+  blue, never the membership gold.
+- **Alternatives rejected:** *a stacked Watched block above the
+  ranked table* — a second table idiom spending #30's reflow budget,
+  when the filtered view absorbs the "—" rows the block existed for.
+  *Pinning watched rows above the fold* — the cap is honest only
+  while what's hidden is the least likely. *A hue-carrying tint* —
+  reads as a seventh kind. *A flat always-visible pill row* — fine
+  at four lists, unusable at forty, on every panel. *AND composition
+  of the pills* — a press that removes rows another pressed pill
+  promised reads as broken; the pills are sources, not dimensions.
+  *Fallback-to-all inside `chosenLists`* — deselecting the last pill
+  would re-filter to everything as if selected.
+- **What would change my mind:** the selection needing to roam
+  devices — that reopens #37's rejected server column, not this
+  shape. The trainee's table gaining a focusable control, which
+  kills the clip assumption the live pills and the tint lean on.
+  Wanting "what will I get" and "what am I hunting" at once — that
+  is the stacked block coming back.

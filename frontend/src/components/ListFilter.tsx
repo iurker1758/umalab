@@ -1,0 +1,106 @@
+import { useEffect, useRef, useState } from "react";
+import type { SparkList } from "../api";
+
+// The active-list multi-select (#67, DECISIONS.md #43): one "Lists" button
+// disclosing a wrapping panel of aria-pressed pills, one per list — a
+// DISCLOSURE, not a flat row, because lists cap at 50 per owner and this
+// control sits on every Sparks panel and in the chooser's sticky band, where
+// 50 always-visible pills would eat the surface. Toggle buttons rather than
+// checkboxes — the app's multi-select idiom throughout (the ★ picker, the
+// filter panel's chips).
+//
+// A FRAGMENT, not a wrapper: both call sites are flex-wrap rows, and the
+// menu takes `flex-basis: 100%` to land on its own full-width line below
+// whatever shares the row — the ★ picker's `.spark-lists` layout, for the
+// same reason.
+//
+// State wiring stays the CALLER's: the chooser presses its snapshot map,
+// the panels press the live store — one control, two lifetimes (DECISIONS.md
+// #43), so pressed-ness and the toggle are props rather than a store read.
+export function ListFilter({
+  lists,
+  isPressed,
+  disabled = false,
+  onToggle,
+}: {
+  lists: SparkList[];
+  isPressed: (id: number) => boolean;
+  disabled?: boolean;
+  onToggle: (id: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Dismissal registered only while open. Escape CAPTURES and stops the
+  // event so the chooser popout's own unconditional Escape (a window bubble
+  // listener) never sees the press — the menu must close without taking the
+  // whole editor and its typed query with it. Outside dismissal is on
+  // CLICK, not the backdrop's mousedown: this menu is an in-flow box, so
+  // closing it shifts everything below it up by its height — on mousedown
+  // that happens before mouseup, and the click the user was making lands
+  // on whatever moved under the pointer. On click, the target's own click
+  // has already run. (The backdrop can use mousedown precisely because it
+  // occupies no layout.)
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    const onClick = (e: MouseEvent) => {
+      if (
+        e.target instanceof Node &&
+        !(buttonRef.current?.contains(e.target) ?? false) &&
+        !(menuRef.current?.contains(e.target) ?? false)
+      ) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("click", onClick);
+    };
+  }, [open]);
+  const count = lists.filter((list) => isPressed(list.id)).length;
+  if (lists.length === 0) return null;
+  return (
+    <>
+      {/* Active while any list is pressed, open or not: the filter keeps
+          narrowing after the menu closes, and a plain button in front of a
+          filtered table would read as off. The count says how many without
+          the menu; which ones needs the menu open. */}
+      <button
+        ref={buttonRef}
+        className={count > 0 ? "spark-list-disclose active" : "spark-list-disclose"}
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+      >
+        {count > 0 ? `Lists · ${count}` : "Lists"}
+        <span className="spark-list-caret" aria-hidden="true">
+          {open ? "▴" : "▾"}
+        </span>
+      </button>
+      {open && (
+        <div ref={menuRef} className="spark-list-menu" role="group" aria-label="Filter by list">
+          {lists.map((list) => (
+            <button
+              key={list.id}
+              className={isPressed(list.id) ? "spark-list-filter active" : "spark-list-filter"}
+              aria-pressed={isPressed(list.id)}
+              data-list={list.id}
+              disabled={disabled}
+              onClick={() => onToggle(list.id)}
+            >
+              {list.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}

@@ -1,4 +1,11 @@
-import type { AptitudeKey, PinkSpark, SlotFactor, SlotFactorKind } from "./api";
+import {
+  LIST_SPARK_KINDS,
+  type AptitudeKey,
+  type ListSparkKind,
+  type PinkSpark,
+  type SlotFactor,
+  type SlotFactorKind,
+} from "./api";
 
 // ---------- inspiration proc estimates ----------
 // What an ancestor's sparks are worth to the TRAINEE: the chance each one is
@@ -171,6 +178,34 @@ export function combineOutlooks(
   return [...byId.values()].sort(
     (a, b) => (b.chance ?? -1) - (a.chance ?? -1) || sparkId(a).localeCompare(sparkId(b))
   );
+}
+
+const LISTABLE = new Set<string>(LIST_SPARK_KINDS);
+
+/**
+ * A proc table narrowed to a hunt: one row per wanted spark — the caller's
+ * own row where the spark is carried, and a bare `chance: null` row (the
+ * "—" idiom) where it isn't, which while planning is the row that matters
+ * most (DECISIONS.md #43). Generic over the row shape because the trainee's
+ * outlooks and a member's own sparks both take the same narrowing. Callers
+ * sort with `sortSparks` as usual; a null chance already ranks last.
+ *
+ * Blue, pink and green rows pass through UNFILTERED: a list cannot name
+ * those kinds, so under any selection they could never survive — and hiding
+ * a 3★ blue's 90% because the user is hunting whites would misread the
+ * filter's vocabulary as a verdict on the spark.
+ */
+export function listRows<T extends SparkRef & { chance: number | null }>(
+  rows: readonly T[],
+  wanted: readonly { kind: ListSparkKind; key: number }[]
+): (T | { type: ListSparkKind; key: number; chance: null })[] {
+  const byId = new Map(rows.map((r) => [sparkId(r), r]));
+  return [
+    ...wanted.map(
+      (w) => byId.get(`${w.kind}:${w.key}`) ?? { type: w.kind, key: w.key, chance: null }
+    ),
+    ...rows.filter((r) => !LISTABLE.has(r.type)),
+  ];
 }
 
 // ---------- display order ----------

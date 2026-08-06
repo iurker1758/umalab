@@ -2,14 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type SparkList, type SparkListPatch, type SparkRef } from "./api";
 import {
   ACTIVE_LISTS_STORE,
+  activeSparkIds,
   activeSparks,
+  chosenLists,
   createList,
   createListWith,
   deleteList,
   favorites,
   isFavorite,
   listById,
-  listNames,
   listsWith,
   loadActiveLists,
   PartialWrite,
@@ -104,10 +105,6 @@ describe("reads over the caller's lists", () => {
     expect(listById(lists, 2)?.name).toBe("Medium");
     expect(listById(lists, 87)).toBeUndefined();
   });
-
-  it("names the lists in the user's order", () => {
-    expect(listNames(lists)).toEqual(["Front Runner", "Medium", "Long"]);
-  });
 });
 
 describe("the active selection", () => {
@@ -146,6 +143,47 @@ describe("the active selection", () => {
   it("toggles one id without disturbing the others", () => {
     expect(toggleActive([1, 2], 3)).toEqual([1, 2, 3]);
     expect(toggleActive([1, 2, 3], 2)).toEqual([1, 3]);
+  });
+});
+
+describe("the selection as a filter", () => {
+  const lists = [
+    aList({ id: 1, sparks: [spark("white", 1)] }),
+    aList({ id: 2, sparks: [spark("race", 2)] }),
+    aList({ id: 3, sparks: [spark("scenario", 3)] }),
+  ];
+
+  it("names no list when nothing is selected — NOT everything", () => {
+    // The distinction from `activeSparks`: a filter with nothing selected is
+    // no filter, and the caller renders the whole unfiltered view.
+    expect(chosenLists(lists, [])).toEqual([]);
+  });
+
+  it("drops stale ids, to nothing if that's all there was", () => {
+    expect(chosenLists(lists, [2, 404]).map((l) => l.id)).toEqual([2]);
+    expect(chosenLists(lists, [404, 405])).toEqual([]);
+  });
+
+  it("keeps list order regardless of selection order", () => {
+    expect(chosenLists(lists, [3, 1]).map((l) => l.id)).toEqual([1, 3]);
+  });
+});
+
+describe("the selection as row ids", () => {
+  const lists = [
+    aList({ id: 1, sparks: [spark("white", 700), spark("race", 40)] }),
+    aList({ id: 2, sparks: [spark("scenario", 40_001)] }),
+  ];
+
+  it("tests membership by kind and key", () => {
+    const ids = activeSparkIds(lists, [1]);
+    expect(ids.has("white:700")).toBe(true);
+    expect(ids.has("race:40")).toBe(true);
+    expect(ids.has("scenario:40001")).toBe(false);
+  });
+
+  it("keeps activeSparks' empty-means-everything rule", () => {
+    expect(activeSparkIds(lists, []).size).toBe(3);
   });
 });
 

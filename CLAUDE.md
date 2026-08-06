@@ -158,9 +158,11 @@ Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
 - Every non-obvious tech/design choice gets a `DECISIONS.md` entry:
   Requirements → Choice → Alternatives rejected → What would change my mind.
   **Those four bullets and nothing else — no `###` subsections, and about 40
-  lines.** Entries #1–25 average 30; the file's bulk is a dozen later ones
-  averaging 200, which is where per-review-round narration and quoted
-  conversation went. Record the decision and the trigger that would reverse
-  it, not how it was arrived at. An entry a later one supersedes gets cut to
-  a stub naming its replacement and whatever rules the code still cites (see
-  #33) — never deleted, since code comments reference entries by number.
+  lines** (the densest run 70–85; per-review-round narration and quoted
+  conversation are what the 2026-08-06 trim cut, so don't reintroduce them).
+  Record the decision and the trigger that would reverse it, not how it was
+  arrived at. A new entry adds itself to the topical index at the top of the
+  file. Bare `#N` there means entry N; write "issue #N" for issues. An entry
+  a later one supersedes gets cut to a stub naming its replacement and
+  whatever rules the code still cites (see #33) — never deleted, since code
+  comments reference entries by number.

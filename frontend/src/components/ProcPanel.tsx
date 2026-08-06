@@ -166,7 +166,14 @@ const SparkRow = ({
 // fetch keeps it: the tables filter off the same possibly-stale lists, and
 // hiding this would hide the only control that can un-filter them.
 function PanelListFilter({ sparkLists }: { sparkLists: SparkListStore }) {
-  if (sparkLists.lists.length === 0) return null;
+  if (sparkLists.lists.length === 0) {
+    // A failed fetch with a selection at stake is said HERE, because the
+    // tables degrade silently — tint and filter just vanish, which is
+    // indistinguishable from having no lists at all.
+    return sparkLists.failed && sparkLists.active.length > 0 ? (
+      <p className="focus-note">Couldn't load your lists — the filter is off.</p>
+    ) : null;
+  }
   return (
     <div className="proc-list-pills">
       <ListFilter
@@ -176,6 +183,26 @@ function PanelListFilter({ sparkLists }: { sparkLists: SparkListStore }) {
       />
     </div>
   );
+}
+
+// One derivation for every proc table — the trainee's and each member's
+// must never disagree about what one selection means. An empty union (every
+// chosen list emptied elsewhere) is no filter at all: more than asked,
+// never an empty table. The unfiltered tint is the union of ALL lists,
+// selection or not — a selection of only-empty lists must not also strip
+// the tint the no-selection view carries, leaving a pressed control over a
+// table it visibly isn't touching.
+function filterProcRows<T extends SparkRef & { chance: number | null }>(
+  rows: readonly T[],
+  sparkLists: SparkListStore
+) {
+  const wanted = union(chosenLists(sparkLists.lists, sparkLists.active));
+  const filtered = wanted.length > 0;
+  return {
+    filtered,
+    rows: filtered ? listRows(rows, wanted) : rows,
+    watched: filtered ? null : activeSparkIds(sparkLists.lists, []),
+  };
 }
 
 // One ancestor's own sparks: what each is worth as a contribution to the
@@ -235,14 +262,10 @@ export function NodeProcs({
   // selection narrows the LISTABLE kinds to the chosen lists' sparks — "—"
   // for one she doesn't carry, her blue/pink/green always rendered — and
   // nothing selected shows her own rows with the listed ones tinted. Her
-  // held sparks stay held either way; the filter is a view. An empty union
-  // (every chosen list emptied elsewhere) is no filter at all: more than
-  // asked, never an empty table.
-  const chosen = chosenLists(sparkLists.lists, sparkLists.active);
-  const wanted = union(chosen);
-  const filtered = wanted.length > 0;
-  const rows = sortSparks(filtered ? listRows(memberRows, wanted) : memberRows, sort);
-  const watched = filtered ? null : activeSparkIds(sparkLists.lists, sparkLists.active);
+  // held sparks stay held either way; the filter is a view.
+  const view = filterProcRows(memberRows, sparkLists);
+  const rows = sortSparks(view.rows, sort);
+  const watched = view.watched;
   return (
     <>
       <PanelListFilter sparkLists={sparkLists} />
@@ -371,16 +394,10 @@ export function TraineeProcs({
     if (sparks.length > 0) perMember.push({ index: i, sparks });
   }
   const outlooks = combineOutlooks(perMember);
-  const chosen = chosenLists(sparkLists.lists, sparkLists.active);
-  // An empty union — every chosen list emptied elsewhere — is no filter at
-  // all: more than asked, never an empty table.
-  const wanted = union(chosen);
-  const filtered = wanted.length > 0;
-  const rows = filtered ? listRows(outlooks, wanted) : outlooks;
   // Tint only while unfiltered: filtered, every listable row is selected by
   // construction, and the structural rows are told apart by their kind
   // colours already.
-  const watched = filtered ? null : activeSparkIds(sparkLists.lists, sparkLists.active);
+  const { filtered, rows, watched } = filterProcRows(outlooks, sparkLists);
   // Measured against the table's own height rather than the wrapper's, so the
   // answer doesn't depend on whether the clip is currently applied. The
   // observer catches the sort changing a row's wrap, the viewport changing,
@@ -418,7 +435,11 @@ export function TraineeProcs({
     );
   }
   const shown = sortSparks(rows, sort);
-  const clipped = tall && !expanded;
+  // Never clipped while FILTERED: that view is bounded by the user's own
+  // lists, and the fold's honesty rule — what's hidden is the least likely —
+  // inverts there, since sortSparks ranks the "—" rows last and those are
+  // exactly what the view exists to surface (DECISIONS.md #43).
+  const clipped = !filtered && tall && !expanded;
   return (
     <>
       <PanelListFilter sparkLists={sparkLists} />
@@ -445,7 +466,7 @@ export function TraineeProcs({
       </div>
       {/* The count is the point of the label: "34" says how much tree there is
           below the fold, which a bare "Show More" wouldn't. */}
-      {tall && (
+      {!filtered && tall && (
         <button
           className="proc-more"
           // The rows below the fold are in the DOM, so the button is a

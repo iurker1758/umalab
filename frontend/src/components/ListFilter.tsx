@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SparkList } from "../api";
 
 // The active-list multi-select (#67, DECISIONS.md #43): one "Lists" button
@@ -29,6 +29,38 @@ export function ListFilter({
   onToggle: (id: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Dismissal registered only while open. Escape CAPTURES and stops the
+  // event so the chooser popout's own unconditional Escape (a window bubble
+  // listener) never sees the press — the menu must close without taking the
+  // whole editor and its typed query with it. Outside presses close too, on
+  // mousedown like the popout backdrop, so a press on that backdrop closes
+  // both layers in one gesture.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      if (
+        e.target instanceof Node &&
+        !(buttonRef.current?.contains(e.target) ?? false) &&
+        !(menuRef.current?.contains(e.target) ?? false)
+      ) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
   const count = lists.filter((list) => isPressed(list.id)).length;
   if (lists.length === 0) return null;
   return (
@@ -38,6 +70,7 @@ export function ListFilter({
           filtered table would read as off. The count says how many without
           the menu; which ones needs the menu open. */}
       <button
+        ref={buttonRef}
         className={count > 0 ? "spark-list-disclose active" : "spark-list-disclose"}
         aria-expanded={open}
         disabled={disabled}
@@ -49,7 +82,7 @@ export function ListFilter({
         </span>
       </button>
       {open && (
-        <div className="spark-list-menu" role="group" aria-label="Filter by list">
+        <div ref={menuRef} className="spark-list-menu" role="group" aria-label="Filter by list">
           {lists.map((list) => (
             <button
               key={list.id}

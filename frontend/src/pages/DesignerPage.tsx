@@ -455,8 +455,11 @@ export function DesignerPage({
       if (lists.status === "fulfilled") {
         if (sparkListWrites.current === writes) setSparkLists(lists.value);
       }
-      // No toast, unlike the reference below: the chooser is the only reader
-      // and says so itself when you open it.
+      // No toast, unlike the reference below: each reading surface says so
+      // itself where the loss lands — the chooser inline when you open it,
+      // and the Sparks panels in place of the Lists control whenever a
+      // persisted selection is at stake (a filter that silently vanished
+      // is indistinguishable from having no lists).
       else setSparkListsFailed(true);
       setCatalogLoaded(true);
       if (cat.status === "rejected" || bps.status === "rejected") {

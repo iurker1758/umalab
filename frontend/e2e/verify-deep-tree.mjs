@@ -884,7 +884,17 @@ try {
   const closeChooser = async () => {
     if ((await page.locator(".spark-popout").count()) > 0) {
       await page.keyboard.press("Escape");
-      await page.waitForSelector(".spark-popout", { state: "detached" });
+      // A layered surface — the Lists menu — takes the first press and
+      // stops it; one more Escape then reaches the popout. Bounded, so an
+      // absorbed press degrades to a retry rather than an uncaught timeout
+      // that skips every section below.
+      const gone = await page
+        .waitForSelector(".spark-popout", { state: "detached", timeout: 5000 })
+        .then(() => true, () => false);
+      if (!gone) {
+        await page.keyboard.press("Escape");
+        await page.waitForSelector(".spark-popout", { state: "detached" });
+      }
     }
   };
   // A popout section by its head, never by index — what renders above a
@@ -1717,6 +1727,13 @@ try {
       (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 0 &&
       (await rowForSpark(otherBlue.kind, otherBlue.key).count()) === 1 &&
       (await page.locator('.spark-popout .spark-matches button[data-stars="1"][data-spark^="pink:"]').count()) === 10);
+    // The query bypasses the filter: this popout is the only place a spark
+    // can be ADDED, so a typed name must find its row under any selection —
+    // a view control must never silently disable the one write path.
+    await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill(otherWhite.name);
+    check("a typed name is found under any selection",
+      (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 1);
+    await page.locator('.spark-popout input[aria-label="G1-1 spark search"]').fill("");
     // Pressed sources union — whatever is selected, all of it shows: with a
     // list pressed, Current Sparks ADDS her held rows and takes nothing the
     // list promised, so the chosen-but-unheld spark stays put.
@@ -1726,6 +1743,14 @@ try {
       (await rowForSpark(uncarried.kind, uncarried.key).count()) === 1 &&
       (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 0);
     await page.locator(".spark-popout .spark-current").click();
+    // Escape is layered: the open menu takes the press and the popout — and
+    // its typed query — survives. Only then does a second Escape close the
+    // editor.
+    await page.locator(bandLists).click();
+    await page.keyboard.press("Escape");
+    check("Escape closes the Lists menu, not the editor under it",
+      (await page.locator(".spark-popout .spark-list-menu").count()) === 0 &&
+      (await page.locator(".spark-popout").count()) === 1);
     // Toggling OFF in the popout exercises the write path from this surface;
     // the two controls press one stored selection.
     await page.locator(bandLists).click();
@@ -1738,6 +1763,9 @@ try {
           JSON.parse(localStorage.getItem("umalab.sparkLists.active") ?? "null"))
       ) === "[]" &&
       (await rowForSpark(otherWhite.kind, otherWhite.key).count()) === 1);
+    // The menu is still open and absorbs the first Escape by design — leave
+    // the band tidy before handing back to the shared close.
+    await page.locator(bandLists).click();
     await closeChooser();
     await selectNode("Trainee");
     await page.locator(panelLists).click();
@@ -1764,7 +1792,23 @@ try {
       JSON.stringify(tinted) === JSON.stringify(expectedTint));
   }
   // Belt over the [] the deselect wrote: nothing after this section may
-  // inherit a selection, whatever path the guarded block took.
+  // inherit a selection, whatever path the guarded block took. Driven
+  // through the UI, because clearing the KEY alone is inert — the page
+  // never reloads, so the in-memory selection is what would filter every
+  // later section.
+  await selectNode("Trainee");
+  if ((await page.locator(panelLists).count()) > 0) {
+    if ((await page.locator(panelLists).getAttribute("aria-expanded")) !== "true") {
+      await page.locator(panelLists).click();
+    }
+    const pressedPill = '.focus .spark-list-menu .spark-list-filter[aria-pressed="true"]';
+    for (let i = 0; i < 10 && (await page.locator(pressedPill).count()) > 0; i++) {
+      await page.locator(pressedPill).first().click();
+    }
+    check("the belt left no list selected",
+      (await page.locator(pressedPill).count()) === 0);
+    await page.locator(panelLists).click();
+  }
   await page.evaluate(() => localStorage.removeItem("umalab.sparkLists.active"));
   await openTab("Details");
 

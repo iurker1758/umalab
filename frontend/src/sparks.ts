@@ -142,11 +142,6 @@ export const activeSparkIds = (
   active: number[]
 ): Set<string> => new Set(activeSparks(lists, active).map(refId));
 
-/** Every list name in use, in the user's order — what the active-list
- *  selector (#67) renders. No in-app caller yet; not dead code. */
-export const listNames = (lists: SparkList[]): string[] =>
-  lists.map((list) => list.name);
-
 // ---------- the active selection (device-local) ----------
 
 /**

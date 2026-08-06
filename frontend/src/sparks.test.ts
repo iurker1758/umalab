@@ -11,7 +11,6 @@ import {
   favorites,
   isFavorite,
   listById,
-  listNames,
   listsWith,
   loadActiveLists,
   PartialWrite,
@@ -105,10 +104,6 @@ describe("reads over the caller's lists", () => {
   it("finds a list by id, and says so when there isn't one", () => {
     expect(listById(lists, 2)?.name).toBe("Medium");
     expect(listById(lists, 87)).toBeUndefined();
-  });
-
-  it("names the lists in the user's order", () => {
-    expect(listNames(lists)).toEqual(["Front Runner", "Medium", "Long"]);
   });
 });
 

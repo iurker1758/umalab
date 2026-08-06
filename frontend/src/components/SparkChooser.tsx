@@ -695,11 +695,11 @@ function ChooserPopout({
   // Pressing again takes a fresh cut.
   //
   // Keyed by source — "current" or a list id — because the two differ in
-  // LIFETIME: list presses persist through `onActiveChange` (the active
+  // LIFETIME: list presses persist through `onToggleActive` (the active
   // selection, DECISIONS.md #43) and are re-pressed here at the next open,
   // while Current Sparks is per-member and dies with the popout. The lazy
   // initializer IS the snapshot-at-open — the popout mounts fresh per open
-  // (and per `epoch`), and `onActiveChange` never bumps `epoch`, so the map,
+  // (and per `epoch`), and `onToggleActive` never bumps `epoch`, so the map,
   // not the live `active` prop, is this popout's single source of truth.
   // Stale active ids name no list and contribute no entry, so an all-stale
   // selection degrades to browsing everything.
@@ -806,13 +806,19 @@ function ChooserPopout({
   // on another device or surface) degrades to showing more than asked,
   // never to "No sparks match." over an untouched node.
   //
-  // Rows held AT OPEN are exempt from the membership terms — under a list
-  // filter, a held foreign green in none of the selected lists would
-  // otherwise be invisible but unremovable, the :possible exemption's
-  // failure over again. Uniform across sources, which extends it to Current
-  // Sparks: a row removed before the pill was pressed now stays visible
-  // rather than vanishing with the snapshot. The query still applies to
-  // held rows.
+  // Rows held AT OPEN are exempt from the LIST terms — under a list filter,
+  // a held white in none of the selected lists would otherwise be invisible
+  // but unremovable, the :possible exemption's failure over again. The
+  // exemption does NOT extend to Current Sparks alone: that pill is an
+  // exact snapshot of what she holds at press, and rows she no longer held
+  // reappearing under it would read as removals that didn't take.
+  //
+  // The QUERY bypasses the membership terms entirely: the pills shape the
+  // unqueried browse, but a typed name is an explicit ask — and this popout
+  // is the only place a spark can be ADDED, so a persisted selection that
+  // made an unlisted spark unfindable by its exact name would let a view
+  // control on a read surface silently disable the one write path.
+  const listsPressed = [...filters.keys()].some((key) => key !== "current");
   const shownIds = (() => {
     if (filters.size === 0) return null;
     const flat = new Set([...filters.values()].flatMap((set) => [...set]));
@@ -820,9 +826,9 @@ function ChooserPopout({
   })();
   const currentIds = filters.get("current") ?? null;
   const inFilter = (id: string, kind: string) =>
-    heldAtOpen.has(id) ||
+    q !== "" ||
     (LISTABLE.has(kind)
-      ? shownIds === null || shownIds.has(id)
+      ? shownIds === null || shownIds.has(id) || (listsPressed && heldAtOpen.has(id))
       : currentIds === null || currentIds.has(id));
   const byQuery = (a: { name: string }, b: { name: string }) =>
     a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) ||

@@ -29,7 +29,7 @@ several:
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
-  (the Lists filter)
+  (the Lists filter), 44 (management page)
 - **Multi-user & auth:** 32
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
@@ -1883,3 +1883,45 @@ marked in each.
   kills the clip assumption the live pills and the tint lean on.
   Wanting "what will I get" and "what am I hunting" at once — that
   is the stacked block coming back.
+
+## 44. The lists get a page: rename, delete, reorder, bulk-add
+
+- **Requirements:** issue #70 — #37 deferred rename, delete and bulk
+  membership here, and until Delete exists the 50-list cap is a
+  deadlock: at cap, `POST` 409s with no in-app way to free a slot. The
+  backend already covers everything (PATCH takes `name`/`position`/
+  `sparks` independently; DELETE is idempotent), so this is
+  frontend-only. Last-write-wins on the list row stays accepted
+  (issue #66); the ★ picker stays the per-spark control.
+- **Choice:** a third route, `/lists`, with a page-local copy of the
+  chooser's store shape — pages refetch on mount, so a store lifted to
+  the shell would be the staler copy, and nothing user-held dies with
+  this page. Rename is the blueprint idiom (the field IS the name,
+  commit on blur, a refused draft kept for correction). Reorder is
+  per-row up/down through `movePlan`: each row's target position is
+  its index in the desired order, only changed rows written — two
+  writes on dense positions, and the first move over legacy ties
+  renumbers the tail once, after which the order is dense. Bulk-add
+  is a NEW list-scoped popout sharing the chooser popout's CSS,
+  `ListFilter`, and ranking comparator — rows toggle membership with
+  the same per-toggle, non-optimistic writes as every list surface,
+  so Escape can close at any moment with nothing staged. The page's
+  membership chips are display-only: one write surface per list, and
+  rows that cannot move under a tap. `detailOr`, `refocus` and the
+  query comparator moved to shared modules for the second consumer.
+- **Alternatives rejected:** extracting the chooser popout's browse
+  layer — it is bound to the slot document (stars, greens, a pink) and
+  carries the invariants of four review rounds; drag-and-drop —
+  pointer and a11y cost on the 390px target for a list capped at 50;
+  swapping the two rows' stored positions — legal ties make that a
+  no-op or move the wrong pair; batch-membership-on-close — the
+  unconditional Escape would discard staged work or demand a confirm,
+  against the app-wide non-optimistic rule; lifting the store into
+  `App.tsx` — relocating the Designer's write-race guard and epoch
+  machinery (issue #89's surface) for staleness that refetch-on-mount
+  already bounds; an etag/version on the row — issue #66's territory,
+  not this page's.
+- **What would change my mind:** real cross-device collisions (issue
+  #66 names the join table); per-toggle writes turning chatty over the
+  tunnel (issue #69's revisit, which would bring optimistic staging);
+  a third page needing the lists, which is when the store lifts.

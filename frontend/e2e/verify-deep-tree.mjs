@@ -3025,6 +3025,128 @@ try {
     check("and retries to completion with no user action", recovered);
   });
 
+  // ---------- the Lists page (issue #70) ----------
+  // Managing the lists themselves: view, rename, delete, reorder, bulk-add.
+  // Fixtures go through the API — the create path is the picker's, covered
+  // above — and their names are tracked BEFORE creation, like every list
+  // this run makes. The rename target is tracked too: cleanup matches names,
+  // and a renamed row would otherwise outlive the sweep on real accounts.
+  const mgmtStamp = Date.now();
+  const mgmtA = `${E2E_LIST_PREFIX} manage a ${mgmtStamp}`;
+  const mgmtB = `${E2E_LIST_PREFIX} manage b ${mgmtStamp}`;
+  const mgmtA2 = `${E2E_LIST_PREFIX} managed ${mgmtStamp}`;
+  listsOwned.add(mgmtA);
+  listsOwned.add(mgmtB);
+  listsOwned.add(mgmtA2);
+  const mgmtRowA = await postJson("/api/spark-lists", { name: mgmtA });
+  const mgmtRowB = await postJson("/api/spark-lists", { name: mgmtB });
+  await page.locator(".nav a", { hasText: "Lists" }).click();
+  await page.waitForSelector(".lists-page .list-row");
+  const mgmtLists = await getJson("/api/spark-lists");
+  check("the Lists page shows one named row per list, in the server's order",
+    (await page.locator(".list-row").count()) === mgmtLists.length &&
+    JSON.stringify(
+      await page
+        .locator(".list-row .list-name")
+        .evaluateAll((els) => els.map((el) => el.value))
+    ) === JSON.stringify(mgmtLists.map((l) => l.name)));
+
+  // Rename commits on blur, from the field that IS the name.
+  const mgmtName = (n) => page.locator(`.list-row[aria-label="${n}"] .list-name`);
+  await mgmtName(mgmtA).fill(mgmtA2);
+  await mgmtName(mgmtA).press("Enter");
+  check("rename lands from the name field",
+    await until(async () =>
+      (await getJson("/api/spark-lists")).some(
+        (l) => l.id === mgmtRowA.id && l.name === mgmtA2
+      )));
+  // Onto a name the owner already holds: the 409's own words in the toast,
+  // and the field KEEPS the refused draft for correction — the server row
+  // unchanged underneath it.
+  await page.waitForSelector(`.list-row[aria-label="${mgmtA2}"]`);
+  await mgmtName(mgmtA2).fill(mgmtB);
+  await mgmtName(mgmtA2).press("Enter");
+  const renameToast = await page
+    .waitForFunction(
+      () =>
+        (document.querySelector(".error")?.textContent ?? "").includes(
+          "already have a list"
+        ),
+      null,
+      { timeout: 5000 }
+    )
+    .then(() => true, () => false);
+  check("a colliding rename shows the server's words and keeps the draft",
+    renameToast &&
+    (await mgmtName(mgmtA2).inputValue()) === mgmtB &&
+    (await getJson("/api/spark-lists")).some(
+      (l) => l.id === mgmtRowA.id && l.name === mgmtA2
+    ));
+  await page.locator(".error").click();
+  await mgmtName(mgmtA2).fill(mgmtA2);
+  await mgmtName(mgmtA2).press("Enter");
+
+  // Bulk-add: the per-list popout, a toggle per row, per-toggle writes.
+  const mgmtSection = page.locator(`.list-row[aria-label="${mgmtA2}"]`);
+  await mgmtSection.locator("button", { hasText: "Add Sparks" }).click();
+  await page.waitForSelector(".spark-popout .list-popout-title");
+  const mgmtSpark = factorRef.find(
+    (f) => f.kind === "white" && !baselineFavorites.has(`white:${f.key}`)
+  );
+  await page.locator('.spark-popout input[type="search"]').fill(mgmtSpark.name);
+  const mgmtToggle = page.locator(
+    `.list-toggle[data-list="${mgmtRowA.id}"][data-spark="white:${mgmtSpark.key}"]`
+  );
+  await mgmtToggle.click();
+  const mgmtSparks = async () =>
+    (await getJson("/api/spark-lists")).find((l) => l.id === mgmtRowA.id)?.sparks ?? [];
+  check("a toggle writes the membership, and the row lights when it lands",
+    (await until(async () => (await mgmtSparks()).length === 1)) &&
+    (await until(async () => (await mgmtToggle.getAttribute("aria-pressed")) === "true")));
+  await mgmtToggle.click();
+  check("toggling again removes it",
+    await until(async () => (await mgmtSparks()).length === 0));
+  await mgmtToggle.click();
+  await until(async () => (await mgmtSparks()).length === 1);
+  await page.keyboard.press("Escape");
+  await page.locator(".spark-popout").waitFor({ state: "detached" });
+  check("the page's row shows the membership as display-only chips",
+    (await mgmtSection.locator(".list-chip").count()) === 1 &&
+    ((await mgmtSection.locator(".list-chip").textContent()) ?? "").includes(
+      mgmtSpark.name
+    ) &&
+    (await mgmtSection.locator(".list-chip button").count()) === 0);
+
+  // Reorder: B was appended after A, so B's Up swaps the pair. Density is
+  // NOT asserted — a local baseline can hold legacy positions this move
+  // legitimately renumbers, and the contract is the order, not the numbers.
+  await page
+    .locator(`.list-row[aria-label="${mgmtB}"] button[aria-label="Move ${mgmtB} up"]`)
+    .click();
+  check("Up swaps the pair on the server",
+    await until(async () => {
+      const rows = await getJson("/api/spark-lists");
+      const at = (id) => rows.findIndex((l) => l.id === id);
+      return at(mgmtRowB.id) === at(mgmtRowA.id) - 1;
+    }));
+  check("the top row's Up is disabled — an end move plans nothing",
+    await page.locator(".list-row").first().locator(".list-move").first().isDisabled());
+
+  // Delete asks first, then the row leaves the page and the server. List A
+  // stays for the finally sweep — deleting it here too would only repeat
+  // this check.
+  page.once("dialog", (d) => void d.accept());
+  await page
+    .locator(`.list-row[aria-label="${mgmtB}"] button`, { hasText: "Delete" })
+    .click();
+  check("delete confirms, then removes the list everywhere",
+    (await until(async () =>
+      !(await getJson("/api/spark-lists")).some((l) => l.id === mgmtRowB.id)
+    )) &&
+    (await until(async () =>
+      (await page.locator(`.list-row[aria-label="${mgmtB}"]`).count()) === 0
+    )));
+
   const realErrors = errors.filter((e) => !/favicon/i.test(e));
   check("no JS errors or failed requests", realErrors.length === 0, realErrors.join(" | "));
   console.log(`  (${expected.length} failures inside the deliberate-break windows, ignored)`);

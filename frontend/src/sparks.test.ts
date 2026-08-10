@@ -10,15 +10,17 @@ import {
   deleteList,
   favorites,
   isFavorite,
+  LIST_SORT_STORE,
   listById,
   listsWith,
   loadActiveLists,
-  moveList,
-  movePlan,
+  loadListSort,
   PartialWrite,
   renameList,
   saveActiveLists,
+  saveListSort,
   setMembership,
+  sortLists,
   toggleActive,
   toggleMembership,
   union,
@@ -29,7 +31,7 @@ const spark = (kind: SparkRef["kind"], key: number): SparkRef => ({ kind, key })
 
 const aList = (over: Partial<SparkList> & Pick<SparkList, "id">): SparkList => ({
   name: `list ${over.id}`,
-  position: over.id,
+  updated_at: "2026-08-10T00:00:00Z",
   sparks: [],
   ...over,
 });
@@ -258,15 +260,13 @@ describe("writes", () => {
     expect(calls.updateSparkList).toHaveBeenCalledWith(1, { sparks: [spark("race", 40)] });
   });
 
-  it("re-sorts by position after a write, matching what the next GET returns", async () => {
-    const calls = stubApi({
-      updateSparkList: (id, body) => Promise.resolve(aList({ id, position: 0, ...body })),
-    });
-    const lists = [aList({ id: 1, position: 0 }), aList({ id: 2, position: 1 })];
+  it("keeps creation order after a write, matching what the next GET returns", async () => {
+    const calls = stubApi({});
+    // Handed in reversed: the fold must re-sort to the server's id order, so
+    // a write can never make a list swap places between reads.
+    const lists = [aList({ id: 2 }), aList({ id: 1 })];
     const next = await setMembership(lists, 2, []);
     expect(calls.updateSparkList).toHaveBeenCalledTimes(1);
-    // Both at position 0 now, so the tie breaks on id — a total order, so a
-    // list cannot swap places between reads.
     expect(next.map((l) => l.id)).toEqual([1, 2]);
   });
 });
@@ -308,123 +308,57 @@ describe("toggling one list's membership", () => {
   });
 });
 
-describe("planning a one-step move", () => {
-  const dense = [
-    aList({ id: 10, position: 0 }),
-    aList({ id: 11, position: 1 }),
-    aList({ id: 12, position: 2 }),
+describe("the management page's sort", () => {
+  const lists = [
+    aList({ id: 1, name: "Medium", updated_at: "2026-08-09T00:00:00Z" }),
+    aList({ id: 2, name: "front runner", updated_at: "2026-08-10T12:00:00Z" }),
+    aList({ id: 3, name: "Long", updated_at: "2026-08-08T00:00:00Z" }),
   ];
 
-  it("plans nothing at the ends, or for a list that isn't there", () => {
-    expect(movePlan(dense, 10, -1)).toEqual([]);
-    expect(movePlan(dense, 12, 1)).toEqual([]);
-    expect(movePlan(dense, 87, 1)).toEqual([]);
+  it("sorts by name case-insensitively, by creation newest-first, and by edit time", () => {
+    expect(sortLists(lists, "name").map((l) => l.id)).toEqual([2, 3, 1]);
+    expect(sortLists(lists, "newest").map((l) => l.id)).toEqual([3, 2, 1]);
+    expect(sortLists(lists, "edited").map((l) => l.id)).toEqual([2, 1, 3]);
   });
 
-  it("moves over dense positions with exactly two writes", () => {
-    expect(movePlan(dense, 12, -1)).toEqual([
-      { id: 12, position: 1 },
-      { id: 11, position: 2 },
-    ]);
-    expect(movePlan(dense, 10, 1)).toEqual([
-      { id: 11, position: 0 },
-      { id: 10, position: 1 },
-    ]);
-  });
-
-  it("orders by (position, id) before planning, matching the server's sort", () => {
-    // Handed in unsorted — the plan must be about the DISPLAYED order.
-    const shuffled = [dense[2]!, dense[0]!, dense[1]!];
-    expect(movePlan(shuffled, 12, -1)).toEqual([
-      { id: 12, position: 1 },
-      { id: 11, position: 2 },
-    ]);
-  });
-
-  it("handles a legal position tie without touching the tie's other row", () => {
-    // a and c share position 2 (the server never renumbers). Swapping stored
-    // positions here would move the WRONG pair; renumbering to index moves b
-    // one step and leaves c where it displays.
+  it("breaks every tie on id, so equal keys cannot swap between renders", () => {
     const tied = [
-      aList({ id: 5, position: 2 }), // a — displays first (tie breaks on id)
-      aList({ id: 7, position: 2 }), // c — displays second
-      aList({ id: 1, position: 3 }), // b — displays third
+      aList({ id: 2, name: "Same" }),
+      aList({ id: 1, name: "Same" }),
     ];
-    expect(movePlan(tied, 1, -1)).toEqual([
-      { id: 5, position: 0 },
-      { id: 1, position: 1 },
-    ]);
+    expect(sortLists(tied, "name").map((l) => l.id)).toEqual([1, 2]);
+    expect(sortLists(tied, "edited").map((l) => l.id)).toEqual([2, 1]);
   });
 
-  it("renumbers sparse legacy positions dense, once", () => {
-    const sparse = [
-      aList({ id: 20, position: 10 }),
-      aList({ id: 21, position: 20 }),
-      aList({ id: 22, position: 30 }),
-    ];
-    expect(movePlan(sparse, 21, -1)).toEqual([
-      { id: 21, position: 0 },
-      { id: 20, position: 1 },
-      { id: 22, position: 2 },
-    ]);
-    // After that move the positions are 0..n-1, so the next one is two writes.
-    const healed = [
-      aList({ id: 21, position: 0 }),
-      aList({ id: 20, position: 1 }),
-      aList({ id: 22, position: 2 }),
-    ];
-    expect(movePlan(healed, 22, -1)).toHaveLength(2);
+  it("does not disturb the caller's array", () => {
+    const before = lists.map((l) => l.id);
+    sortLists(lists, "name");
+    expect(lists.map((l) => l.id)).toEqual(before);
   });
 });
 
-describe("applying a move", () => {
-  const dense = [
-    aList({ id: 10, position: 0 }),
-    aList({ id: 11, position: 1 }),
-    aList({ id: 12, position: 2 }),
-  ];
+describe("the sort persists per device", () => {
+  afterEach(restoreLocalStorage);
 
-  it("PATCHes each planned row in plan order and folds the responses", async () => {
-    const calls = stubApi({
-      updateSparkList: (id, body) => Promise.resolve(aList({ id, position: 0, ...body })),
-    });
-    const next = await moveList(dense, 12, -1);
-    expect(calls.updateSparkList.mock.calls).toEqual([
-      [12, { position: 1 }],
-      [11, { position: 2 }],
-    ]);
-    expect(next.map((l) => l.id)).toEqual([10, 12, 11]);
+  it("round-trips through storage", () => {
+    stubLocalStorage();
+    saveListSort("edited");
+    expect(loadListSort()).toBe("edited");
   });
 
-  it("makes no request when there is nothing to do", async () => {
-    const calls = stubApi({});
-    expect(await moveList(dense, 10, -1)).toBe(dense);
-    expect(calls.updateSparkList).not.toHaveBeenCalled();
+  it.each([
+    ["absent", null],
+    ["not a mode", '"position"'],
+  ])("falls back to name order (%s)", (_why, raw) => {
+    const store = stubLocalStorage();
+    if (raw !== null) store.set(LIST_SORT_STORE, raw);
+    expect(loadListSort()).toBe("name");
   });
 
-  it("throws PartialWrite carrying what landed when a later step fails", async () => {
-    // The first PATCH committed, so the caller must adopt it — rejecting
-    // outright would render an order the server no longer holds. Here the
-    // landed write puts 12 beside 11 at position 1 and the tie breaks on id,
-    // so the partial state still DISPLAYS the original order.
-    let call = 0;
-    stubApi({
-      updateSparkList: (id, body) =>
-        ++call === 1
-          ? Promise.resolve(aList({ id, position: 0, ...body }))
-          : Promise.reject(new Error("boom")),
-    });
-    const error = (await moveList(dense, 12, -1).catch((e: unknown) => e)) as PartialWrite;
-    expect(error).toBeInstanceOf(PartialWrite);
-    expect(error.lists.map((l) => l.id)).toEqual([10, 11, 12]);
-    expect(error.lists.find((l) => l.id === 12)?.position).toBe(1);
-  });
-
-  it("throws plain when the first step fails — nothing landed to adopt", async () => {
-    stubApi({ updateSparkList: () => Promise.reject(new Error("boom")) });
-    const error = await moveList(dense, 12, -1).catch((e: unknown) => e);
-    expect(error).not.toBeInstanceOf(PartialWrite);
-    expect(error).toBeInstanceOf(Error);
+  it("falls back rather than throwing when storage is blocked", () => {
+    stubBrokenLocalStorage();
+    expect(loadListSort()).toBe("name");
+    expect(() => saveListSort("newest")).not.toThrow();
   });
 });
 

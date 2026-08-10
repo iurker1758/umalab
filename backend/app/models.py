@@ -207,9 +207,13 @@ class SparkList(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = _owner_column()
     name: Mapped[str] = mapped_column(String(40))
-    # Explicit rather than `id` order: the user curates these, so reordering
-    # them must not mean recreating them. Ties break on `id`.
-    position: Mapped[int] = mapped_column(server_default=text("0"))
+    # What the management page's "Last Edited" sort reads (issue #70). There
+    # is no curated order: a `position` column shipped and was stripped before
+    # any UI set it — the page offers sorts instead, and `id` is creation
+    # order (DECISIONS.md #44).
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
     sparks: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, server_default=text("'[]'::jsonb")
     )

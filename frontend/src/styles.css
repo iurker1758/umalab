@@ -784,6 +784,16 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 
 /* ---------- Spark-list management (issue #70) ---------- */
 .lists-page { display: flex; flex-direction: column; gap: 0.6rem; }
+/* Create on the left, the device-local sort on the right. One row that
+   wraps: at 390px the sort drops under the field. */
+.list-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+/* The ★ picker's New List idiom at page scale. `margin: 0` on the field for
+   `.spark-list-new`'s reason — `.uma-search` carries a bottom margin for the
+   stacked panels it was written for. */
+.list-new { display: flex; align-items: center; gap: 0.3rem; flex: 1 1 14rem; }
+.list-new .uma-search { flex: 1 1 auto; min-width: 0; width: auto; margin: 0; font-size: 0.85rem; padding: 0.34rem 0.6rem; }
+.list-sort { margin-left: auto; }
+.list-sort .seg { cursor: pointer; font-size: 0.72rem; padding: 0.34rem 0.6rem; }
 .list-row { background: #141a21; border: 1px solid #2a3340; border-radius: 10px; padding: 0.45rem 0.7rem 0.55rem; }
 .list-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
 /* The blueprint-name idiom: the field is the name, a border only where the
@@ -794,11 +804,6 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .list-name:hover:not(:disabled) { border-bottom-color: #3a4756; }
 .list-name:focus { outline: none; border-bottom-color: #2a76c9; }
 .list-controls { display: flex; align-items: center; gap: 0.3rem; margin-left: auto; }
-/* Thumb-height like the popout rows' buttons; width held so ▲▼ read as a
-   pair of equal targets. */
-.list-move { flex: none; width: 30px; padding: 0.34rem 0; font-size: 0.66rem; line-height: 1; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; opacity: 0.85; cursor: pointer; }
-.list-move:hover:not(:disabled) { opacity: 1; background: #1d2b3a; }
-.list-move:disabled { opacity: 0.25; cursor: default; }
 /* The app's rectangular action shape (`.spark-open`, `.spark-list-disclose`). */
 .list-action { display: inline-flex; align-items: center; padding: 0.3rem 0.6rem; font-size: 0.72rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; opacity: 0.85; cursor: pointer; }
 .list-action:hover:not(:disabled) { opacity: 1; background: #1d2b3a; }

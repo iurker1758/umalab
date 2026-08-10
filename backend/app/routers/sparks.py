@@ -75,11 +75,11 @@ async def list_spark_lists(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Every list this user has, in the order they curate.
+    """Every list this user has, in creation order.
 
-    Ties break on `id` so the order is total — two lists created without an
-    explicit position both sit at the default until something reorders them,
-    and a list must not jump around between reads.
+    `id` order, which is total and stable — the management page re-sorts
+    client-side per its own selector (name, newest, last edited), so the
+    wire order only has to never move between reads (DECISIONS.md #44).
 
     Never filtered against the factor reference: a spark missing from
     `app/data` is still a legitimate thing to want, and dropping it here
@@ -89,7 +89,7 @@ async def list_spark_lists(
         await session.scalars(
             select(SparkList)
             .where(SparkList.owner_id == user.id)
-            .order_by(SparkList.position, SparkList.id)
+            .order_by(SparkList.id)
         )
     ).all()
 
@@ -100,7 +100,7 @@ async def create_spark_list(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Create an empty list, appended to the end of the user's order.
+    """Create an empty list.
 
     Empty is the normal case and the reason this table exists: the picker's
     `New List` is reached while starring a spark, so the list is created and
@@ -127,14 +127,7 @@ async def create_spark_list(
     )
     if (count or 0) >= MAX_LISTS_PER_OWNER:
         raise HTTPException(409, _AT_CAP)
-    # Append: one past the current maximum, so a new list never lands in the
-    # middle of an order the user arranged. `None` on the very first list.
-    last = await session.scalar(
-        select(func.max(SparkList.position)).where(SparkList.owner_id == user.id)
-    )
-    row = SparkList(
-        owner_id=user.id, name=body.name, position=0 if last is None else last + 1
-    )
+    row = SparkList(owner_id=user.id, name=body.name)
     session.add(row)
     try:
         await session.commit()
@@ -156,9 +149,9 @@ async def update_spark_list(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Rename it, reorder it, or set its membership — whichever the body
-    carries. An omitted field is left alone, so the picker sends `sparks`
-    without having to know or guess the list's current name.
+    """Rename it or set its membership — whichever the body carries. An
+    omitted field is left alone, so the picker sends `sparks` without having
+    to know or guess the list's current name.
 
     404 rather than DELETE's silent success when the list is gone: "make
     this list hold these sparks" is not satisfied by the list not existing,
@@ -169,8 +162,6 @@ async def update_spark_list(
         raise HTTPException(404, "no such list")
     if body.name is not None:
         row.name = body.name
-    if body.position is not None:
-        row.position = body.position
     if body.sparks is not None:
         # JSONB wants plain data. Dumped from the validated models, so what
         # lands in the column is exactly what SparkRef allows.
@@ -182,6 +173,10 @@ async def update_spark_list(
         if not _duplicate_name(exc):
             raise
         raise HTTPException(409, _DUPLICATE_NAME) from None
+    # `updated_at` is DB-generated on UPDATE, so it is expired after the
+    # commit — reading it without this refresh lazy-loads outside the async
+    # context and 500s (the POST route refreshes for the same reason).
+    await session.refresh(row)
     return row
 
 

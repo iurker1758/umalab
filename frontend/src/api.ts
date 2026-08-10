@@ -250,8 +250,9 @@ export interface SparkList {
   id: number;
   // The user's own build name, unique per user.
   name: string;
-  // Their curated order. The server sorts on it and breaks ties on `id`.
-  position: number;
+  // What the management page's "Last Edited" sort reads; `id` carries
+  // creation order (DECISIONS.md #44). ISO timestamp, compared as a string.
+  updated_at: string;
   // Membership, in the order it was added. Deduped server-side.
   sparks: SparkRef[];
 }
@@ -263,7 +264,7 @@ export interface SparkList {
 // `sparks: []` empties the list; omitting `sparks` does not. Hence a Partial
 // rather than nullable fields — `undefined` is unsendable in JSON, which is
 // exactly the "absent" the route wants.
-export type SparkListPatch = Partial<Omit<SparkList, "id">>;
+export type SparkListPatch = Partial<Omit<SparkList, "id" | "updated_at">>;
 
 // Carries the status so a caller can tell "this row is gone" (404) from
 // "the backend is down" — the designer's autosave recovers from the first

@@ -3046,13 +3046,15 @@ try {
   await page.locator(".nav a", { hasText: "Lists" }).click();
   await page.waitForSelector(".lists-page .list-row");
   const mgmtLists = await getJson("/api/spark-lists");
-  check("the Lists page shows one named row per list, in the server's order",
+  // The default sort is Name — same comparator as sortLists, id ties.
+  const byListName = (a, b) => a.name.localeCompare(b.name) || a.id - b.id;
+  check("the Lists page shows one named row per list, sorted by name",
     (await page.locator(".list-row").count()) === mgmtLists.length &&
     JSON.stringify(
       await page
         .locator(".list-row .list-name")
         .evaluateAll((els) => els.map((el) => el.value))
-    ) === JSON.stringify(mgmtLists.map((l) => l.name)));
+    ) === JSON.stringify([...mgmtLists].sort(byListName).map((l) => l.name)));
 
   // Rename commits on blur, from the field that IS the name.
   const mgmtName = (n) => page.locator(`.list-row[aria-label="${n}"] .list-name`);
@@ -3092,9 +3094,9 @@ try {
   await mgmtName(mgmtA2).fill(mgmtA2);
   await mgmtName(mgmtA2).press("Enter");
 
-  // Bulk-add: the per-list popout, a toggle per row, per-toggle writes.
+  // Edit Sparks: the per-list popout, a toggle per row, per-toggle writes.
   const mgmtSection = page.locator(`.list-row[aria-label="${mgmtA2}"]`);
-  await mgmtSection.locator("button", { hasText: "Add Sparks" }).click();
+  await mgmtSection.locator("button", { hasText: "Edit Sparks" }).click();
   await page.waitForSelector(".spark-popout .list-popout-title");
   const mgmtSpark = factorRef.find(
     (f) => f.kind === "white" && !baselineFavorites.has(`white:${f.key}`)
@@ -3123,20 +3125,28 @@ try {
     ) &&
     (await mgmtSection.locator(".list-chip button").count()) === 0);
 
-  // Reorder: B was appended after A, so B's Up swaps the pair. Density is
-  // NOT asserted — a local baseline can hold legacy positions this move
-  // legitimately renumbers, and the contract is the order, not the numbers.
-  await page
-    .locator(`.list-row[aria-label="${mgmtB}"] button[aria-label="Move ${mgmtB} up"]`)
-    .click();
-  check("Up swaps the pair on the server",
-    await until(async () => {
-      const rows = await getJson("/api/spark-lists");
-      const at = (id) => rows.findIndex((l) => l.id === id);
-      return at(mgmtRowB.id) === at(mgmtRowA.id) - 1;
-    }));
-  check("the top row's Up is disabled — an end move plans nothing",
-    await page.locator(".list-row").first().locator(".list-move").first().isDisabled());
+  // Create, from the page's own field — the picker is no longer the only
+  // door. Tracked before the click, like every list this run makes.
+  const mgmtC = `${E2E_LIST_PREFIX} made here ${mgmtStamp}`;
+  listsOwned.add(mgmtC);
+  await page.locator('[aria-label="New List Name"]').fill(mgmtC);
+  await page.locator(".list-new button", { hasText: "Add" }).click();
+  check("the page's New List field creates one",
+    (await until(async () =>
+      (await getJson("/api/spark-lists")).some((l) => l.name === mgmtC)
+    )) &&
+    (await until(async () =>
+      (await page.locator(`.list-row[aria-label="${mgmtC}"]`).count()) === 1
+    )) &&
+    (await page.locator('[aria-label="New List Name"]').inputValue()) === "");
+
+  // The sort selector: Newest puts the just-made list first; the rows are a
+  // client-side view of the same server order either way.
+  await page.locator(".list-sort .seg", { hasText: "Newest" }).click();
+  check("Newest sorts the just-made list to the top",
+    await until(async () =>
+      (await page.locator(".list-row .list-name").first().inputValue()) === mgmtC));
+  await page.locator(".list-sort .seg", { hasText: "Name" }).click();
 
   // Delete asks first — through the suite's global handler, which accepts
   // and records the prompt — then the row leaves the page and the server.

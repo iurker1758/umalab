@@ -3040,6 +3040,9 @@ try {
   listsOwned.add(mgmtA2);
   const mgmtRowA = await postJson("/api/spark-lists", { name: mgmtA });
   const mgmtRowB = await postJson("/api/spark-lists", { name: mgmtB });
+  // The persistence section's deliberate breaks leave a toast standing, and
+  // the toast is FIXED over the header — dismiss it or it eats the nav click.
+  if ((await page.locator(".error").count()) > 0) await page.locator(".error").click();
   await page.locator(".nav a", { hasText: "Lists" }).click();
   await page.waitForSelector(".lists-page .list-row");
   const mgmtLists = await getJson("/api/spark-lists");
@@ -3062,26 +3065,29 @@ try {
       )));
   // Onto a name the owner already holds: the 409's own words in the toast,
   // and the field KEEPS the refused draft for correction — the server row
-  // unchanged underneath it.
+  // unchanged underneath it. Inside a breaking() window: the 409 is the
+  // behaviour under test, not a failed request.
   await page.waitForSelector(`.list-row[aria-label="${mgmtA2}"]`);
-  await mgmtName(mgmtA2).fill(mgmtB);
-  await mgmtName(mgmtA2).press("Enter");
-  const renameToast = await page
-    .waitForFunction(
-      () =>
-        (document.querySelector(".error")?.textContent ?? "").includes(
-          "already have a list"
-        ),
-      null,
-      { timeout: 5000 }
-    )
-    .then(() => true, () => false);
-  check("a colliding rename shows the server's words and keeps the draft",
-    renameToast &&
-    (await mgmtName(mgmtA2).inputValue()) === mgmtB &&
-    (await getJson("/api/spark-lists")).some(
-      (l) => l.id === mgmtRowA.id && l.name === mgmtA2
-    ));
+  await breaking(async () => {
+    await mgmtName(mgmtA2).fill(mgmtB);
+    await mgmtName(mgmtA2).press("Enter");
+    const renameToast = await page
+      .waitForFunction(
+        () =>
+          (document.querySelector(".error")?.textContent ?? "").includes(
+            "already have a list"
+          ),
+        null,
+        { timeout: 5000 }
+      )
+      .then(() => true, () => false);
+    check("a colliding rename shows the server's words and keeps the draft",
+      renameToast &&
+      (await mgmtName(mgmtA2).inputValue()) === mgmtB &&
+      (await getJson("/api/spark-lists")).some(
+        (l) => l.id === mgmtRowA.id && l.name === mgmtA2
+      ));
+  });
   await page.locator(".error").click();
   await mgmtName(mgmtA2).fill(mgmtA2);
   await mgmtName(mgmtA2).press("Enter");
@@ -3132,10 +3138,11 @@ try {
   check("the top row's Up is disabled — an end move plans nothing",
     await page.locator(".list-row").first().locator(".list-move").first().isDisabled());
 
-  // Delete asks first, then the row leaves the page and the server. List A
-  // stays for the finally sweep — deleting it here too would only repeat
-  // this check.
-  page.once("dialog", (d) => void d.accept());
+  // Delete asks first — through the suite's global handler, which accepts
+  // and records the prompt — then the row leaves the page and the server.
+  // List A stays for the finally sweep: deleting it here too would only
+  // repeat this check.
+  lastDialog = null;
   await page
     .locator(`.list-row[aria-label="${mgmtB}"] button`, { hasText: "Delete" })
     .click();
@@ -3145,7 +3152,8 @@ try {
     )) &&
     (await until(async () =>
       (await page.locator(`.list-row[aria-label="${mgmtB}"]`).count()) === 0
-    )));
+    )) &&
+    (lastDialog ?? "").includes(`Delete "${mgmtB}"`));
 
   const realErrors = errors.filter((e) => !/favicon/i.test(e));
   check("no JS errors or failed requests", realErrors.length === 0, realErrors.join(" | "));

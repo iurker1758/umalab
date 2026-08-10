@@ -3118,8 +3118,11 @@ try {
   await until(async () => (await mgmtSparks()).length === 1);
   await page.keyboard.press("Escape");
   await page.locator(".spark-popout").waitFor({ state: "detached" });
+  // Polled, not sampled: the API showing the membership and React
+  // committing the chip are two events, and CI's runner can be between
+  // them — the single read here was the section's one flake.
   check("the page's row shows the membership as display-only chips",
-    (await mgmtSection.locator(".list-chip").count()) === 1 &&
+    (await until(async () => (await mgmtSection.locator(".list-chip").count()) === 1)) &&
     ((await mgmtSection.locator(".list-chip").textContent()) ?? "").includes(
       mgmtSpark.name
     ) &&

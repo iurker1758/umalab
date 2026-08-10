@@ -60,15 +60,17 @@ export function ListSparksPopout({
   }, [onClose]);
 
   const names = new Map(refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name]));
-  // Members the reference can't name, frozen per open: each gets a degraded
-  // row in its kind section, because this popout is their only removal
-  // surface — and frozen, a just-removed row stays in place under the
-  // pointer rather than vanishing with its own ✕ click.
-  const [orphanRows] = useState<{ kind: ListSparkKind; key: number }[]>(() =>
-    list.sparks
-      .filter((s) => !names.has(sparkId({ type: s.kind, key: s.key })))
-      .map((s) => ({ kind: s.kind, key: s.key }))
+  // WHICH rows sit in the In This List section, snapshotted for the life of
+  // this open — the chooser's Favorites shape (DECISIONS.md #35/#36), for
+  // its reasons: un-toggling a member keeps its row in place with a "+", so
+  // a mis-tap is recoverable where it happened and nothing moves under the
+  // pointer. Held-ness stays live off the list. Members the reference can't
+  // name ride along as "Unknown (key)" rows — this popout is their only
+  // removal surface, and up here is where their owner looks for them.
+  const [pinned] = useState<{ kind: ListSparkKind; key: number }[]>(() =>
+    list.sparks.map((s) => ({ kind: s.kind, key: s.key }))
   );
+  const pinnedIds = new Set(pinned.map((s) => sparkId({ type: s.kind, key: s.key })));
   const held = new Set(list.sparks.map((s) => sparkId({ type: s.kind, key: s.key })));
 
   const q = query.trim().toLowerCase();
@@ -78,20 +80,30 @@ export function ListSparksPopout({
     return q === "" ? hits : hits.sort(byQuery);
   };
 
-  const sections = KINDS.map((kind) => ({
-    kind,
-    options: matching([
-      // Orphans first — the same placement rule as the chooser: "Unknown
-      // (key)" belongs nowhere in the alphabet, and appended it sits where
-      // no one looks.
-      ...orphanRows
-        .filter((s) => s.kind === kind)
-        .map((s) => ({ ...s, name: `Unknown (${s.key})` })),
-      ...refs
-        .filter((r) => r.kind === kind)
-        .map((r) => ({ kind, key: r.key, name: r.name })),
-    ]),
-  })).filter((s) => s.options.length > 0);
+  // A member at open is up top and NOWHERE ELSE — the same spark twice on
+  // one surface reads as "which of these did I already have" (the chooser's
+  // dedup rule). In membership order, the order the list renders everywhere.
+  const sections = [
+    {
+      head: "In This List",
+      options: matching(
+        pinned.map((s) => ({
+          ...s,
+          name: names.get(sparkId({ type: s.kind, key: s.key })) ?? `Unknown (${s.key})`,
+        }))
+      ),
+    },
+    ...KINDS.map((kind) => ({
+      head: SPARK_TYPE_LABELS[kind],
+      options: matching(
+        refs
+          .filter(
+            (r) => r.kind === kind && !pinnedIds.has(sparkId({ type: r.kind, key: r.key }))
+          )
+          .map((r) => ({ kind, key: r.key, name: r.name }))
+      ),
+    })),
+  ].filter((s) => s.options.length > 0);
 
   return (
     <>
@@ -117,8 +129,8 @@ export function ListSparksPopout({
         </div>
         <div className="spark-sections">
           {sections.map((s) => (
-            <div key={s.kind} className="spark-section">
-              <div className="spark-section-head">{SPARK_TYPE_LABELS[s.kind]}</div>
+            <div key={s.head} className="spark-section">
+              <div className="spark-section-head">{s.head}</div>
               <ul className="list-picks">
                 {s.options.map((o) => {
                   const id = sparkId({ type: o.kind, key: o.key });

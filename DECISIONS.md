@@ -1908,9 +1908,13 @@ marked in each.
   ("Edit Sparks", matching the chooser's naming) sharing the popout
   CSS and ranking comparator — rows toggle with the same per-toggle,
   non-optimistic writes as every list surface, so Escape can close at
-  any moment with nothing staged. No list filter inside it: it edits
-  one list, and what other lists hold is #43's control on the proc
-  surfaces, not this one's. The page's membership chips are
+  any moment with nothing staged. Members at open sit pinned in an
+  **In This List** section on top and nowhere else — the chooser's
+  Favorites shape (#35/#36), frozen per open, so the membership is
+  reviewable without hunting the kind sections and un-toggling keeps
+  the row in place for the mis-tap. No list filter inside it: it
+  edits one list, and what other lists hold is #43's control on the
+  proc surfaces, not this one's. The page's membership chips are
   display-only: one write surface per list, and rows that cannot move
   under a tap. `detailOr`, `refocus` and the query comparator moved
   to shared modules for the second consumer.

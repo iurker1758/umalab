@@ -3125,6 +3125,34 @@ try {
     ) &&
     (await mgmtSection.locator(".list-chip button").count()) === 0);
 
+  // Reopened, the member is pinned to an In This List section on top — and
+  // the section is FROZEN per open: toggling a member off keeps its row in
+  // place with a "+", so a mis-tap is recoverable where it happened.
+  await mgmtSection.locator("button", { hasText: "Edit Sparks" }).click();
+  await page.waitForSelector(".spark-popout .list-popout-title");
+  const pinnedHead = page.locator(
+    ".spark-sections .spark-section:first-child .spark-section-head"
+  );
+  const pinnedRow = page.locator(
+    ".spark-sections .spark-section:first-child .list-toggle" +
+      `[data-spark="white:${mgmtSpark.key}"]`
+  );
+  check("a member sits pinned in an In This List section on reopen",
+    (await pinnedHead.textContent()) === "In This List" &&
+    (await pinnedRow.getAttribute("aria-pressed")) === "true" &&
+    (await page.locator(
+      `.spark-sections .spark-section:not(:first-child) [data-spark="white:${mgmtSpark.key}"]`
+    ).count()) === 0);
+  await pinnedRow.click();
+  check("toggling a pinned member off keeps its row in place",
+    (await until(async () => (await mgmtSparks()).length === 0)) &&
+    (await until(async () => (await pinnedRow.getAttribute("aria-pressed")) === "false")) &&
+    (await pinnedRow.count()) === 1);
+  await pinnedRow.click();
+  await until(async () => (await mgmtSparks()).length === 1);
+  await page.keyboard.press("Escape");
+  await page.locator(".spark-popout").waitFor({ state: "detached" });
+
   // Create, from the page's own field — the picker is no longer the only
   // door. Tracked before the click, like every list this run makes.
   const mgmtC = `${E2E_LIST_PREFIX} made here ${mgmtStamp}`;

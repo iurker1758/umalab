@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, detailOr, type FactorRef, type ListSparkKind, type SparkList } from "../api";
 import { ListSparksPopout } from "../components/ListSparksPopout";
 import { refocus } from "../components/refocus";
-import { SPARK_TYPE_LABELS, sparkId } from "../procs";
+import { SPARK_TYPE_ORDER, sparkId } from "../procs";
 import {
   createList,
   deleteList,
@@ -299,17 +299,22 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
           </div>
           {list.sparks.length > 0 ? (
             <ul className="list-chips">
-              {list.sparks.map((s) => {
-                const id = sparkId({ type: s.kind, key: s.key });
-                return (
-                  <li key={id} className="list-chip">
-                    <span className={`proc-kind proc-kind-${s.kind}`}>
-                      {SPARK_TYPE_LABELS[s.kind]}
-                    </span>
-                    {names.get(id) ?? `Unknown (${s.key})`}
-                  </li>
-                );
-              })}
+              {/* Section order, membership order within a kind — no kind
+                  tag, the name's colour says it (#41's rule), and the
+                  grouping keeps a mixed run legible. Display order only:
+                  the stored order is the user's add order. */}
+              {[...list.sparks]
+                .sort((a, b) => SPARK_TYPE_ORDER[a.kind] - SPARK_TYPE_ORDER[b.kind])
+                .map((s) => {
+                  const id = sparkId({ type: s.kind, key: s.key });
+                  return (
+                    <li key={id} className={`list-chip proc-row-${s.kind}`}>
+                      <span className="proc-name">
+                        {names.get(id) ?? `Unknown (${s.key})`}
+                      </span>
+                    </li>
+                  );
+                })}
             </ul>
           ) : (
             <p className="list-empty">Nothing in this list yet.</p>

@@ -812,7 +812,7 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 /* Display-only membership — a readout, not a control surface: removal lives
    in the popout with the adds, so the page's rows can't move under a tap. */
 .list-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0 0; padding: 0; }
-.list-chip { display: inline-flex; align-items: center; font-size: 0.75rem; background: #1a2027; border: 1px solid #232c37; border-radius: 999px; padding: 0.13rem 0.55rem 0.13rem 0.3rem; }
+.list-chip { display: inline-flex; align-items: center; font-size: 0.75rem; background: #1a2027; border: 1px solid #232c37; border-radius: 999px; padding: 0.13rem 0.55rem; }
 .list-empty { margin: 0.4rem 0 0.1rem; font-size: 0.78rem; opacity: 0.55; }
 .list-fail { margin: 0; font-size: 0.85rem; }
 /* Names the list the popout is scoped to — the query and pills below narrow

@@ -67,8 +67,14 @@ export function ListSparksPopout({
   // pointer. Held-ness stays live off the list. Members the reference can't
   // name ride along as "Unknown (key)" rows — this popout is their only
   // removal surface, and up here is where their owner looks for them.
+  //
+  // In section order, membership order within a kind: rows carry no kind
+  // tag (the name's colour says it, #41's rule), so the grouping is what
+  // keeps a mixed run legible.
   const [pinned] = useState<{ kind: ListSparkKind; key: number }[]>(() =>
-    list.sparks.map((s) => ({ kind: s.kind, key: s.key }))
+    [...list.sparks]
+      .sort((a, b) => SPARK_TYPE_ORDER[a.kind] - SPARK_TYPE_ORDER[b.kind])
+      .map((s) => ({ kind: s.kind, key: s.key }))
   );
   const pinnedIds = new Set(pinned.map((s) => sparkId({ type: s.kind, key: s.key })));
   const held = new Set(list.sparks.map((s) => sparkId({ type: s.kind, key: s.key })));
@@ -138,7 +144,7 @@ export function ListSparksPopout({
                   return (
                     <li key={id}>
                       <button
-                        className={holds ? "list-toggle active" : "list-toggle"}
+                        className={`list-toggle proc-row-${o.kind}${holds ? " active" : ""}`}
                         aria-pressed={holds}
                         data-spark={id}
                         data-list={list.id}
@@ -150,10 +156,9 @@ export function ListSparksPopout({
                         disabled={busy}
                         onClick={(e) => onToggle(o.kind, o.key, e.currentTarget)}
                       >
-                        <span className={`proc-kind proc-kind-${o.kind}`}>
-                          {SPARK_TYPE_LABELS[o.kind]}
-                        </span>
-                        <span className="spark-hit">{o.name}</span>
+                        {/* No kind tag: the section head or the name's own
+                            colour says it (#41 — kind owns colour). */}
+                        <span className="spark-hit proc-name">{o.name}</span>
                         <span className="spark-list-mark" aria-hidden="true">
                           {holds ? "✕" : "+"}
                         </span>

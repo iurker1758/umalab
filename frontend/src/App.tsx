@@ -4,6 +4,7 @@ import { api, type ImportInfo, type Veteran } from "./api";
 import { emptyDesign, type Design } from "./blueprint";
 import { loadFilters, reconcileFilters, saveFilters, type Filters } from "./filters";
 import { DesignerPage } from "./pages/DesignerPage";
+import { ListsPage } from "./pages/ListsPage";
 import { RosterPage } from "./pages/RosterPage";
 
 export default function App() {
@@ -112,6 +113,7 @@ export default function App() {
             Roster
           </NavLink>
           <NavLink to="/designer">Designer</NavLink>
+          <NavLink to="/lists">Lists</NavLink>
         </nav>
         <div className="toolbar">
           <button onClick={() => fileInput.current?.click()} disabled={busy}>
@@ -171,6 +173,7 @@ export default function App() {
             />
           }
         />
+        <Route path="/lists" element={<ListsPage onError={setError} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

@@ -323,3 +323,55 @@ export async function toggleMembership(
     : [...list.sparks, { kind, key }];
   return setMembership(lists, id, sparks);
 }
+
+/**
+ * The writes that move a list one step: each row's target position is its
+ * INDEX in the desired order, emitted only where it differs from what is
+ * stored. Swapping the two rows' stored positions instead breaks on ties,
+ * which are legal (the server never renumbers): swapping equal positions
+ * writes nothing, and swapping past a third row sharing one reorders the
+ * wrong pair. Renumbering also makes the order dense, so the first move over
+ * legacy ties rewrites the displaced tail once and every later adjacent move
+ * is exactly two writes.
+ *
+ * Unknown id or a move past either end plans nothing.
+ */
+export function movePlan(
+  lists: SparkList[],
+  id: number,
+  direction: -1 | 1
+): Array<{ id: number; position: number }> {
+  const rows = ordered(lists);
+  const from = rows.findIndex((list) => list.id === id);
+  const to = from + direction;
+  if (from === -1 || to < 0 || to >= rows.length) return [];
+  [rows[from], rows[to]] = [rows[to], rows[from]];
+  return rows.flatMap((list, index) =>
+    list.position === index ? [] : [{ id: list.id, position: index }]
+  );
+}
+
+/**
+ * Apply `movePlan` one PATCH at a time, folding each row as it lands. The
+ * steps run in index order, and ties break on id, so every prefix of the plan
+ * is a valid total order — a failure partway leaves the page ordered, just
+ * not yet moved. That partial state is thrown as `PartialWrite` so the caller
+ * adopts what actually landed; a failure on the FIRST step committed nothing
+ * and rethrows plain, matching `createListWith`.
+ */
+export async function moveList(
+  lists: SparkList[],
+  id: number,
+  direction: -1 | 1
+): Promise<SparkList[]> {
+  let next = lists;
+  for (const [step, { id: rowId, position }] of movePlan(lists, id, direction).entries()) {
+    try {
+      next = replacing(next, await api.updateSparkList(rowId, { position }));
+    } catch (reason) {
+      if (step === 0) throw reason;
+      throw new PartialWrite(next, reason);
+    }
+  }
+  return next;
+}

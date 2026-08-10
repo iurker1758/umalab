@@ -278,6 +278,17 @@ export class ApiError extends Error {
   }
 }
 
+// The server's own words for a refusal it can explain — 409 for the name
+// rules, 422 for everything `app/schemas.py` validates. 422 matters as much
+// as 409: without it an over-long name reports "try again" forever, a
+// permanent refusal phrased as a transient one. Anything else is a blip.
+export const detailOr = (error: unknown, fallback: string): string =>
+  error instanceof ApiError &&
+  (error.status === 409 || error.status === 422) &&
+  error.message !== ""
+    ? `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`
+    : fallback;
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = "";

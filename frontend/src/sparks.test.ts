@@ -13,6 +13,8 @@ import {
   listById,
   listsWith,
   loadActiveLists,
+  moveList,
+  movePlan,
   PartialWrite,
   renameList,
   saveActiveLists,
@@ -303,6 +305,126 @@ describe("toggling one list's membership", () => {
     expect(await toggleMembership(lists, 87, "white", 1)).toBe(lists);
     expect(calls.updateSparkList).not.toHaveBeenCalled();
     expect(calls.createSparkList).not.toHaveBeenCalled();
+  });
+});
+
+describe("planning a one-step move", () => {
+  const dense = [
+    aList({ id: 10, position: 0 }),
+    aList({ id: 11, position: 1 }),
+    aList({ id: 12, position: 2 }),
+  ];
+
+  it("plans nothing at the ends, or for a list that isn't there", () => {
+    expect(movePlan(dense, 10, -1)).toEqual([]);
+    expect(movePlan(dense, 12, 1)).toEqual([]);
+    expect(movePlan(dense, 87, 1)).toEqual([]);
+  });
+
+  it("moves over dense positions with exactly two writes", () => {
+    expect(movePlan(dense, 12, -1)).toEqual([
+      { id: 12, position: 1 },
+      { id: 11, position: 2 },
+    ]);
+    expect(movePlan(dense, 10, 1)).toEqual([
+      { id: 11, position: 0 },
+      { id: 10, position: 1 },
+    ]);
+  });
+
+  it("orders by (position, id) before planning, matching the server's sort", () => {
+    // Handed in unsorted — the plan must be about the DISPLAYED order.
+    const shuffled = [dense[2]!, dense[0]!, dense[1]!];
+    expect(movePlan(shuffled, 12, -1)).toEqual([
+      { id: 12, position: 1 },
+      { id: 11, position: 2 },
+    ]);
+  });
+
+  it("handles a legal position tie without touching the tie's other row", () => {
+    // a and c share position 2 (the server never renumbers). Swapping stored
+    // positions here would move the WRONG pair; renumbering to index moves b
+    // one step and leaves c where it displays.
+    const tied = [
+      aList({ id: 5, position: 2 }), // a — displays first (tie breaks on id)
+      aList({ id: 7, position: 2 }), // c — displays second
+      aList({ id: 1, position: 3 }), // b — displays third
+    ];
+    expect(movePlan(tied, 1, -1)).toEqual([
+      { id: 5, position: 0 },
+      { id: 1, position: 1 },
+    ]);
+  });
+
+  it("renumbers sparse legacy positions dense, once", () => {
+    const sparse = [
+      aList({ id: 20, position: 10 }),
+      aList({ id: 21, position: 20 }),
+      aList({ id: 22, position: 30 }),
+    ];
+    expect(movePlan(sparse, 21, -1)).toEqual([
+      { id: 21, position: 0 },
+      { id: 20, position: 1 },
+      { id: 22, position: 2 },
+    ]);
+    // After that move the positions are 0..n-1, so the next one is two writes.
+    const healed = [
+      aList({ id: 21, position: 0 }),
+      aList({ id: 20, position: 1 }),
+      aList({ id: 22, position: 2 }),
+    ];
+    expect(movePlan(healed, 22, -1)).toHaveLength(2);
+  });
+});
+
+describe("applying a move", () => {
+  const dense = [
+    aList({ id: 10, position: 0 }),
+    aList({ id: 11, position: 1 }),
+    aList({ id: 12, position: 2 }),
+  ];
+
+  it("PATCHes each planned row in plan order and folds the responses", async () => {
+    const calls = stubApi({
+      updateSparkList: (id, body) => Promise.resolve(aList({ id, position: 0, ...body })),
+    });
+    const next = await moveList(dense, 12, -1);
+    expect(calls.updateSparkList.mock.calls).toEqual([
+      [12, { position: 1 }],
+      [11, { position: 2 }],
+    ]);
+    expect(next.map((l) => l.id)).toEqual([10, 12, 11]);
+  });
+
+  it("makes no request when there is nothing to do", async () => {
+    const calls = stubApi({});
+    expect(await moveList(dense, 10, -1)).toBe(dense);
+    expect(calls.updateSparkList).not.toHaveBeenCalled();
+  });
+
+  it("throws PartialWrite carrying what landed when a later step fails", async () => {
+    // The first PATCH committed, so the caller must adopt it — rejecting
+    // outright would render an order the server no longer holds. Here the
+    // landed write puts 12 beside 11 at position 1 and the tie breaks on id,
+    // so the partial state still DISPLAYS the original order.
+    let call = 0;
+    stubApi({
+      updateSparkList: (id, body) =>
+        ++call === 1
+          ? Promise.resolve(aList({ id, position: 0, ...body }))
+          : Promise.reject(new Error("boom")),
+    });
+    const error = (await moveList(dense, 12, -1).catch((e: unknown) => e)) as PartialWrite;
+    expect(error).toBeInstanceOf(PartialWrite);
+    expect(error.lists.map((l) => l.id)).toEqual([10, 11, 12]);
+    expect(error.lists.find((l) => l.id === 12)?.position).toBe(1);
+  });
+
+  it("throws plain when the first step fails — nothing landed to adopt", async () => {
+    stubApi({ updateSparkList: () => Promise.reject(new Error("boom")) });
+    const error = await moveList(dense, 12, -1).catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(PartialWrite);
+    expect(error).toBeInstanceOf(Error);
   });
 });
 

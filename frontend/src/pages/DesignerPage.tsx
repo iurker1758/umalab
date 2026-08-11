@@ -407,11 +407,13 @@ export function DesignerPage({
   // is the selection.
   const shownSide = narrow ? (selected === 0 ? side : halfOf(selected)) : null;
 
-  // Phone layout stacks the panel below a tree taller than the screen, so a
-  // tap on the map would otherwise update something you can't see. Only map
-  // taps pan: the toggle and the picker set the selection too, and yanking the
-  // view from under those would be motion for its own sake.
-  const panelRef = useRef<HTMLDivElement>(null);
+  // ≤860px the panel is a bottom sheet over the map (issue #43, DECISIONS.md
+  // #46): closed on load so the tree starts full-height, opened by map taps
+  // only — the toggle and the picker set the selection too, and yanking a
+  // sheet up from under those would be motion for its own sake. Closed is
+  // display-toggled CSS, never an unmount: FocusPanel's tab choice
+  // deliberately survives dismissal.
+  const [sheetOpen, setSheetOpen] = useState(false);
   // Every selection remembers which half it was in, so the toggle and the
   // selection can't disagree: without this, selecting the trainee (which
   // belongs to both halves) falls back to whatever the toggle was last set
@@ -422,13 +424,23 @@ export function DesignerPage({
   };
   const selectFromMap = (i: number) => {
     select(i);
-    if (!narrow) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // After paint: the panel changes height with the node it shows.
-    requestAnimationFrame(() =>
-      panelRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" })
-    );
+    if (narrow) setSheetOpen(true);
   };
+
+  // Tap-off dismissal, like the popouts' backdrops (mousedown, not click).
+  // Exempt: the sheet itself; map chips — they swap the content, and closing
+  // on the press would flicker before the click reopens; the picker layer —
+  // SlotPicker mounts outside the dock but floats above the sheet.
+  useEffect(() => {
+    if (!sheetOpen || !narrow) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target instanceof Element ? e.target : null;
+      if (t?.closest(".focus-dock, .vnode, .uma-popout, .uma-popout-backdrop")) return;
+      setSheetOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [sheetOpen, narrow]);
 
   useEffect(() => {
     // Page-scoped: the catalog and factor reference are static and the saved
@@ -1056,7 +1068,7 @@ export function DesignerPage({
         </span>
       </div>
 
-      <div className="designer-combo">
+      <div className={sheetOpen ? "designer-combo sheet-open" : "designer-combo"}>
         {/* Outside .tree-map-wrap on purpose: that element scrolls
             horizontally, which would trap a sticky child in its own
             scrollport instead of the page's. */}
@@ -1098,7 +1110,7 @@ export function DesignerPage({
             side={shownSide}
           />
         </div>
-        <div ref={panelRef} className="focus-dock">
+        <div className="focus-dock">
           <FocusPanel
             design={design}
             index={selected}

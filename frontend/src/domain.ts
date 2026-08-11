@@ -1,4 +1,10 @@
-import type { Veteran } from "./api";
+import {
+  APTITUDE_KEYS,
+  type AptitudeKey,
+  type Factor,
+  type PinkSpark,
+  type Veteran,
+} from "./api";
 import { writeStore } from "./storage";
 
 // Aptitude ints 1..8 map to letters G..S (verified: pink sparks gate on >= 7 = A).
@@ -104,11 +110,12 @@ const AFFINITY_CLASS: Record<string, string> = {
 };
 export const affinityClass = (symbol: string): string => AFFINITY_CLASS[symbol] ?? "";
 
-export type SortKey = "rank_score" | "blue_spark" | "register_time" | "name";
+export type SortKey = "rank_score" | "blue_spark" | "pink_spark" | "register_time" | "name";
 
 export const SORTS: [label: string, key: SortKey][] = [
   ["Rating", "rank_score"],
   ["Sparks", "blue_spark"],
+  ["Pink", "pink_spark"],
   ["Date Acquired", "register_time"],
   ["Name", "name"],
 ];
@@ -117,6 +124,7 @@ export const SORTS: [label: string, key: SortKey][] = [
 export const DEFAULT_ASC: Record<SortKey, boolean> = {
   rank_score: false, // best first
   blue_spark: true, // 1★ Speed → 3★ Wit
+  pink_spark: true, // 1★ Turf → 3★ End
   register_time: false, // newest first
   name: true,
 };
@@ -130,6 +138,39 @@ export const blueSparkRank = (v: Veteran): number => {
   const stat = BLUE_ORDER.indexOf(blue.name);
   // A degraded label (stale reference data) sorts before 1★ Speed.
   return stat === -1 ? -1 : stat * 3 + (blue.star - 1);
+};
+
+// A pink factor packs its aptitude in the key (factor_id // 100) and its star
+// count in the remainder. Keyed by numeric id rather than display name: the
+// ids are game data, the names are strings we render. From
+// app/data/factors.json, type 1.
+const PINK_KEY_APTITUDE: Readonly<Record<number, AptitudeKey>> = {
+  11: "turf", 12: "dirt",
+  31: "sprint", 32: "mile", 33: "medium", 34: "long",
+  21: "front", 22: "pace", 23: "late", 24: "end",
+};
+
+// The one pink a dump member carries. Every lineage member has exactly one
+// (verified against a full dump); taking the strongest rather than the first
+// degrades a future multi-pink record to the useful answer.
+export function pinkOf(factors: readonly Factor[]): PinkSpark | null {
+  let best: PinkSpark | null = null;
+  for (const f of factors) {
+    const aptitude = PINK_KEY_APTITUDE[f.key];
+    // Both checks: no non-pink factor uses a key in this range today, and the
+    // kind is what keeps that true if one ever does.
+    if (f.kind !== "pink" || aptitude === undefined || f.star < 1 || f.star > 3) continue;
+    if (best === null || f.star > best.stars) best = { aptitude, stars: f.star };
+  }
+  return best;
+}
+
+// "Pink" is the blue rank's analogue over the veteran's own pink: aptitude in
+// the game's group order (Track → Distance → Style — APTITUDE_KEYS is already
+// exactly that), star within the aptitude. No pink sorts before 1★ Turf.
+export const pinkSparkRank = (v: Veteran): number => {
+  const pink = pinkOf(v.factors);
+  return pink === null ? -1 : APTITUDE_KEYS.indexOf(pink.aptitude) * 3 + (pink.stars - 1);
 };
 
 // Rating → rank-tier breakpoints (community-documented; the dump's own
@@ -203,7 +244,12 @@ export const rosterCardsOf = (veterans: Veteran[]): Veteran[] => {
 
 // Sorted copy, never in place.
 export const sortVeterans = (veterans: Veteran[], sort: SortPref): Veteran[] => {
-  const val = (v: Veteran) => (sort.key === "blue_spark" ? blueSparkRank(v) : v[sort.key]);
+  const val = (v: Veteran) =>
+    sort.key === "blue_spark"
+      ? blueSparkRank(v)
+      : sort.key === "pink_spark"
+        ? pinkSparkRank(v)
+        : v[sort.key];
   return [...veterans].sort((a, b) => {
     const av = val(a);
     const bv = val(b);
@@ -241,6 +287,41 @@ export function loadSortPref(store: string = SORT_STORE): SortPref {
 export function saveSortPref(sort: SortPref, store: string = SORT_STORE): void {
   writeStore(store, sort);
 }
+
+// What the line under a card's art shows. Manual and independent of the sort
+// (DECISIONS.md #45 — before that it followed the Sparks sort). A future mode
+// (matching sparks, matching races) is one tuple stop, one label, and one
+// render branch in VeteranCard.
+export const CAPTION_MODES = ["score", "sparks"] as const;
+export type CaptionMode = (typeof CAPTION_MODES)[number];
+export const CAPTION_LABELS: Record<CaptionMode, string> = {
+  score: "Score",
+  sparks: "Sparks",
+};
+export const CAPTION_STORE = "umalab.caption";
+// The picker's caption lives under its own key, as its sort and filters do
+// (DECISIONS.md #31) — the two surfaces stay independent in both directions.
+export const PICKER_CAPTION_STORE = "umalab.picker.caption";
+
+export function loadCaptionMode(store: string = CAPTION_STORE): CaptionMode {
+  try {
+    const raw = localStorage.getItem(store);
+    if (raw) {
+      const p: unknown = JSON.parse(raw);
+      if ((CAPTION_MODES as readonly unknown[]).includes(p)) return p as CaptionMode;
+    }
+  } catch {
+    // unreadable storage or garbage value — fall through to the default
+  }
+  return "score";
+}
+
+export function saveCaptionMode(mode: CaptionMode, store: string = CAPTION_STORE): void {
+  writeStore(store, mode);
+}
+
+export const nextCaptionMode = (mode: CaptionMode): CaptionMode =>
+  CAPTION_MODES[(CAPTION_MODES.indexOf(mode) + 1) % CAPTION_MODES.length];
 
 // The fixed set of assignable tag ids — must match backend/app/data/tag_icons.json.
 // Art comes from an out-of-repo extraction tool (DECISIONS.md #10) and is

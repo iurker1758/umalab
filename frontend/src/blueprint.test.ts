@@ -23,7 +23,6 @@ import {
   nodeLabel,
   ownedBranch,
   parentOf,
-  pinkOf,
   planPull,
   applyPull,
   pullTargets,
@@ -155,42 +154,6 @@ describe("deriveCharaId", () => {
 });
 
 // ---------- decoding a dump member ----------
-
-describe("pinkOf", () => {
-  it("reads the aptitude out of the key and the stars out of the star field", () => {
-    expect(pinkOf([factor({ kind: "pink", key: 32, star: 2 })])).toEqual({
-      aptitude: "mile",
-      stars: 2,
-    });
-    expect(pinkOf([factor({ kind: "pink", key: 11, star: 1 })])).toEqual({
-      aptitude: "turf",
-      stars: 1,
-    });
-  });
-
-  it("takes the strongest rather than the first", () => {
-    expect(
-      pinkOf([
-        factor({ kind: "pink", key: 32, star: 1 }),
-        factor({ kind: "pink", key: 34, star: 3 }),
-      ])
-    ).toEqual({ aptitude: "long", stars: 3 });
-  });
-
-  it("wants both the kind and a known key", () => {
-    expect(pinkOf([factor({ kind: "white", key: 32, star: 3 })])).toBeNull();
-    expect(pinkOf([factor({ kind: "pink", key: 99, star: 3 })])).toBeNull();
-  });
-
-  it("rejects a star count off the 1..3 scale", () => {
-    expect(pinkOf([factor({ kind: "pink", key: 32, star: 0 })])).toBeNull();
-    expect(pinkOf([factor({ kind: "pink", key: 32, star: 4 })])).toBeNull();
-  });
-
-  it("is null for a member with nothing to read", () => {
-    expect(pinkOf([])).toBeNull();
-  });
-});
 
 describe("factorsOf", () => {
   it("keeps the five non-pink kinds and drops everything else", () => {

@@ -19,12 +19,13 @@ several:
   names), 10 (fetched game art), 12 (skill names), 14 (affinity data),
   22 (SVG marks), 23 (per-card aptitudes)
 - **Roster UI:** 9 (tags), 11 (icon grid), 13 (filters), 20–21 (bulk
-  marks)
+  marks), 45 (caption cycle + pink sort)
 - **Affinity & proc math:** 15 (the formula), 17 (stateless scoring),
   29 (two decompositions), 30 (the proc model)
 - **Designer & blueprint document:** 16 (persisted server-side), 18
   (router), 19 (superseded by 26), 25 (31-node document), 26 (v1 +
-  autosave), 28 (roster pulls), 31 (corrections), 34 (table sort)
+  autosave), 28 (roster pulls), 31 (corrections), 34 (table sort),
+  45 (caption cycle + pink sort)
 - **Spark entry & chooser:** 30 (factors join the document), 35
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
@@ -274,7 +275,10 @@ several:
   US 63,400 — since the dump's `rank` field is a raw id, not the
   displayed tier). Under the **Sparks sort**, the score line swaps to
   the game-style own-spark strip: labeled star triplets for the blue,
-  pink, and (when present) unique spark — e.g. `WIT · MED · UNIQ`.
+  pink, and (when present) unique spark — e.g. `WIT · MED · UNIQ`
+  (amended 2026-08-10 by #45: the swap no longer follows the sort —
+  the caption is a manual Score/Sparks cycle persisted per surface,
+  and a fifth key, Pink, joins the sorts below).
   Cards are **icon-only** — no name;
   a tooltip and the modal header carry it, same as the game's own veteran
   list. Everything else (stats, aptitudes, mark editing, sparks, lineage)
@@ -1938,3 +1942,44 @@ marked in each.
   the join table); per-toggle writes turning chatty over the tunnel
   (issue #69's revisit, which would bring optimistic staging); a
   third page needing the lists, which is when the store lifts.
+
+## 45. The card caption cycles by hand, and pink joins the sorts
+
+- **Requirements:** issues #44 and #40 — the line under a card's art
+  (the score, or the own-spark strip) was welded to the sort: the
+  strip showed only under the Sparks sort, so reading sparks meant
+  giving up the order you wanted, and in the designer's picker the
+  pink — the value a roster pull is really after, and the input to
+  every career-start bracket — lived in title/aria only. `rank_score`
+  enters no affinity term and no inheritance bracket, yet was the
+  only sortable number; the pink was not sortable at all.
+- **Choice:** the caption becomes its own control: a `CaptionMode`
+  (`score | sparks`) stepped by a cycle pill in each dock, fully
+  manual — picking the Sparks sort no longer switches it — and
+  persisted per surface (`umalab.caption`, `umalab.picker.caption`),
+  both defaulting to Score. A future mode (matching sparks against
+  the active lists; matching races once schedules exist) is one
+  tuple stop, one label, one render branch. `pink_spark` joins
+  `SORTS` as the blue rank's analogue over `pinkOf` — aptitude in
+  the game's group order (Track → Distance → Style), star within
+  it, no-pink before 1★ Turf — which moved `pinkOf` from
+  blueprint.ts into domain.ts (blueprint already imports domain, so
+  the rank could not import back). Issue #40 resolves with no new
+  surface: the picker's pink is one cycle away, and the catalog
+  chips stay tooltip-only.
+- **Alternatives rejected:** the caption following the sort — the
+  behavior this replaces (amends #11); auto-switching to Sparks
+  when the Sparks or Pink sort is picked — the same hidden coupling
+  back, one convenience at a time; defaulting the picker to Sparks —
+  considered for issue #40's sake, but both surfaces opening on
+  Score keeps them predictable, and the mode is sticky after one
+  tap; name captions under the catalog chips (issue #40's other
+  half) — the tooltip and the search box already answer it, and
+  #11's icon-only rule holds; a segmented control in the dock —
+  two pills' width for one pill's job at two modes.
+- **What would change my mind:** a third or fourth mode making the
+  blind cycle order annoying — the pill becomes a menu or segmented
+  control; tooltip-only catalog chips failing on touch, where hover
+  never fires — captions return via an opt-in chip prop; the mode
+  needing to follow between devices — the DB settings table #11
+  already reserves.

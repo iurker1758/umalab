@@ -2545,9 +2545,11 @@ try {
     // ---------- the picker keeps its filters, under its own key ----------
     // Filling 31 nodes against one criterion is the most repeated work in the
     // designer, and the picker used to reset to the defaults on every open.
-    const filterBadge = () => page.locator(".picker-dock .filter-float .filter-count");
+    // hasText: the dock holds a second .filter-float pill (the caption cycle).
+    const filterBadge = () =>
+      page.locator(".picker-dock .filter-float", { hasText: "Filters" }).locator(".filter-count");
     const openPickerFilters = async () => {
-      await page.locator(".picker-dock .filter-float").click();
+      await page.locator(".picker-dock .filter-float", { hasText: "Filters" }).click();
       await page.waitForSelector(".picker-filters .filter-panel");
     };
     // Escape inside the filter panel closes IT, not the picker underneath.
@@ -2580,6 +2582,28 @@ try {
       (await filterBadge().textContent()) === "1");
     check("along with the sort it was left on",
       (await pickerSort().inputValue()) === "blue_spark");
+    // The caption pill is the same story on its own key: cycle it, close,
+    // reopen, and the mode is where you left it — independent of the sort.
+    const captionPill = () => page.locator(".picker-dock .caption-float");
+    check("the caption pill opens on Score", (await captionPill().textContent()) === "Score");
+    await captionPill().click();
+    check("and cycles to Sparks", (await captionPill().textContent()) === "Sparks");
+    // Behind the active Turf filter the list can legitimately be empty, so
+    // the strip check only runs when there are cards to carry one.
+    const captionedCards = await page.locator(".designer-picker .card").count();
+    if (captionedCards > 0) {
+      check("which swaps the card line to the spark strip",
+        (await page.locator(".designer-picker .card .spark-strip").count()) === captionedCards);
+    }
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".designer-picker", { state: "detached" });
+    await page.locator(".focus-pick").click();
+    await page.waitForSelector(".designer-picker");
+    await toRosterTab();
+    check("and is still Sparks on the next open",
+      (await captionPill().textContent()) === "Sparks");
+    await captionPill().click();
+    check("cycling wraps back to Score", (await captionPill().textContent()) === "Score");
     // The half of the original rule that still holds: the two filter sets are
     // independent in both directions, so narrowing the picker must not reach
     // the roster page you go back to.

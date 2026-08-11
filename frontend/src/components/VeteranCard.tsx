@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Factor, Veteran } from "../api";
-import { rankTier, sparkAbbr } from "../domain";
+import { rankTier, sparkAbbr, type CaptionMode } from "../domain";
 import { MarkIcon } from "./MarkIcon";
 
 function SparkStrip({ v }: { v: Veteran }) {
@@ -30,7 +30,7 @@ function SparkStrip({ v }: { v: Veteran }) {
 export function VeteranCard({
   v,
   icon,
-  showSparks,
+  caption,
   note,
   disabledReason,
   selectMode = false,
@@ -40,7 +40,9 @@ export function VeteranCard({
 }: {
   v: Veteran;
   icon: string | undefined;
-  showSparks: boolean;
+  // The caller's persisted display mode for the line under the art — a
+  // manual cycle, not derived from the sort (DECISIONS.md #45).
+  caption: CaptionMode;
   // Appended to the accessible name. The designer's slot picker uses it for
   // the pink each veteran carries — two horses trained from one card are
   // otherwise the same word twice.
@@ -121,7 +123,7 @@ export function VeteranCard({
           </span>
         )}
       </span>
-      {showSparks ? (
+      {caption === "sparks" ? (
         <SparkStrip v={v} />
       ) : (
         <span className="card-score">{v.rank_score.toLocaleString()}</span>

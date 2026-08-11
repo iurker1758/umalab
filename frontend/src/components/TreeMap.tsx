@@ -6,6 +6,7 @@ import {
   letterModeOf,
   undroppableMessage,
   undroppableSpark,
+  windowSummary,
   type AptitudeRow,
 } from "../aptitude";
 import {
@@ -15,6 +16,7 @@ import {
   deepCardAt,
   deriveCharaId,
   genOf,
+  grandparentOf,
   nodeLabel,
   sparkAt,
   type Design,
@@ -25,7 +27,9 @@ import { affinityClass, gradeClass, isCharaPlaceholder } from "../domain";
 // grid where a node spans its children's columns, generations as rows.
 // Named cards carry the full letter grid; gens 3–4 are single sparks —
 // with warning badges so issues surface without clicking, and the focus
-// panel for the cause math.
+// panel for the cause math. Each grandparent's gens 3–4 render only while
+// her branch is expanded; collapsed, a strip on her card carries their
+// summed ★ instead (issue #46, DECISIONS.md #47).
 export function TreeMap({
   design,
   selected,
@@ -35,6 +39,8 @@ export function TreeMap({
   iconIndex,
   affinity,
   side = null,
+  expanded,
+  onToggleBranch,
 }: {
   design: Design;
   selected: number;
@@ -50,6 +56,9 @@ export function TreeMap({
   // Narrow screens view one parent's half at a time (node 1 or 2): sixteen
   // gen-4 columns can't be read on a phone. null ⇒ the whole tree.
   side?: number | null;
+  // Which grandparents' deep tracks are open (indices 3–6).
+  expanded: ReadonlySet<number>;
+  onToggleBranch: (g: number) => void;
 }) {
   // "Out of 3" star readout, matching the roster cards' filled/unfilled
   // convention; the pink comes from the surrounding context's CSS.
@@ -323,36 +332,86 @@ export function TreeMap({
     );
   };
 
+  // A grandparent's collapsed gens 3–4, as the sum the brackets read: her
+  // window IS those six slots, so the strip states the number they exist to
+  // feed, next to the letters it explains. A sibling of the chip, not inside
+  // it — the chip is a <button> and can't nest one. The label deliberately
+  // has no " — " so it can never match a chip locator.
+  const strip = (i: number) => {
+    const open = expanded.has(i);
+    const summary = windowSummary(design, i);
+    return (
+      <button
+        className="g2-strip"
+        aria-expanded={open}
+        aria-label={`Sparks Below ${nodeLabel(i)}`}
+        onClick={() => onToggleBranch(i)}
+      >
+        {!open && summary.slice(0, 3).map((e) => (
+          <span key={e.aptitude} className="g2-strip-spark">
+            {APTITUDE_LABELS[e.aptitude]} {e.stars}★
+          </span>
+        ))}
+        {!open && summary.length > 3 && (
+          <span className="g2-strip-more">+{summary.length - 3}</span>
+        )}
+        <span className="g2-strip-caret">{open ? "▴" : "▾"}</span>
+      </button>
+    );
+  };
+
   const cells = [];
   // Connectors are drawn per cell (see styles.css): a stub up to the mid-gap
   // rail, then half a rail toward the sibling — odd indices are left kids,
   // even ones right kids, so the two halves meet exactly under the parent's
   // centre. `solo` is the half-tree's top parent, which has no sibling on
   // screen and so needs no rail at all.
-  const cell = (i: number, span: number, solo = false) => {
+  //
+  // Placement is explicit rather than auto-flow: a collapsed grandparent
+  // emits none of her six deep cells, and the partial rows that leaves
+  // would otherwise pull an expanded sibling's cells leftward into her
+  // columns.
+  const cell = (
+    i: number,
+    at: { row: number; colStart: number; span: number; solo?: boolean }
+  ) => {
     const gen = genOf(i);
     const kid = i === 0 ? "" : i % 2 === 1 ? " kid-l" : " kid-r";
+    const closed = gen === 2 && !expanded.has(i);
     return (
       <div
         key={i}
-        className={`cell g${gen}${solo ? " solo" : kid}`}
-        style={{ gridColumn: `span ${span}` }}
+        className={`cell g${gen}${at.solo ? " solo" : kid}${closed ? " collapsed" : ""}`}
+        style={{ gridColumn: `${at.colStart} / span ${at.span}`, gridRow: at.row }}
       >
         {chip(i, gen)}
+        {gen === 2 && strip(i)}
       </div>
     );
   };
   if (side === null) {
-    for (let i = 0; i < NODE_COUNT; i++) cells.push(cell(i, 16 >> genOf(i)));
+    for (let i = 0; i < NODE_COUNT; i++) {
+      const gen = genOf(i);
+      if (gen >= 3 && !expanded.has(grandparentOf(i))) continue;
+      const span = 16 >> gen;
+      const pos = i - ((1 << gen) - 1);
+      cells.push(cell(i, { row: gen + 1, colStart: pos * span + 1, span }));
+    }
   } else {
     // Half tree over 8 columns: the trainee, then the chosen parent and
     // everything under it. A subtree root r's descendants at depth d start
     // at (r+1)·2^d − 1 and run 2^d wide — the same halving the full grid
     // does, one branch narrower.
-    cells.push(cell(0, 8));
+    cells.push(cell(0, { row: 1, colStart: 1, span: 8 }));
     for (let d = 0; d <= 3; d++) {
       const start = (side + 1) * (1 << d) - 1;
-      for (let k = 0; k < 1 << d; k++) cells.push(cell(start + k, 8 >> d, d === 0));
+      for (let k = 0; k < 1 << d; k++) {
+        const i = start + k;
+        if (d >= 2 && !expanded.has(grandparentOf(i))) continue;
+        cells.push(
+          cell(i, { row: d + 2, colStart: k * (8 >> d) + 1, span: 8 >> d, solo: d === 0 })
+        );
+      }
     }
   }
   return <div className={`vped${side === null ? "" : " half"}`}>{cells}</div>;

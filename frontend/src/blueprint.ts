@@ -54,6 +54,14 @@ export function windowIndices(i: number): number[] {
   return [a, b, ...kidsOf(a), ...kidsOf(b)].filter((j) => j < NODE_COUNT);
 }
 
+// The named ancestor a deep node collapses under — its nearest named
+// forebear. Identity for indices 0–6, a grandparent (3–6) for gens 3–4.
+export function grandparentOf(i: number): number {
+  let j = i;
+  while (j >= NAMED_COUNT) j = parentOf(j);
+  return j;
+}
+
 export const NAMED_LABELS: readonly string[] = [
   "Trainee",
   "Parent 1",
@@ -561,7 +569,7 @@ export interface PullPlan {
 
 // A pull records `lineage` on what it placed, so anything without it is
 // yours — a typed pink, or a character you picked.
-function handAuthored(design: Design, i: number): boolean {
+export function handAuthored(design: Design, i: number): boolean {
   if (i < NAMED_COUNT) {
     const slot = design.named[i];
     return slot !== null && slot.source !== "lineage";
@@ -572,6 +580,22 @@ function handAuthored(design: Design, i: number): boolean {
   // Sourceless rows: a pull was once the only thing that set an identity, and
   // it always left it beneath the roster node that produced it.
   return slot.card_id == null || lockedBy(design, i) === null;
+}
+
+// Which grandparents' deep tracks the map should open with (issue #46): only
+// a branch holding a spark the user typed themselves. Pulled branches stay
+// collapsed — their sum is the strip's job — and a hand-annotated face with
+// no pink doesn't count: the rule is about sparks, which are what the
+// brackets read.
+export function defaultExpanded(design: Design): Set<number> {
+  const out = new Set<number>();
+  for (let g = 3; g < NAMED_COUNT; g++) {
+    const authored = windowIndices(g).some(
+      (j) => sparkAt(design, j) !== null && handAuthored(design, j)
+    );
+    if (authored) out.add(g);
+  }
+  return out;
 }
 
 const lineageSlot = (

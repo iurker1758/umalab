@@ -5,6 +5,7 @@ import {
   letterModeOf,
   undroppableSpark,
   windowStars,
+  windowSummary,
 } from "./aptitude";
 import { catalogSlot } from "./blueprint";
 import type { AptitudeKey, AptitudeLetters, PinkSpark } from "./api";
@@ -66,6 +67,35 @@ describe("windowStars", () => {
   it("ignores a deep slot holding only a character", () => {
     const design = designWith({ 3: { card_id: 100_101 } });
     expect(windowStars(design, 1).size).toBe(0);
+  });
+});
+
+describe("windowSummary", () => {
+  it("sums duplicates and leads with the biggest total", () => {
+    // Grandparent 1-1's window is 7, 8 and their kids 15–18.
+    const design = designWith({
+      7: { aptitude: "mile", stars: 2 },
+      15: { aptitude: "mile", stars: 3 },
+      8: { aptitude: "turf", stars: 3 },
+      17: { aptitude: "long", stars: 3 },
+    });
+    expect(windowSummary(design, 3)).toEqual([
+      { aptitude: "mile", stars: 5 },
+      { aptitude: "turf", stars: 3 },
+      { aptitude: "long", stars: 3 },
+    ]);
+  });
+
+  it("breaks star ties in the game's aptitude order", () => {
+    const design = designWith({
+      7: { aptitude: "end", stars: 2 },
+      8: { aptitude: "dirt", stars: 2 },
+    });
+    expect(windowSummary(design, 3).map((e) => e.aptitude)).toEqual(["dirt", "end"]);
+  });
+
+  it("is empty over an empty window", () => {
+    expect(windowSummary(designWith({}), 3)).toEqual([]);
   });
 });
 

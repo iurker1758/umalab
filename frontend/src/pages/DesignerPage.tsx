@@ -43,10 +43,12 @@ import {
   catalogSlot,
   clearNodes,
   copyName,
+  defaultExpanded,
   deriveCharaId,
   emptyDesign,
   factorsSurviving,
   fromApi,
+  grandparentOf,
   halfOf,
   lockedBy,
   nextUntitledName,
@@ -205,6 +207,11 @@ export function DesignerPage({
   // Which tree node the focus panel shows. Ephemeral by design — a route
   // round-trip resets to the trainee, the design itself survives.
   const [selected, setSelected] = useState(0);
+  // Which grandparents' deep tracks the map has open. View state, never part
+  // of the document, and as ephemeral as the selection: recomputed from the
+  // hand-authored rule whenever the open design's identity changes
+  // (DECISIONS.md #47).
+  const [expanded, setExpanded] = useState<Set<number>>(() => defaultExpanded(design));
   const [affinity, setAffinity] = useState<AffinityResult | null>(null);
   const [scoreFailed, setScoreFailed] = useState(false);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
@@ -369,6 +376,7 @@ export function DesignerPage({
         // continuations that can run inside that window (issue #71).
         openRow.current = bp.id;
         setSelected(0);
+        setExpanded(defaultExpanded(d));
         // The score belongs to the blueprint you just left. Keyed on the
         // request payload alone it would survive the switch, and the incoming
         // blueprint would wear the old one's numbers until the round trip
@@ -419,6 +427,29 @@ export function DesignerPage({
   // is the selection.
   const shownSide = narrow ? (selected === 0 ? side : halfOf(selected)) : null;
 
+  // Same derivation for the collapse: a selected deep node's branch is open
+  // whatever the toggles say, so no selection path — autosave restore, the
+  // picker — can point the panel at a chip that isn't rendered.
+  const shownExpanded = useMemo(() => {
+    if (selected < NAMED_COUNT || expanded.has(grandparentOf(selected))) return expanded;
+    return new Set(expanded).add(grandparentOf(selected));
+  }, [expanded, selected]);
+
+  // Collapsing the branch that holds the selection moves it to the
+  // grandparent — otherwise the derived union above would win and the strip
+  // would refuse to close.
+  const toggleBranch = (g: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (shownExpanded.has(g)) next.delete(g);
+      else next.add(g);
+      return next;
+    });
+    if (shownExpanded.has(g) && selected >= NAMED_COUNT && grandparentOf(selected) === g) {
+      setSelected(g);
+    }
+  };
+
   // Every selection remembers which half it was in, so the toggle and the
   // selection can't disagree: without this, selecting the trainee (which
   // belongs to both halves) falls back to whatever the toggle was last set
@@ -443,7 +474,7 @@ export function DesignerPage({
       const t = e.target instanceof Element ? e.target : null;
       if (
         t?.closest(
-          ".focus-dock, .vnode, .side-toggle, .uma-popout, .uma-popout-backdrop, .picker-filters"
+          ".focus-dock, .vnode, .g2-strip, .side-toggle, .uma-popout, .uma-popout-backdrop, .picker-filters"
         )
       )
         return;
@@ -931,6 +962,7 @@ export function DesignerPage({
     setSavedJson(null);
     writeOpenId(null);
     setSelected(0);
+    setExpanded(new Set());
     try {
       const bp = await api.createBlueprint({
         name: nextUntitledName([]),
@@ -1119,6 +1151,8 @@ export function DesignerPage({
             iconIndex={iconIndex}
             affinity={shownAffinity}
             side={shownSide}
+            expanded={shownExpanded}
+            onToggleBranch={toggleBranch}
           />
         </div>
         <div className="focus-dock">

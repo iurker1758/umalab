@@ -339,9 +339,7 @@ button.bp-row:hover { background: #1e2937; }
 .side-toggle .seg.active { background: #1e3a5f; box-shadow: inset 0 -3px 0 #2a76c9; }
 .seg-tag { flex: none; padding: 0.05rem 0.3rem; border-radius: 4px; background: #2a3340; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.04em; }
 .side-toggle .seg.active .seg-tag { background: #2a76c9; color: #fff; }
-/* Panning to the panel must clear the sticky toggle, which stays pinned
-   over whatever is at the top of the viewport. */
-.focus-dock { min-width: 0; scroll-margin-top: 3.1rem; }
+.focus-dock { min-width: 0; }
 .vnode { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; box-sizing: border-box; background: #161c23; border: 1px solid #1f2833; border-radius: 8px; padding: 0.45rem; min-width: 0; max-width: 100%; color: inherit; font-size: 0.8rem; line-height: 1.35; cursor: pointer; }
 .vnode:hover { border-color: #2a3340; background: #1a2230; }
 .vnode.sel { border-color: #2a76c9; background: #1e3a5f; }
@@ -922,10 +920,39 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .card-chip.disabled { opacity: 0.2; cursor: default; }
 .card-chip.disabled:hover { opacity: 0.2; }
 
-/* The B-degradation: map becomes a horizontal strip above the panel, one
-   parent's half at a time (see TreeMap's `side`). */
+/* The B-degradation: map becomes a horizontal strip, one parent's half at a
+   time (see TreeMap's `side`), and the panel rides a fixed bottom sheet over
+   it (issue #43, DECISIONS.md #46) — non-modal, no backdrop, so the tree
+   stays scrollable and tappable behind it: the next chip tap swaps the
+   content in place, and a tap anywhere else dismisses (DesignerPage's
+   mousedown listener). Closed is display-toggled, never unmounted. NO
+   transform, filter or backdrop-filter on .focus-dock, ever: the Edit
+   Sparks popout (.uma-popout, position: fixed) renders INSIDE it via
+   ProcPanel, and any of those would become the popout's containing block.
+   z 7: over the sticky toggle (6) and pill dock (5), under the popout
+   layer (9/10). */
 @media (max-width: 860px) {
   .designer-combo { grid-template-columns: 1fr; }
+  .designer-combo:not(.sheet-open) .focus-dock { display: none; }
+  /* Fixed height, not max: the tabs differ in length, and the sheet's top
+     edge must not jump on a tab switch. */
+  .focus-dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; height: 70vh; overflow-y: auto; background: #141a21; border-top: 1px solid #2a3340; box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.65); }
+  /* The dock is the sheet's chrome; the card inside sheds its own. */
+  .focus-dock .focus { border: 0; border-radius: 0; }
+  /* Clearance matching the sheet, so the tree's last rows can scroll above
+     it instead of forcing a dismiss. */
+  .designer-combo.sheet-open { padding-bottom: 70vh; }
+}
+/* Phones: give the rows above the map back to the map (issue #43). */
+@media (max-width: 640px) {
+  /* The import line is fine print with no other surface; at this width its
+     row costs more than the reminder is worth. */
+  .import-info { display: none; }
+  /* flex-wrap breaks lines on flex BASE size, so the name input's intrinsic
+     width would wrap the autosave status to its own row despite min-width: 0.
+     Basis 0 lets line formation see the picker as shrinkable; it still grows
+     to fill. */
+  .bp-picker { flex-basis: 0; }
 }
 /* Phones: shave the column gutters so the half tree clears a 390px screen
    without an inner scroll. */

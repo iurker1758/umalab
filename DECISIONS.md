@@ -25,7 +25,7 @@ several:
 - **Designer & blueprint document:** 16 (persisted server-side), 18
   (router), 19 (superseded by 26), 25 (31-node document), 26 (v1 +
   autosave), 28 (roster pulls), 31 (corrections), 34 (table sort),
-  45 (caption cycle + pink sort)
+  45 (caption cycle + pink sort), 46 (phone bottom sheet)
 - **Spark entry & chooser:** 30 (factors join the document), 35
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
@@ -1983,3 +1983,50 @@ marked in each.
   never fires — captions return via an opt-in chip prop; the mode
   needing to follow between devices — the DB settings table #11
   already reserves.
+
+## 46. The phone focus panel is a bottom sheet
+
+- **Requirements:** issue #43 — at ≤860px the stacked layout made the
+  designer's core loop (tap a node, read its panel, tap the next) a
+  ~700px scroll round-trip per node, measured at 390×844 with the map
+  at 707px in an 844px viewport and the panel starting 194px below a
+  fully-scrolled map's fold; the shipped `scrollIntoView` pan fixed
+  only the downward half. The map must stay tappable while the panel
+  is up — swapping nodes is the loop, not an interruption — and the
+  Edit Sparks popout renders inside the panel and must keep working.
+- **Choice:** the existing `.focus-dock` becomes a fixed, non-modal
+  bottom sheet inside the 860px media query: opened by map taps only
+  (the toggle and picker set selection without yanking a sheet up),
+  dismissed by a mousedown anywhere off it — map chips and the side
+  toggle exempt (selection controls swap the content), the picker
+  layer and its filter wrapper exempt (they float above) —
+  display-toggled so FocusPanel's tab state survives, z-index 7
+  (over the sticky toggle, under the popout layer), a fixed 70vh
+  height so the top edge never jumps on a tab switch, and matching
+  bottom clearance on the open combo so the tree's last rows scroll
+  above it. The pan and its `scroll-margin-top` are removed. Chrome
+  reclaim rides along at ≤640px: `.import-info` hidden (fine print,
+  no other surface), `.bp-picker` flex-basis 0 so the autosave
+  status stays on the save bar's row.
+- **Alternatives rejected:** *a modal sheet with backdrop* — kills
+  tap-the-next-node, the loop the sheet exists for. *A dismiss bar
+  on the sheet* — shipped first and cut in review: full-width but it
+  read as a small icon, not an affordance, and spent a row of the
+  sheet on what tap-off gives for free, in the idiom the popout
+  backdrops already taught. *A content-driven height* — also cut in
+  review: the sheet's top edge jumped on every Details↔Sparks
+  switch. *An onClose prop through FocusPanel* — threads a phone
+  concern through four render branches. *A generic sheet component*
+  — #97's ruling: extraction waits for a third surface. *An Escape
+  handler* — the chooser's window-level Escape closes
+  unconditionally, so one press would close chooser AND sheet, and
+  the guard needs a DOM sniff; keyboard users still reach the whole
+  map by scroll, the clearance guarantees it. *A slide-up transform*
+  — a transformed dock becomes the containing block of the fixed
+  popout rendered inside it, breaking its centering.
+- **What would change my mind:** keyboard users on narrow desktop
+  windows needing a dismissal — Escape behind the `.uma-popout`
+  DOM-presence guard is the cheap retrofit; short panels leaving
+  most of a 70vh sheet empty often enough to grate — a second,
+  shorter detent, not a content-driven height; a third fixed
+  surface wanting this shape — that's #97's extraction trigger.

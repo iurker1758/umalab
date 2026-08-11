@@ -378,6 +378,11 @@ const chipLabel = ({ entry, card }) =>
 // Map chips are labeled "<node> — <content>".
 const mapChip = (node) => page.locator(`.vped button[aria-label^="${node} — "]`);
 const selectNode = async (node) => {
+  // The blueprint menu opens on the name field's focus and outlives a
+  // programmatic blur; with enough saved rows it reaches down to the gen-3
+  // chips and intercepts the click. Escape closes it without blurring
+  // (rename() guards the same hazard).
+  if (await page.locator(".bp-menu").count()) await page.keyboard.press("Escape");
   await mapChip(node).click();
 };
 const pickInto = async (who) => {
@@ -2445,6 +2450,18 @@ try {
   );
   check("390px: no page-level horizontal overflow", overflow <= 1, `overflow=${overflow}px`);
 
+  // Chrome reclaim (issue #43): the import line yields its row, and the
+  // autosave status stays on the save bar's row instead of wrapping.
+  check("390px: import status yields its row", await page.evaluate(() => {
+    const el = document.querySelector(".import-info");
+    return el === null || getComputedStyle(el).display === "none";
+  }));
+  check("390px: autosave status stays on the save bar's row", await page.evaluate(() => {
+    const p = document.querySelector(".bp-picker").getBoundingClientRect();
+    const s = document.querySelector(".designer-autosave").getBoundingClientRect();
+    return s.top < p.bottom;
+  }));
+
   // Narrow screens show one parent's half at a time: trainee + 15 nodes.
   await page.waitForSelector(".vped.half");
   check("390px: half tree renders 16 nodes",
@@ -2471,31 +2488,63 @@ try {
     stuck.visible && stuck.top <= 1, JSON.stringify(stuck));
   await page.evaluate(() => window.scrollTo(0, 0));
 
-  // A map tap pans to the panel: the detail is otherwise below the fold.
-  // (It stops at the document's end when the panel is short — what matters
-  // is that the panel ends up on screen, not that it reaches the top.)
-  const panelOffscreenBefore = await page.evaluate(() => {
-    const r = document.querySelector(".focus").getBoundingClientRect();
-    return r.top >= window.innerHeight;
-  });
+  // The sheet (issue #43): at ≤860px the panel is a fixed bottom sheet over
+  // the map — closed until a map tap, so the tree starts full-height.
+  const sheetHidden = () => page.evaluate(
+    () => getComputedStyle(document.querySelector(".focus-dock")).display === "none");
+  check("390px: panel starts closed", await sheetHidden());
   await mapChip("Grandparent 1-1").click();
   // The wait IS the assertion, so let it resolve to a boolean: throwing here
-  // would abort the remaining checks and report a pan regression as a crash,
-  // and asserting `panelOffscreenBefore` alone only re-states the precondition.
-  const panned = await page
+  // would abort the remaining checks and report a sheet regression as a crash.
+  const sheetShown = await page
     .waitForFunction(() => {
-      const r = document.querySelector(".focus").getBoundingClientRect();
-      return window.scrollY > 0 && r.top < window.innerHeight && r.bottom > 0;
+      const d = document.querySelector(".focus-dock");
+      if (getComputedStyle(d).display === "none") return false;
+      const r = d.getBoundingClientRect();
+      // Height pinned to 70vh: the top edge must not move on a tab switch.
+      return getComputedStyle(d).position === "fixed" &&
+        r.top >= 0 && r.bottom <= window.innerHeight + 1 && window.scrollY === 0 &&
+        Math.abs(r.height - window.innerHeight * 0.7) <= 1;
     }, null, { timeout: 5000 })
     .then(() => true, () => false);
-  check("390px: tapping a node pans the panel into view", panelOffscreenBefore && panned,
-    `offscreen-before=${panelOffscreenBefore} panned=${panned}`);
-  check("390px: the sticky toggle doesn't cover the panel",
+  check("390px: tapping a node opens the sheet in-viewport, no scroll", sheetShown);
+  // At rest the toggle's natural position varies with font metrics (CI's
+  // taller header put it a few px under the sheet), so the invariant is the
+  // PINNED toggle: scrolled anywhere, it must ride above the sheet.
+  await page.evaluate(() => window.scrollTo(0, 600));
+  check("390px: the pinned toggle rides above the sheet",
     await page.evaluate(() => {
       const t = document.querySelector(".side-toggle").getBoundingClientRect();
-      const f = document.querySelector(".focus").getBoundingClientRect();
-      return f.top >= t.bottom - 1;
+      const d = document.querySelector(".focus-dock").getBoundingClientRect();
+      return t.top <= 1 && t.bottom <= d.top;
     }));
+  await page.evaluate(() => window.scrollTo(0, 0));
+  // The map stays tappable behind the open sheet. The chip has to sit above
+  // the sheet or Playwright refuses the click — scroll it to the top first.
+  await page.evaluate(() =>
+    document.querySelector('.vped button[aria-label^="Trainee — "]').scrollIntoView(true));
+  const scrollBeforeSwap = await page.evaluate(() => window.scrollY);
+  await mapChip("Trainee").click();
+  await until(async () => {
+    const sel = await page.evaluate(
+      () => document.querySelector(".vped .vnode.sel")?.getAttribute("aria-label") ?? "");
+    return sel.startsWith("Trainee — ");
+  });
+  check("390px: tapping another node swaps the sheet in place",
+    !(await sheetHidden()) &&
+    (await page.evaluate(() => window.scrollY)) === scrollBeforeSwap);
+  // The toggle is a selection control like the chips: it swaps the shown
+  // parent under an open sheet rather than dismissing it.
+  await page.locator(".side-toggle .seg").nth(1).click();
+  await page.waitForSelector('.vped button[aria-label^="Parent 2 — "]');
+  check("390px: the toggle swaps under an open sheet, not past it",
+    !(await sheetHidden()) &&
+    (await page.locator(".focus-name").textContent()) === "Parent 2");
+  await page.locator(".side-toggle .seg").nth(0).click();
+  await page.waitForSelector('.vped button[aria-label^="Parent 1 — "]');
+  // Off the sheet and off the map: the header logo is a dead target.
+  await page.locator("h1").click();
+  check("390px: a tap outside dismisses the sheet", await until(sheetHidden));
   await page.evaluate(() => window.scrollTo(0, 0));
   check("390px: showing the selected node's half",
     (await mapChip("Parent 1").count()) === 1 && (await mapChip("Parent 2").count()) === 0);
@@ -2506,6 +2555,8 @@ try {
     (await mapChip("Grandparent 2-1").count()) === 1 &&
     (await mapChip("Grandparent 1-1").count()) === 0);
   // The design is empty by this point, so the panel names the slot itself.
+  // textContent reads through the closed sheet's display:none — deliberate:
+  // the toggle selects without opening the sheet.
   check("390px: toggle focuses that parent in the panel",
     (await page.locator(".focus-name").textContent()) === "Parent 2");
   // Selecting inside the shown half keeps that half up.
@@ -2518,6 +2569,20 @@ try {
   check("wide again: full 31-node tree, no toggle",
     (await page.locator(".vped .vnode").count()) === 31 &&
     (await page.locator(".side-toggle").count()) === 0);
+  // Media-query leak guard: whatever React state holds, above 860px the
+  // dock must be a plain grid child again.
+  check("wide again: panel docked, not a sheet", await page.evaluate(() => {
+    const s = getComputedStyle(document.querySelector(".focus-dock"));
+    return s.display !== "none" && s.position === "static";
+  }));
+  // The sheet was open when the viewport widened; crossing the breakpoint
+  // resets it, so re-narrowing starts from the full-height tree again.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForSelector(".vped.half");
+  check("390px again: crossing the breakpoint resets the sheet closed",
+    await until(sheetHidden));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForSelector(".vped:not(.half)");
 
   // ---------- roster pulls: two generations from one pick ----------
   if (!rosterReady) {

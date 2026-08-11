@@ -2084,5 +2084,9 @@ marked in each.
   (the issue's stated next step) needing per-slot rendering — the
   strip regrows detail then, not before; users re-expanding the
   same branches every session — persistence keyed by blueprint id;
-  the collapsed full tree measuring readable at 390px — Tree Half's
-  removal lands as its own change.
+  opening all four one strip at a time grating in practice — an
+  expand-all affordance composes with per-branch state and gets
+  ADDED, never swapped in for it (global-only can't express the
+  mixed default or open just the selected branch); the collapsed
+  full tree measuring readable at 390px — Tree Half's removal
+  lands as its own change.

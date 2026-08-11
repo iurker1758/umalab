@@ -56,6 +56,20 @@ export function windowStars(design: Design, i: number): Map<AptitudeKey, number>
   return totals;
 }
 
+// windowStars as a display list: biggest sum first, so the collapsed strip
+// leads with the total that moves the grandparent's letters most. Ties keep
+// the game's aptitude order because the input is built in it and sort is
+// stable — no tie-break clause needed.
+export function windowSummary(
+  design: Design,
+  i: number
+): { aptitude: AptitudeKey; stars: number }[] {
+  const totals = windowStars(design, i);
+  return APTITUDE_KEYS.filter((k) => totals.has(k))
+    .map((k) => ({ aptitude: k, stars: totals.get(k) ?? 0 }))
+    .sort((a, b) => b.stars - a.stars);
+}
+
 // How a node's letters are arrived at, which follows from where it came from.
 //
 //   project — the career-start forecast: the card's base plus the brackets

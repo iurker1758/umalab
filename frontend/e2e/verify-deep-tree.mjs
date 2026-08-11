@@ -377,12 +377,35 @@ const chipLabel = ({ entry, card }) =>
   `${entry.name}${card.outfit !== "Original" ? ` (${card.outfit})` : ""}`;
 // Map chips are labeled "<node> — <content>".
 const mapChip = (node) => page.locator(`.vped button[aria-label^="${node} — "]`);
+// The collapse strip footing each grandparent's card (issue #46). Its label
+// has no " — " on purpose, so it can never match a chip locator.
+const stripToggle = (gp) => page.locator(`.vped button[aria-label="Sparks Below ${gp}"]`);
+const GP_LABELS = ["Grandparent 1-1", "Grandparent 1-2", "Grandparent 2-1", "Grandparent 2-2"];
+// Which grandparent a deep node collapses under — index arithmetic mirroring
+// blueprint.ts: "Sparks 3-p" is tree index 6+p, "Sparks 4-p" is 14+p, and
+// walking (i-1)>>1 lands on 3..6. Null for a named node.
+const gpOf = (node) => {
+  const m = /^Sparks ([34])-(\d+)$/.exec(node);
+  if (m === null) return null;
+  let i = (m[1] === "3" ? 6 : 14) + Number(m[2]);
+  while (i >= 7) i = (i - 1) >> 1;
+  return GP_LABELS[i - 3];
+};
+// Deep chips exist in the DOM only while their branch is expanded, so
+// anything that reaches for one opens the branch first.
+const expandFor = async (node) => {
+  const gp = gpOf(node);
+  if (gp === null || (await mapChip(node).count()) > 0) return;
+  await stripToggle(gp).click();
+  await page.waitForSelector(`.vped button[aria-label^="${node} — "]`);
+};
 const selectNode = async (node) => {
   // The blueprint menu opens on the name field's focus and outlives a
   // programmatic blur; with enough saved rows it reaches down to the gen-3
   // chips and intercepts the click. Escape closes it without blurring
   // (rename() guards the same hazard).
   if (await page.locator(".bp-menu").count()) await page.keyboard.press("Escape");
+  await expandFor(node);
   await mapChip(node).click();
 };
 const pickInto = async (who) => {
@@ -527,7 +550,9 @@ const newBlueprint = async () => {
   // The new row's identity, not "the name changed" — a late hydration also
   // changes the name without the create having landed (issue #71). The
   // blank tree renders in the same commit as the untitled name, so the
-  // 31-count belongs to the same condition.
+  // node count belongs to the same condition. Seven, not 31: a blank tree
+  // opens with every branch collapsed (issue #46), so only the named nodes
+  // and the four strips are in the DOM.
   const opened = await page
     .waitForFunction(
       (n) => {
@@ -535,7 +560,8 @@ const newBlueprint = async () => {
         return (
           v !== n &&
           v.startsWith("Untitled Blueprint") &&
-          document.querySelectorAll(".vped .vnode.pick").length === 31
+          document.querySelectorAll(".vped .vnode.pick").length === 7 &&
+          document.querySelectorAll(".g2-strip").length === 4
         );
       },
       before,
@@ -580,9 +606,22 @@ try {
   check("a blueprint is open on arrival", opened && (await pickerLabel()).length > 0);
   await newBlueprint();
   await rename(bpName);
-  check("map renders all 31 nodes", (await page.locator(".vped .vnode").count()) === 31);
+  // A blank tree is seven named cards and four collapsed strips — none of
+  // the 24 deep placeholders that used to be its heaviest feature (issue
+  // #46). Expanding all four brings the full 31 back.
+  check("map renders the named nodes over collapsed strips",
+    (await page.locator(".vped .vnode").count()) === 7 &&
+    (await page.locator(".vped .vnode.anon").count()) === 0);
   check("all nodes empty in a new blueprint",
+    (await page.locator(".vped .vnode.pick").count()) === 7);
+  check("every branch starts collapsed", (await page
+    .locator('.g2-strip[aria-expanded="false"]')
+    .count()) === 4);
+  for (const gp of GP_LABELS) await stripToggle(gp).click();
+  check("expanding all four branches renders all 31 nodes",
+    (await page.locator(".vped .vnode").count()) === 31 &&
     (await page.locator(".vped .vnode.pick").count()) === 31);
+  for (const gp of GP_LABELS) await stripToggle(gp).click();
   check("trainee focused by default",
     (await page.locator(".focus-name").textContent()) === "Trainee");
 
@@ -2025,7 +2064,11 @@ try {
     (await stripMile.textContent()) === tMile &&
     (await stripMile.getAttribute("class")).includes("boosted"));
   // Connector geometry: each kid's rail must reach its parent's centre, and
-  // the parent's descender must come down to the same rail.
+  // the parent's descender must come down to the same rail. Gen 3–4 only
+  // exist while their branch is open (issue #46), so open one — the .g4
+  // dereference below is a throw, not a failed check, against a collapsed
+  // tree.
+  await expandFor("Sparks 4-1");
   const wires = await page.evaluate(() => {
     const mid = (el) => { const r = el.getBoundingClientRect(); return (r.left + r.right) / 2; };
     const parent = document.querySelector('.vped button[aria-label^="Trainee — "]');
@@ -2033,6 +2076,15 @@ try {
     const kidR = document.querySelector('.vped button[aria-label^="Parent 2 — "]').closest(".cell");
     const railL = kidL.getBoundingClientRect();
     const railR = kidR.getBoundingClientRect();
+    // The expanded grandparent's descender hangs off her strip, and her two
+    // gen-3 kids' half-rails must meet under its centre — explicit row
+    // placement of a lone open branch is where a partial row could drift.
+    const g11 = document.querySelector('.vped button[aria-label="Sparks Below Grandparent 1-1"]');
+    const d3L = document.querySelector('.vped button[aria-label^="Sparks 3-1 — "]').closest(".cell");
+    const d3R = document.querySelector('.vped button[aria-label^="Sparks 3-2 — "]').closest(".cell");
+    const dL = d3L.getBoundingClientRect();
+    const dR = d3R.getBoundingClientRect();
+    const closed = document.querySelector(".cell.g2.collapsed .g2-strip");
     return {
       // The two half-rails meet where the parent's centre is.
       seam: Math.abs(railL.right - railR.left),
@@ -2041,12 +2093,19 @@ try {
       floor: getComputedStyle(
         document.querySelector(".cell.g4 .vnode"), "::after"
       ).content === "none",
+      stripDrop: getComputedStyle(g11, "::after").content !== "none",
+      stripSeam: Math.abs(dL.right - dR.left),
+      stripCentre: Math.abs(mid(g11) - (dL.right + dR.left) / 2),
+      closedDrop: getComputedStyle(closed, "::after").content !== "none",
     };
   });
   check("kid rails meet under the parent's centre",
     wires.seam <= 3 && wires.centre <= 2, JSON.stringify(wires));
   check("parents drop to the rail, gen 4 doesn't",
     wires.descender && wires.floor, JSON.stringify(wires));
+  check("an open strip drops to its gen-3 rail, a collapsed one draws nothing",
+    wires.stripDrop && !wires.closedDrop &&
+    wires.stripSeam <= 3 && wires.stripCentre <= 2, JSON.stringify(wires));
   check("map chip carries the chara icon",
     (await mapChip("Trainee").locator(".head img, .head .lineage-icon-fallback").count()) === 1);
   check("trainee chip has no spark row",
@@ -2128,6 +2187,37 @@ try {
   check(`g11 long from its gen-4 slot`,
     (await rowLetter("Long")) === boost(G11.apt.long, 2));
 
+  // ---------- the collapse strip states the window it stands in for ----------
+  // Two more one-star sparks give G1-1's window four distinct aptitudes, so
+  // the strip has an overflow to show. Cleared again below — the sections
+  // after this rebuild their expectations on the window as it was.
+  await selectNode("Sparks 4-2");
+  await setSpark("Sparks 4-2", "turf", 1);
+  await selectNode("Sparks 4-3");
+  await setSpark("Sparks 4-3", "dirt", 1);
+  // Collapsing the branch that holds the selection: the deep cells leave the
+  // DOM and the selection lands on the grandparent — anywhere else and the
+  // panel would be editing a node the map no longer shows.
+  await stripToggle("Grandparent 1-1").click();
+  check("collapsing the selected branch moves the selection to its grandparent",
+    (await mapChip("Sparks 4-3").count()) === 0 &&
+    ((await page.locator(".vped .vnode.sel").getAttribute("aria-label")) ?? "")
+      .startsWith("Grandparent 1-1 — "));
+  // Biggest sum first, ties in the game's order, the tail behind a +N: the
+  // strip is windowStars rendered, so it must agree with what the letters
+  // above it were bumped by.
+  check("the strip sums the window: top three by stars, the rest counted",
+    (await stripToggle("Grandparent 1-1").textContent()) === "Mile 5★Long 2★Turf 1★+1▾",
+    await stripToggle("Grandparent 1-1").textContent());
+  await selectNode("Sparks 4-2");
+  await page.locator('button[aria-label="Clear Sparks 4-2"]').click();
+  await selectNode("Sparks 4-3");
+  await page.locator('button[aria-label="Clear Sparks 4-3"]').click();
+  await stripToggle("Grandparent 1-1").click();
+  check("cleared sparks leave the strip's sum",
+    (await stripToggle("Grandparent 1-1").textContent()) === "Mile 5★Long 2★▾",
+    await stripToggle("Grandparent 1-1").textContent());
+
   // ---------- undroppable typed spark on P2 ----------
   await selectNode("Parent 2");
   await setSpark("Parent 2", aptLow, 3);
@@ -2205,6 +2295,12 @@ try {
   check("reload reopens the blueprint that was open",
     (await pickerLabel()) === bpName &&
     (await mapChip("Sparks 3-1").getAttribute("aria-label")) === "Sparks 3-1 — 3★ Mile");
+  // The default rule, exercised by a real reload: these branches hold
+  // hand-typed sparks, so they open on their own — a pulled branch's
+  // counterpart check lives in the roster section.
+  check("hand-authored branches reopen expanded",
+    (await stripToggle("Grandparent 1-1").getAttribute("aria-expanded")) === "true" &&
+    (await stripToggle("Grandparent 1-2").getAttribute("aria-expanded")) === "true");
 
   // The popout is the only remove surface (#86), so a held spark the
   // reference can't name must still get a row — degraded to Unknown in its
@@ -2462,9 +2558,24 @@ try {
     return s.top < p.bottom;
   }));
 
-  // Narrow screens show one parent's half at a time: trainee + 15 nodes.
+  // Narrow screens show one parent's half at a time: trainee + 15 nodes,
+  // of which the deep 12 render only while their branches are open. Set the
+  // state explicitly rather than trusting what the narrative left expanded —
+  // a leftover open branch made a fixed count pass for the wrong reason.
   await page.waitForSelector(".vped.half");
-  check("390px: half tree renders 16 nodes",
+  for (const gp of ["Grandparent 1-1", "Grandparent 1-2"]) {
+    if ((await stripToggle(gp).getAttribute("aria-expanded")) === "true") {
+      await stripToggle(gp).click();
+    }
+  }
+  check("390px: the collapsed half is 4 cards over 2 strips",
+    (await page.locator(".vped .vnode").count()) === 4 &&
+    (await page.locator(".g2-strip").count()) === 2);
+  // Left open below: the collapsed half fits a phone screen whole, so the
+  // sticky-toggle checks need the expanded tree's height to have anything
+  // to scroll against.
+  for (const gp of ["Grandparent 1-1", "Grandparent 1-2"]) await stripToggle(gp).click();
+  check("390px: both branches open render the half's 16 nodes",
     (await page.locator(".vped .vnode").count()) === 16);
   check("390px: side toggle offers both parents",
     (await page.locator(".side-toggle .seg").count()) === 2);
@@ -2542,6 +2653,23 @@ try {
     (await page.locator(".focus-name").textContent()) === "Parent 2");
   await page.locator(".side-toggle .seg").nth(0).click();
   await page.waitForSelector('.vped button[aria-label^="Parent 1 — "]');
+  // The strip is a map control like the chips and the toggle: toggling a
+  // branch under an open sheet must not dismiss it (the exempt list in
+  // DesignerPage's tap-off handler). Scrolled into the band between the
+  // sticky toggle and the sheet first — Playwright refuses a covered click.
+  await page.evaluate(() => {
+    document
+      .querySelector('.vped button[aria-label="Sparks Below Grandparent 1-1"]')
+      .scrollIntoView(true);
+    window.scrollBy(0, -80);
+  });
+  const stripWasOpen =
+    (await stripToggle("Grandparent 1-1").getAttribute("aria-expanded")) === "true";
+  await stripToggle("Grandparent 1-1").click();
+  check("390px: a strip tap toggles under the sheet, not past it",
+    !(await sheetHidden()) &&
+    ((await stripToggle("Grandparent 1-1").getAttribute("aria-expanded")) === "true")
+      !== stripWasOpen);
   // Off the sheet and off the map: the header logo is a dead target.
   await page.locator("h1").click();
   check("390px: a tap outside dismisses the sheet", await until(sheetHidden));
@@ -2566,8 +2694,12 @@ try {
     (await mapChip("Parent 2").count()) === 1);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.waitForSelector(".vped:not(.half)");
-  check("wide again: full 31-node tree, no toggle",
-    (await page.locator(".vped .vnode").count()) === 31 &&
+  // Derived, not a fixed 31: each open branch adds its six deep cells to the
+  // seven named ones, and this section must not depend on what upstream
+  // sections left open.
+  const openBranches = await page.locator('.g2-strip[aria-expanded="true"]').count();
+  check("wide again: full tree for the open state, no toggle",
+    (await page.locator(".vped .vnode").count()) === 7 + 6 * openBranches &&
     (await page.locator(".side-toggle").count()) === 0);
   // Media-query leak guard: whatever React state holds, above 860px the
   // dock must be a plain grid child again.
@@ -2734,6 +2866,14 @@ try {
     check("position 20 becomes Grandparent 1-2",
       (await mapChip("Grandparent 1-2").getAttribute("aria-label")) ===
         `Grandparent 1-2 — ${P20.name}`);
+    // What a pull writes into gens 3–4 stays behind the strips — filling a
+    // branch is not a reason to open it, the strip's sum being exactly what
+    // a pulled pedigree collapses to (issue #46).
+    check("a pull leaves its branches collapsed",
+      (await stripToggle("Grandparent 1-1").getAttribute("aria-expanded")) === "false" &&
+      (await stripToggle("Grandparent 1-2").getAttribute("aria-expanded")) === "false");
+    await expandFor("Sparks 3-1");
+    await expandFor("Sparks 3-3");
     const deep = [
       ["Sparks 3-1", 11], ["Sparks 3-2", 12], ["Sparks 3-3", 21], ["Sparks 3-4", 22],
     ];
@@ -2790,6 +2930,11 @@ try {
         (await mapChip("Grandparent 1-1").getAttribute("aria-label")) ===
           `Grandparent 1-1 — ${P10.name}`),
       await mapChip("Grandparent 1-1").getAttribute("aria-label"));
+    // Reopening is the default rule from scratch: nothing here is
+    // hand-authored, so every branch comes back collapsed.
+    check("a pulled design reopens collapsed",
+      (await stripToggle("Grandparent 1-2").getAttribute("aria-expanded")) === "false");
+    await expandFor("Sparks 3-3");
     check("and the deep slots come back with it",
       (await mapChip("Sparks 3-3").getAttribute("aria-label")) ===
         `Sparks 3-3 — ${deepLabel(memberAt(RV1, 21))}`);
@@ -2843,6 +2988,7 @@ try {
     await selectNode("Grandparent 2-1");
     const pulledGp = await pullInto(RV1);
     check("a grandparent takes a pull too", pulledGp === null, String(pulledGp));
+    await expandFor("Sparks 3-5");
     check("its generation-3 slots take the veteran's parents",
       (await mapChip("Sparks 3-5").getAttribute("aria-label")) ===
         `Sparks 3-5 — ${deepLabel(memberAt(RV1, 10))}`);

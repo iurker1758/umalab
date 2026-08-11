@@ -9,6 +9,7 @@ import {
   charaAt,
   clearNodes,
   copyName,
+  defaultExpanded,
   deriveCharaId,
   emptyDesign,
   factorsOf,
@@ -16,6 +17,7 @@ import {
   factorsWith,
   fromApi,
   genOf,
+  grandparentOf,
   halfOf,
   kidsOf,
   lockedBy,
@@ -105,6 +107,15 @@ describe("the tree's shape", () => {
   it("walks a branch breadth-first from the node itself", () => {
     expect(subtreeOf(3)).toEqual([3, 7, 8, 15, 16, 17, 18]);
     expect(subtreeOf(15)).toEqual([15]);
+  });
+
+  it("collapses every deep node under its grandparent, and named nodes under themselves", () => {
+    expect(grandparentOf(0)).toBe(0);
+    expect(grandparentOf(6)).toBe(6);
+    expect(grandparentOf(7)).toBe(3);
+    expect(grandparentOf(14)).toBe(6);
+    expect(grandparentOf(15)).toBe(3);
+    expect(grandparentOf(30)).toBe(6);
   });
 });
 
@@ -663,6 +674,34 @@ describe("applyPull", () => {
     applyPull(before, planPull(before, 1, bred));
     expect(before.named[1]).toMatchObject({ chara_id: 5001 });
     expect(before.named[3]).toBeNull();
+  });
+});
+
+describe("defaultExpanded", () => {
+  it("opens nothing on an empty design", () => {
+    expect(defaultExpanded(emptyDesign())).toEqual(new Set());
+  });
+
+  it("opens exactly the branch holding a hand-typed deep spark", () => {
+    expect(defaultExpanded(designWith({ 7: { aptitude: "mile", stars: 2 } }))).toEqual(
+      new Set([3])
+    );
+    expect(defaultExpanded(designWith({ 30: { aptitude: "long", stars: 1 } }))).toEqual(
+      new Set([6])
+    );
+  });
+
+  it("keeps a pulled branch collapsed — the strip's sum is its whole point", () => {
+    const lineage = designWith({
+      7: { aptitude: "turf", stars: 2, card_id: 300_101, source: "lineage" },
+    });
+    expect(defaultExpanded(lineage)).toEqual(new Set());
+    const pulled = applyPull(emptyDesign(), planPull(emptyDesign(), 3, bred));
+    expect(defaultExpanded(pulled)).toEqual(new Set());
+  });
+
+  it("ignores a face with no pink — the rule is about sparks", () => {
+    expect(defaultExpanded(designWith({ 7: { card_id: 300_101 } }))).toEqual(new Set());
   });
 });
 

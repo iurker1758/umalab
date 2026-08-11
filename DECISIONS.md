@@ -25,7 +25,8 @@ several:
 - **Designer & blueprint document:** 16 (persisted server-side), 18
   (router), 19 (superseded by 26), 25 (31-node document), 26 (v1 +
   autosave), 28 (roster pulls), 31 (corrections), 34 (table sort),
-  45 (caption cycle + pink sort), 46 (phone bottom sheet)
+  45 (caption cycle + pink sort), 46 (phone bottom sheet), 47 (gens
+  3–4 collapse into strips)
 - **Spark entry & chooser:** 30 (factors join the document), 35
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
@@ -2030,3 +2031,62 @@ marked in each.
   most of a 70vh sheet empty often enough to grate — a second,
   shorter detent, not a content-driven height; a third fixed
   surface wanting this shape — that's #97's extraction trigger.
+
+## 47. Generations 3–4 collapse into per-grandparent strips
+
+- **Requirements:** issue #46 — gens 3–4 are 24 of the 31 nodes and
+  ~40% of the map's area, each showing at most a portrait and one
+  pink; an empty blueprint rendered 24 identical dashed placeholders
+  as its visually heaviest feature, and in the 860–1150px band the
+  gen-4 cells compressed to 33–44px and truncated to "Aptit…". The
+  bracket math reads only the summed matching ★ over a node's window
+  (#25: the deep slots are "spark bundles by design", existing to
+  feed the letters two rows up). Expansion is view state — the
+  `slots` document only grows by optional fields — and the e2e
+  navigates by `"<node> — "` aria-label prefixes.
+- **Choice:** per grandparent, her six deep cells render only while
+  her branch is expanded; collapsed, a `g2-strip` button footing her
+  card carries `windowStars` summed per aptitude (stars-desc, ties
+  in game order, top three + "+N") — lossless for the number the
+  slots exist to feed, stated next to the letters it explains. The
+  strip is a sibling of the chip (a `<button>` can't nest one),
+  labelled "Sparks Below …" so no chip locator can match it, and in
+  the sheet's tap-off exempt list. Collapsed cells leave the DOM —
+  placement is explicit `grid-row`/`grid-column` (auto-flow would
+  pull an expanded branch into a collapsed sibling's columns) — and
+  the grandparent's wire descender moves to the open strip; closed,
+  nothing draws downward. Default expanded only where a
+  hand-authored deep spark sits (`handAuthored`; pulls are recorded
+  history the strip sums), recomputed per blueprint open, held as
+  page state like the selection. A selected deep node derives its
+  branch open (the `shownSide` pattern), so no path shows the panel
+  a chip the map dropped; collapsing the selected branch moves
+  selection to the grandparent. Measured: intrinsic width 735 → 713
+  collapsed — the grandparent row was always the second constraint —
+  but the compression band's victims are gone rather than squeezed,
+  and at 900px the full letter grid renders untruncated. Mid-session
+  edits never auto-expand or auto-collapse; a pull or Clear changes
+  the strip's sum, not the view. Tree Half stays — whether the
+  collapsed tree obsoletes it at 390px is a follow-up measurement.
+- **Alternatives rejected:** *issue #26's orientation toggle* —
+  closed in favour of this; height already binds at 390px, and a
+  second orientation is a second layout to maintain. *Persisting
+  expansion* (document or localStorage) — the document invariant
+  forbids the first; the second needs per-blueprint keying for a
+  state cheap to re-derive. *Listing individual slots in the strip*
+  — the brackets read the sum; slot positions are noise at strip
+  size. *`display: none` collapse* — hidden cells still satisfy
+  attribute locators while showing nothing, and absence already
+  means "not shown" (the half tree). *Auto-expanding pulled
+  branches* — a full pull would open both sides and give back most
+  of the width.
+- **What would change my mind:** matched-vs-unmatched highlighting
+  (the issue's stated next step) needing per-slot rendering — the
+  strip regrows detail then, not before; users re-expanding the
+  same branches every session — persistence keyed by blueprint id;
+  opening all four one strip at a time grating in practice — an
+  expand-all affordance composes with per-branch state and gets
+  ADDED, never swapped in for it (global-only can't express the
+  mixed default or open just the selected branch); the collapsed
+  full tree measuring readable at 390px — Tree Half's removal
+  lands as its own change.

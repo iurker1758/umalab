@@ -1997,8 +1997,9 @@ marked in each.
 - **Choice:** the existing `.focus-dock` becomes a fixed, non-modal
   bottom sheet inside the 860px media query: opened by map taps only
   (the toggle and picker set selection without yanking a sheet up),
-  dismissed by a mousedown anywhere off it — map chips exempt (they
-  swap the content), the picker layer exempt (it floats above) —
+  dismissed by a mousedown anywhere off it — map chips and the side
+  toggle exempt (selection controls swap the content), the picker
+  layer and its filter wrapper exempt (they float above) —
   display-toggled so FocusPanel's tab state survives, z-index 7
   (over the sticky toggle, under the popout layer), a fixed 70vh
   height so the top edge never jumps on a tab switch, and matching

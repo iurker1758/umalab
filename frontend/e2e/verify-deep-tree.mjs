@@ -2508,12 +2508,17 @@ try {
     }, null, { timeout: 5000 })
     .then(() => true, () => false);
   check("390px: tapping a node opens the sheet in-viewport, no scroll", sheetShown);
-  check("390px: the sheet leaves the sticky toggle clear",
+  // At rest the toggle's natural position varies with font metrics (CI's
+  // taller header put it a few px under the sheet), so the invariant is the
+  // PINNED toggle: scrolled anywhere, it must ride above the sheet.
+  await page.evaluate(() => window.scrollTo(0, 600));
+  check("390px: the pinned toggle rides above the sheet",
     await page.evaluate(() => {
       const t = document.querySelector(".side-toggle").getBoundingClientRect();
       const d = document.querySelector(".focus-dock").getBoundingClientRect();
-      return t.bottom <= d.top;
+      return t.top <= 1 && t.bottom <= d.top;
     }));
+  await page.evaluate(() => window.scrollTo(0, 0));
   // The map stays tappable behind the open sheet. The chip has to sit above
   // the sheet or Playwright refuses the click — scroll it to the top first.
   await page.evaluate(() =>
@@ -2528,6 +2533,15 @@ try {
   check("390px: tapping another node swaps the sheet in place",
     !(await sheetHidden()) &&
     (await page.evaluate(() => window.scrollY)) === scrollBeforeSwap);
+  // The toggle is a selection control like the chips: it swaps the shown
+  // parent under an open sheet rather than dismissing it.
+  await page.locator(".side-toggle .seg").nth(1).click();
+  await page.waitForSelector('.vped button[aria-label^="Parent 2 — "]');
+  check("390px: the toggle swaps under an open sheet, not past it",
+    !(await sheetHidden()) &&
+    (await page.locator(".focus-name").textContent()) === "Parent 2");
+  await page.locator(".side-toggle .seg").nth(0).click();
+  await page.waitForSelector('.vped button[aria-label^="Parent 1 — "]');
   // Off the sheet and off the map: the header logo is a dead target.
   await page.locator("h1").click();
   check("390px: a tap outside dismisses the sheet", await until(sheetHidden));
@@ -2555,12 +2569,20 @@ try {
   check("wide again: full 31-node tree, no toggle",
     (await page.locator(".vped .vnode").count()) === 31 &&
     (await page.locator(".side-toggle").count()) === 0);
-  // Media-query leak guard: sheetOpen may still be true in React state, but
-  // above 860px the dock must be a plain grid child again.
+  // Media-query leak guard: whatever React state holds, above 860px the
+  // dock must be a plain grid child again.
   check("wide again: panel docked, not a sheet", await page.evaluate(() => {
     const s = getComputedStyle(document.querySelector(".focus-dock"));
     return s.display !== "none" && s.position === "static";
   }));
+  // The sheet was open when the viewport widened; crossing the breakpoint
+  // resets it, so re-narrowing starts from the full-height tree again.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForSelector(".vped.half");
+  check("390px again: crossing the breakpoint resets the sheet closed",
+    await until(sheetHidden));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForSelector(".vped:not(.half)");
 
   // ---------- roster pulls: two generations from one pick ----------
   if (!rosterReady) {

@@ -393,10 +393,22 @@ export function DesignerPage({
     () => typeof window !== "undefined" && window.matchMedia(HALF_TREE_QUERY).matches
   );
   const [side, setSide] = useState(1);
+  // ≤860px the panel is a bottom sheet over the map (issue #43, DECISIONS.md
+  // #46): closed on load so the tree starts full-height, opened by map taps
+  // only — the toggle and the picker set the selection too, and yanking a
+  // sheet up from under those would be motion for its own sake. Closed is
+  // display-toggled CSS, never an unmount: FocusPanel's tab choice
+  // deliberately survives dismissal.
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia(HALF_TREE_QUERY);
-    const onChange = (e: MediaQueryListEvent) => setNarrow(e.matches);
+    const onChange = (e: MediaQueryListEvent) => {
+      setNarrow(e.matches);
+      // Crossing the breakpoint resets the sheet: it appears on a map tap
+      // only, never as a leftover from the other layout.
+      setSheetOpen(false);
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
@@ -407,13 +419,6 @@ export function DesignerPage({
   // is the selection.
   const shownSide = narrow ? (selected === 0 ? side : halfOf(selected)) : null;
 
-  // ≤860px the panel is a bottom sheet over the map (issue #43, DECISIONS.md
-  // #46): closed on load so the tree starts full-height, opened by map taps
-  // only — the toggle and the picker set the selection too, and yanking a
-  // sheet up from under those would be motion for its own sake. Closed is
-  // display-toggled CSS, never an unmount: FocusPanel's tab choice
-  // deliberately survives dismissal.
-  const [sheetOpen, setSheetOpen] = useState(false);
   // Every selection remembers which half it was in, so the toggle and the
   // selection can't disagree: without this, selecting the trainee (which
   // belongs to both halves) falls back to whatever the toggle was last set
@@ -428,14 +433,20 @@ export function DesignerPage({
   };
 
   // Tap-off dismissal, like the popouts' backdrops (mousedown, not click).
-  // Exempt: the sheet itself; map chips — they swap the content, and closing
-  // on the press would flicker before the click reopens; the picker layer —
-  // SlotPicker mounts outside the dock but floats above the sheet.
+  // Exempt: the sheet itself; selection controls — map chips and the side
+  // toggle swap the content, and closing on the press would flicker before
+  // the click lands; the picker layer — SlotPicker and its .picker-filters
+  // wrapper mount outside the dock but float above the sheet.
   useEffect(() => {
     if (!sheetOpen || !narrow) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target instanceof Element ? e.target : null;
-      if (t?.closest(".focus-dock, .vnode, .uma-popout, .uma-popout-backdrop")) return;
+      if (
+        t?.closest(
+          ".focus-dock, .vnode, .side-toggle, .uma-popout, .uma-popout-backdrop, .picker-filters"
+        )
+      )
+        return;
       setSheetOpen(false);
     };
     document.addEventListener("mousedown", onDown);

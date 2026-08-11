@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { APTITUDE_KEYS } from "./api";
 import {
   BLUE_ORDER,
+  CAPTION_MODES,
+  CAPTION_STORE,
   LETTER_ORDER,
   MARK_IDS,
+  PICKER_CAPTION_STORE,
   SORT_STORE,
   apt,
   blueSparkRank,
@@ -10,14 +14,20 @@ import {
   gradeClass,
   isCharaPlaceholder,
   isLetter,
+  loadCaptionMode,
   loadSortPref,
   markLabel,
+  nextCaptionMode,
+  pinkOf,
+  pinkSparkRank,
   rankTier,
   rosterCardsOf,
+  saveCaptionMode,
   saveSortPref,
   sortVeterans,
   sparkAbbr,
   statGrade,
+  type CaptionMode,
   type SortPref,
 } from "./domain";
 import {
@@ -137,6 +147,86 @@ describe("blueSparkRank", () => {
   });
 });
 
+describe("pinkOf", () => {
+  it("reads the aptitude out of the key and the stars out of the star field", () => {
+    expect(pinkOf([factor({ kind: "pink", key: 32, star: 2 })])).toEqual({
+      aptitude: "mile",
+      stars: 2,
+    });
+    expect(pinkOf([factor({ kind: "pink", key: 11, star: 1 })])).toEqual({
+      aptitude: "turf",
+      stars: 1,
+    });
+  });
+
+  it("takes the strongest rather than the first", () => {
+    expect(
+      pinkOf([
+        factor({ kind: "pink", key: 32, star: 1 }),
+        factor({ kind: "pink", key: 34, star: 3 }),
+      ])
+    ).toEqual({ aptitude: "long", stars: 3 });
+  });
+
+  it("wants both the kind and a known key", () => {
+    expect(pinkOf([factor({ kind: "white", key: 32, star: 3 })])).toBeNull();
+    expect(pinkOf([factor({ kind: "pink", key: 99, star: 3 })])).toBeNull();
+  });
+
+  it("rejects a star count off the 1..3 scale", () => {
+    expect(pinkOf([factor({ kind: "pink", key: 32, star: 0 })])).toBeNull();
+    expect(pinkOf([factor({ kind: "pink", key: 32, star: 4 })])).toBeNull();
+  });
+
+  it("is null for a member with nothing to read", () => {
+    expect(pinkOf([])).toBeNull();
+  });
+});
+
+describe("pinkSparkRank", () => {
+  const withPink = (key: number, star: number) =>
+    veteran({ factors: [factor({ kind: "pink", key, star })] });
+
+  it("orders by aptitude in game group order, then star within it", () => {
+    expect(pinkSparkRank(withPink(11, 1))).toBe(0);
+    expect(pinkSparkRank(withPink(11, 3))).toBe(2);
+    expect(pinkSparkRank(withPink(12, 1))).toBe(3);
+    expect(pinkSparkRank(withPink(24, 3))).toBe(APTITUDE_KEYS.length * 3 - 1);
+  });
+
+  it("ranks through the group order, not the numeric key", () => {
+    // Style's keys (21..24) sit numerically below Distance's (31..34) but
+    // rank above them — Track → Distance → Style is the order that counts.
+    expect(pinkSparkRank(withPink(31, 1))).toBe(6);
+    expect(pinkSparkRank(withPink(21, 1))).toBe(18);
+  });
+
+  it("sorts a veteran with no pink, an unknown key, or an off-scale star first", () => {
+    expect(pinkSparkRank(veteran({ factors: [] }))).toBe(-1);
+    expect(pinkSparkRank(withPink(99, 3))).toBe(-1);
+    expect(pinkSparkRank(withPink(11, 0))).toBe(-1);
+    expect(pinkSparkRank(withPink(11, 4))).toBe(-1);
+  });
+
+  it("reads her OWN pink, never a parent's", () => {
+    const v = withPink(11, 1);
+    v.lineage = [
+      member({ position_id: 10, factors: [factor({ kind: "pink", key: 34, star: 3 })] }),
+    ];
+    expect(pinkSparkRank(v)).toBe(0);
+  });
+
+  it("takes the strongest pink, as pinkOf does", () => {
+    const v = veteran({
+      factors: [
+        factor({ kind: "pink", key: 11, star: 1 }),
+        factor({ kind: "pink", key: 33, star: 3 }),
+      ],
+    });
+    expect(pinkSparkRank(v)).toBe(14);
+  });
+});
+
 describe("sortVeterans", () => {
   const a = veteran({ id: 1, name: "Ann", rank_score: 100, register_time: "2026-01-01T00:00:00" });
   const b = veteran({ id: 2, name: "Bea", rank_score: 300, register_time: "2026-03-01T00:00:00" });
@@ -169,6 +259,17 @@ describe("sortVeterans", () => {
       veteran({ id: 2, factors: [factor({ kind: "blue", key: 1, star: 1, name: "Speed" })] }),
     ];
     expect(sortVeterans(sparked, { key: "blue_spark", asc: true }).map((v) => v.id)).toEqual([2, 1]);
+  });
+
+  it("routes pink_spark the same way, with the pinkless first ascending", () => {
+    const pinked = [
+      veteran({ id: 1, factors: [factor({ kind: "pink", key: 33, star: 3 })] }),
+      veteran({ id: 2, factors: [factor({ kind: "pink", key: 11, star: 1 })] }),
+      veteran({ id: 3 }),
+    ];
+    expect(sortVeterans(pinked, { key: "pink_spark", asc: true }).map((v) => v.id)).toEqual([
+      3, 2, 1,
+    ]);
   });
 });
 
@@ -227,6 +328,11 @@ describe("loadSortPref", () => {
     expect(loadSortPref()).toEqual({ key: "name", asc: true });
   });
 
+  it("accepts the pink sort key", () => {
+    saveSortPref({ key: "pink_spark", asc: true });
+    expect(loadSortPref()).toEqual({ key: "pink_spark", asc: true });
+  });
+
   it("keeps the picker's key independent of the roster's", () => {
     saveSortPref({ key: "name", asc: true }, "umalab.picker.sort");
     expect(loadSortPref(SORT_STORE)).toEqual({ key: "register_time", asc: false });
@@ -247,5 +353,57 @@ describe("loadSortPref", () => {
     stubBrokenLocalStorage();
     expect(loadSortPref()).toEqual({ key: "register_time", asc: false });
     expect(() => saveSortPref({ key: "name", asc: true })).not.toThrow();
+  });
+});
+
+describe("loadCaptionMode", () => {
+  let store: Map<string, string>;
+  beforeEach(() => {
+    store = stubLocalStorage();
+  });
+  afterEach(restoreLocalStorage);
+
+  it("defaults to the score on both surfaces", () => {
+    expect(loadCaptionMode()).toBe("score");
+    expect(loadCaptionMode(PICKER_CAPTION_STORE)).toBe("score");
+  });
+
+  it("round-trips what saveCaptionMode wrote", () => {
+    saveCaptionMode("sparks");
+    expect(loadCaptionMode()).toBe("sparks");
+  });
+
+  it("keeps the picker's key independent of the roster's", () => {
+    saveCaptionMode("sparks", "umalab.picker.caption");
+    expect(loadCaptionMode(CAPTION_STORE)).toBe("score");
+  });
+
+  it.each([
+    ["unparseable JSON", "{not json"],
+    ["an unknown mode", '"rating"'],
+    ["a bare number", "7"],
+    ["a boolean", "true"],
+    ["an object", '{"mode":"score"}'],
+  ])("falls back to the default on %s", (_what, raw) => {
+    store.set(CAPTION_STORE, raw);
+    expect(loadCaptionMode()).toBe("score");
+  });
+
+  it("survives storage that throws", () => {
+    stubBrokenLocalStorage();
+    expect(loadCaptionMode()).toBe("score");
+    expect(() => saveCaptionMode("sparks")).not.toThrow();
+  });
+});
+
+describe("nextCaptionMode", () => {
+  // Written against CAPTION_MODES itself, so a third mode changes nothing here.
+  it("visits every mode once and returns to the start", () => {
+    const walk: CaptionMode[] = [CAPTION_MODES[0]];
+    for (let i = 0; i < CAPTION_MODES.length; i++) {
+      walk.push(nextCaptionMode(walk[walk.length - 1]));
+    }
+    expect(walk.slice(0, -1)).toEqual([...CAPTION_MODES]);
+    expect(walk[walk.length - 1]).toBe(CAPTION_MODES[0]);
   });
 });

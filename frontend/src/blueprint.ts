@@ -17,7 +17,7 @@ import {
   type SlotFactorKind,
   type Veteran,
 } from "./api";
-import { apt, isLetter } from "./domain";
+import { apt, isLetter, pinkOf } from "./domain";
 import { writeStore } from "./storage";
 import { sparkId } from "./procs";
 
@@ -425,31 +425,6 @@ export function charaAt(design: Design, i: number): number | null {
 // copies) prefix an extra digit, so 9100101 is still chara 1001.
 export const deriveCharaId = (cardId: number): number =>
   cardId > 999_999 ? Math.floor((cardId % 1_000_000) / 100) : Math.floor(cardId / 100);
-
-// A pink factor packs its aptitude in the key (factor_id // 100) and its star
-// count in the remainder. Keyed by numeric id rather than display name: the
-// ids are game data, the names are strings we render. From
-// app/data/factors.json, type 1.
-const PINK_KEY_APTITUDE: Readonly<Record<number, AptitudeKey>> = {
-  11: "turf", 12: "dirt",
-  31: "sprint", 32: "mile", 33: "medium", 34: "long",
-  21: "front", 22: "pace", 23: "late", 24: "end",
-};
-
-// The one pink a dump member carries. Every lineage member has exactly one
-// (verified against a full dump); taking the strongest rather than the first
-// degrades a future multi-pink record to the useful answer.
-export function pinkOf(factors: readonly Factor[]): PinkSpark | null {
-  let best: PinkSpark | null = null;
-  for (const f of factors) {
-    const aptitude = PINK_KEY_APTITUDE[f.key];
-    // Both checks: no non-pink factor uses a key in this range today, and the
-    // kind is what keeps that true if one ever does.
-    if (f.kind !== "pink" || aptitude === undefined || f.star < 1 || f.star > 3) continue;
-    if (best === null || f.star > best.stars) best = { aptitude, stars: f.star };
-  }
-  return best;
-}
 
 // Every non-pink spark a dump member carries, strongest first. Deduped by
 // kind+key — the kinds number their keys independently, and a duplicate would

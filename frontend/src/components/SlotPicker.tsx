@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CatalogEntry, Veteran } from "../api";
 import { APTITUDE_LABELS } from "../aptitude";
-import { pinkOf } from "../blueprint";
 import {
+  CAPTION_LABELS,
   DEFAULT_ASC,
+  PICKER_CAPTION_STORE,
   PICKER_SORT_STORE,
   SORTS,
+  loadCaptionMode,
   loadSortPref,
+  nextCaptionMode,
+  pinkOf,
   rosterCardsOf,
+  saveCaptionMode,
   saveSortPref,
   sortVeterans,
+  type CaptionMode,
   type SortKey,
   type SortPref,
 } from "../domain";
@@ -89,6 +95,13 @@ export function SlotPicker({
   const setSort = (next: SortPref) => {
     setSortState(next);
     saveSortPref(next, PICKER_SORT_STORE);
+  };
+  const [caption, setCaptionState] = useState<CaptionMode>(() =>
+    loadCaptionMode(PICKER_CAPTION_STORE)
+  );
+  const setCaption = (next: CaptionMode) => {
+    setCaptionState(next);
+    saveCaptionMode(next, PICKER_CAPTION_STORE);
   };
   // Reconciled at mount as the shell does on every roster load — a card or
   // mark filter whose target left in a full-replace import would otherwise
@@ -247,9 +260,11 @@ export function SlotPicker({
                   key={v.trained_chara_id}
                   v={v}
                   icon={iconIndex[String(v.card_id)]}
-                  // Follows the sort, exactly as the roster grid does: order
-                  // by Sparks and the sparks are what you want to read.
-                  showSparks={sort.key === "blue_spark"}
+                  // Manual and under the picker's own key, like the sort and
+                  // filters — cycle to Sparks and the pink a pull is really
+                  // after is on the card (issue #40); `note` keeps it in the
+                  // accessible name either way.
+                  caption={caption}
                   note={vetNote(v)}
                   disabledReason={conflict(v.chara_id, "roster") ?? undefined}
                   onOpen={() => onPick({ kind: "roster", veteran: v })}
@@ -278,6 +293,14 @@ export function SlotPicker({
               {countFilters(filters) > 0 && (
                 <span className="filter-count">{countFilters(filters)}</span>
               )}
+            </button>
+            <button
+              className="filter-float caption-float"
+              title={`Captions: ${CAPTION_LABELS[caption]} — click for ${CAPTION_LABELS[nextCaptionMode(caption)]}`}
+              aria-label={`Captions: ${CAPTION_LABELS[caption]}`}
+              onClick={() => setCaption(nextCaptionMode(caption))}
+            >
+              {CAPTION_LABELS[caption]}
             </button>
             <label className="sort-float">
               <select

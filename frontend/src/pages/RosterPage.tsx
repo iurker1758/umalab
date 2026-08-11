@@ -6,13 +6,18 @@ import { MarkPicker } from "../components/MarkPicker";
 import { VeteranCard } from "../components/VeteranCard";
 import { VeteranModal } from "../components/VeteranModal";
 import {
+  CAPTION_LABELS,
   DEFAULT_ASC,
   SORTS,
+  loadCaptionMode,
   loadSortPref,
   markLabel,
+  nextCaptionMode,
   rosterCardsOf,
+  saveCaptionMode,
   saveSortPref,
   sortVeterans,
+  type CaptionMode,
   type SortKey,
   type SortPref,
 } from "../domain";
@@ -38,6 +43,7 @@ export function RosterPage({
   onError: (msg: string) => void;
 }) {
   const [sort, setSort] = useState<SortPref>(loadSortPref);
+  const [caption, setCaption] = useState<CaptionMode>(() => loadCaptionMode());
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // Batch Favorite, in the game's own order: pick the target first (a mark,
@@ -73,6 +79,12 @@ export function RosterPage({
   const applySort = (next: SortPref) => {
     setSort(next);
     saveSortPref(next);
+  };
+
+  const cycleCaption = () => {
+    const next = nextCaptionMode(caption);
+    setCaption(next);
+    saveCaptionMode(next);
   };
 
   // Shared with the designer's picker, which renders the same roster behind
@@ -321,7 +333,7 @@ export function RosterPage({
               key={v.id}
               v={v}
               icon={iconIndex[String(v.card_id)]}
-              showSparks={sort.key === "blue_spark"}
+              caption={caption}
               selectMode={selecting}
               selectDisabled={selecting && !isEligible(v)}
               selected={
@@ -356,6 +368,16 @@ export function RosterPage({
             {countFilters(filters) > 0 && (
               <span className="filter-count">{countFilters(filters)}</span>
             )}
+          </button>
+          {/* Not frozen with its neighbour during a confirm: the caption is
+              purely visual and can't touch the in-flight payload. */}
+          <button
+            className="filter-float caption-float"
+            title={`Captions: ${CAPTION_LABELS[caption]} — click for ${CAPTION_LABELS[nextCaptionMode(caption)]}`}
+            aria-label={`Captions: ${CAPTION_LABELS[caption]}`}
+            onClick={cycleCaption}
+          >
+            {CAPTION_LABELS[caption]}
           </button>
           <label className="sort-float">
             <select

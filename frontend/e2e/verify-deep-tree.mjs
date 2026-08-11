@@ -3025,6 +3025,177 @@ try {
     check("and retries to completion with no user action", recovered);
   });
 
+  // ---------- the Lists page (issue #70) ----------
+  // Managing the lists themselves: view, rename, delete, reorder, bulk-add.
+  // Fixtures go through the API — the create path is the picker's, covered
+  // above — and their names are tracked BEFORE creation, like every list
+  // this run makes. The rename target is tracked too: cleanup matches names,
+  // and a renamed row would otherwise outlive the sweep on real accounts.
+  const mgmtStamp = Date.now();
+  const mgmtA = `${E2E_LIST_PREFIX} manage a ${mgmtStamp}`;
+  const mgmtB = `${E2E_LIST_PREFIX} manage b ${mgmtStamp}`;
+  const mgmtA2 = `${E2E_LIST_PREFIX} managed ${mgmtStamp}`;
+  listsOwned.add(mgmtA);
+  listsOwned.add(mgmtB);
+  listsOwned.add(mgmtA2);
+  const mgmtRowA = await postJson("/api/spark-lists", { name: mgmtA });
+  const mgmtRowB = await postJson("/api/spark-lists", { name: mgmtB });
+  // The persistence section's deliberate breaks leave a toast standing, and
+  // the toast is FIXED over the header — dismiss it or it eats the nav click.
+  if ((await page.locator(".error").count()) > 0) await page.locator(".error").click();
+  await page.locator(".nav a", { hasText: "Lists" }).click();
+  await page.waitForSelector(".lists-page .list-row");
+  const mgmtLists = await getJson("/api/spark-lists");
+  // The default sort is Name — same comparator as sortLists, id ties.
+  const byListName = (a, b) => a.name.localeCompare(b.name) || a.id - b.id;
+  check("the Lists page shows one named row per list, sorted by name",
+    (await page.locator(".list-row").count()) === mgmtLists.length &&
+    JSON.stringify(
+      await page
+        .locator(".list-row .list-name")
+        .evaluateAll((els) => els.map((el) => el.value))
+    ) === JSON.stringify([...mgmtLists].sort(byListName).map((l) => l.name)));
+
+  // Rename commits on blur, from the field that IS the name.
+  const mgmtName = (n) => page.locator(`.list-row[aria-label="${n}"] .list-name`);
+  await mgmtName(mgmtA).fill(mgmtA2);
+  await mgmtName(mgmtA).press("Enter");
+  check("rename lands from the name field",
+    await until(async () =>
+      (await getJson("/api/spark-lists")).some(
+        (l) => l.id === mgmtRowA.id && l.name === mgmtA2
+      )));
+  // Onto a name the owner already holds: the 409's own words in the toast,
+  // and the field KEEPS the refused draft for correction — the server row
+  // unchanged underneath it. Inside a breaking() window: the 409 is the
+  // behaviour under test, not a failed request.
+  await page.waitForSelector(`.list-row[aria-label="${mgmtA2}"]`);
+  await breaking(async () => {
+    await mgmtName(mgmtA2).fill(mgmtB);
+    await mgmtName(mgmtA2).press("Enter");
+    const renameToast = await page
+      .waitForFunction(
+        () =>
+          (document.querySelector(".error")?.textContent ?? "").includes(
+            "already have a list"
+          ),
+        null,
+        { timeout: 5000 }
+      )
+      .then(() => true, () => false);
+    check("a colliding rename shows the server's words and keeps the draft",
+      renameToast &&
+      (await mgmtName(mgmtA2).inputValue()) === mgmtB &&
+      (await getJson("/api/spark-lists")).some(
+        (l) => l.id === mgmtRowA.id && l.name === mgmtA2
+      ));
+  });
+  await page.locator(".error").click();
+  await mgmtName(mgmtA2).fill(mgmtA2);
+  await mgmtName(mgmtA2).press("Enter");
+
+  // Edit Sparks: the per-list popout, a toggle per row, per-toggle writes.
+  const mgmtSection = page.locator(`.list-row[aria-label="${mgmtA2}"]`);
+  await mgmtSection.locator("button", { hasText: "Edit Sparks" }).click();
+  await page.waitForSelector(".spark-popout .list-popout-title");
+  const mgmtSpark = factorRef.find(
+    (f) => f.kind === "white" && !baselineFavorites.has(`white:${f.key}`)
+  );
+  await page.locator('.spark-popout input[type="search"]').fill(mgmtSpark.name);
+  const mgmtToggle = page.locator(
+    `.list-toggle[data-list="${mgmtRowA.id}"][data-spark="white:${mgmtSpark.key}"]`
+  );
+  await mgmtToggle.click();
+  const mgmtSparks = async () =>
+    (await getJson("/api/spark-lists")).find((l) => l.id === mgmtRowA.id)?.sparks ?? [];
+  check("a toggle writes the membership, and the row lights when it lands",
+    (await until(async () => (await mgmtSparks()).length === 1)) &&
+    (await until(async () => (await mgmtToggle.getAttribute("aria-pressed")) === "true")));
+  await mgmtToggle.click();
+  check("toggling again removes it",
+    await until(async () => (await mgmtSparks()).length === 0));
+  await mgmtToggle.click();
+  await until(async () => (await mgmtSparks()).length === 1);
+  await page.keyboard.press("Escape");
+  await page.locator(".spark-popout").waitFor({ state: "detached" });
+  // Polled, not sampled: the API showing the membership and React
+  // committing the chip are two events, and CI's runner can be between
+  // them — the single read here was the section's one flake.
+  check("the page's row shows the membership as display-only chips",
+    (await until(async () => (await mgmtSection.locator(".list-chip").count()) === 1)) &&
+    ((await mgmtSection.locator(".list-chip").textContent()) ?? "").includes(
+      mgmtSpark.name
+    ) &&
+    (await mgmtSection.locator(".list-chip button").count()) === 0);
+
+  // Reopened, the member is pinned to an In This List section on top — and
+  // the section is FROZEN per open: toggling a member off keeps its row in
+  // place with a "+", so a mis-tap is recoverable where it happened.
+  await mgmtSection.locator("button", { hasText: "Edit Sparks" }).click();
+  await page.waitForSelector(".spark-popout .list-popout-title");
+  const pinnedHead = page.locator(
+    ".spark-sections .spark-section:first-child .spark-section-head"
+  );
+  const pinnedRow = page.locator(
+    ".spark-sections .spark-section:first-child .list-toggle" +
+      `[data-spark="white:${mgmtSpark.key}"]`
+  );
+  check("a member sits pinned in an In This List section on reopen",
+    (await pinnedHead.textContent()) === "In This List" &&
+    (await pinnedRow.getAttribute("aria-pressed")) === "true" &&
+    (await page.locator(
+      `.spark-sections .spark-section:not(:first-child) [data-spark="white:${mgmtSpark.key}"]`
+    ).count()) === 0);
+  await pinnedRow.click();
+  check("toggling a pinned member off keeps its row in place",
+    (await until(async () => (await mgmtSparks()).length === 0)) &&
+    (await until(async () => (await pinnedRow.getAttribute("aria-pressed")) === "false")) &&
+    (await pinnedRow.count()) === 1);
+  await pinnedRow.click();
+  await until(async () => (await mgmtSparks()).length === 1);
+  await page.keyboard.press("Escape");
+  await page.locator(".spark-popout").waitFor({ state: "detached" });
+
+  // Create, from the page's own field — the picker is no longer the only
+  // door. Tracked before the click, like every list this run makes.
+  const mgmtC = `${E2E_LIST_PREFIX} made here ${mgmtStamp}`;
+  listsOwned.add(mgmtC);
+  await page.locator('[aria-label="New List Name"]').fill(mgmtC);
+  await page.locator(".list-new button", { hasText: "Add" }).click();
+  check("the page's New List field creates one",
+    (await until(async () =>
+      (await getJson("/api/spark-lists")).some((l) => l.name === mgmtC)
+    )) &&
+    (await until(async () =>
+      (await page.locator(`.list-row[aria-label="${mgmtC}"]`).count()) === 1
+    )) &&
+    (await page.locator('[aria-label="New List Name"]').inputValue()) === "");
+
+  // The sort selector: Newest puts the just-made list first; the rows are a
+  // client-side view of the same server order either way.
+  await page.locator(".list-sort .seg", { hasText: "Newest" }).click();
+  check("Newest sorts the just-made list to the top",
+    await until(async () =>
+      (await page.locator(".list-row .list-name").first().inputValue()) === mgmtC));
+  await page.locator(".list-sort .seg", { hasText: "Name" }).click();
+
+  // Delete asks first — through the suite's global handler, which accepts
+  // and records the prompt — then the row leaves the page and the server.
+  // List A stays for the finally sweep: deleting it here too would only
+  // repeat this check.
+  lastDialog = null;
+  await page
+    .locator(`.list-row[aria-label="${mgmtB}"] button`, { hasText: "Delete" })
+    .click();
+  check("delete confirms, then removes the list everywhere",
+    (await until(async () =>
+      !(await getJson("/api/spark-lists")).some((l) => l.id === mgmtRowB.id)
+    )) &&
+    (await until(async () =>
+      (await page.locator(`.list-row[aria-label="${mgmtB}"]`).count()) === 0
+    )) &&
+    (lastDialog ?? "").includes(`Delete "${mgmtB}"`));
+
   const realErrors = errors.filter((e) => !/favicon/i.test(e));
   check("no JS errors or failed requests", realErrors.length === 0, realErrors.join(" | "));
   console.log(`  (${expected.length} failures inside the deliberate-break windows, ignored)`);

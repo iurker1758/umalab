@@ -10,13 +10,17 @@ import {
   deleteList,
   favorites,
   isFavorite,
+  LIST_SORT_STORE,
   listById,
   listsWith,
   loadActiveLists,
+  loadListSort,
   PartialWrite,
   renameList,
   saveActiveLists,
+  saveListSort,
   setMembership,
+  sortLists,
   toggleActive,
   toggleMembership,
   union,
@@ -27,7 +31,7 @@ const spark = (kind: SparkRef["kind"], key: number): SparkRef => ({ kind, key })
 
 const aList = (over: Partial<SparkList> & Pick<SparkList, "id">): SparkList => ({
   name: `list ${over.id}`,
-  position: over.id,
+  updated_at: "2026-08-10T00:00:00Z",
   sparks: [],
   ...over,
 });
@@ -256,15 +260,13 @@ describe("writes", () => {
     expect(calls.updateSparkList).toHaveBeenCalledWith(1, { sparks: [spark("race", 40)] });
   });
 
-  it("re-sorts by position after a write, matching what the next GET returns", async () => {
-    const calls = stubApi({
-      updateSparkList: (id, body) => Promise.resolve(aList({ id, position: 0, ...body })),
-    });
-    const lists = [aList({ id: 1, position: 0 }), aList({ id: 2, position: 1 })];
+  it("keeps creation order after a write, matching what the next GET returns", async () => {
+    const calls = stubApi({});
+    // Handed in reversed: the fold must re-sort to the server's id order, so
+    // a write can never make a list swap places between reads.
+    const lists = [aList({ id: 2 }), aList({ id: 1 })];
     const next = await setMembership(lists, 2, []);
     expect(calls.updateSparkList).toHaveBeenCalledTimes(1);
-    // Both at position 0 now, so the tie breaks on id — a total order, so a
-    // list cannot swap places between reads.
     expect(next.map((l) => l.id)).toEqual([1, 2]);
   });
 });
@@ -303,6 +305,60 @@ describe("toggling one list's membership", () => {
     expect(await toggleMembership(lists, 87, "white", 1)).toBe(lists);
     expect(calls.updateSparkList).not.toHaveBeenCalled();
     expect(calls.createSparkList).not.toHaveBeenCalled();
+  });
+});
+
+describe("the management page's sort", () => {
+  const lists = [
+    aList({ id: 1, name: "Medium", updated_at: "2026-08-09T00:00:00Z" }),
+    aList({ id: 2, name: "front runner", updated_at: "2026-08-10T12:00:00Z" }),
+    aList({ id: 3, name: "Long", updated_at: "2026-08-08T00:00:00Z" }),
+  ];
+
+  it("sorts by name case-insensitively, by creation newest-first, and by edit time", () => {
+    expect(sortLists(lists, "name").map((l) => l.id)).toEqual([2, 3, 1]);
+    expect(sortLists(lists, "newest").map((l) => l.id)).toEqual([3, 2, 1]);
+    expect(sortLists(lists, "edited").map((l) => l.id)).toEqual([2, 1, 3]);
+  });
+
+  it("breaks every tie on id, so equal keys cannot swap between renders", () => {
+    const tied = [
+      aList({ id: 2, name: "Same" }),
+      aList({ id: 1, name: "Same" }),
+    ];
+    expect(sortLists(tied, "name").map((l) => l.id)).toEqual([1, 2]);
+    expect(sortLists(tied, "edited").map((l) => l.id)).toEqual([2, 1]);
+  });
+
+  it("does not disturb the caller's array", () => {
+    const before = lists.map((l) => l.id);
+    sortLists(lists, "name");
+    expect(lists.map((l) => l.id)).toEqual(before);
+  });
+});
+
+describe("the sort persists per device", () => {
+  afterEach(restoreLocalStorage);
+
+  it("round-trips through storage", () => {
+    stubLocalStorage();
+    saveListSort("edited");
+    expect(loadListSort()).toBe("edited");
+  });
+
+  it.each([
+    ["absent", null],
+    ["not a mode", '"position"'],
+  ])("falls back to name order (%s)", (_why, raw) => {
+    const store = stubLocalStorage();
+    if (raw !== null) store.set(LIST_SORT_STORE, raw);
+    expect(loadListSort()).toBe("name");
+  });
+
+  it("falls back rather than throwing when storage is blocked", () => {
+    stubBrokenLocalStorage();
+    expect(loadListSort()).toBe("name");
+    expect(() => saveListSort("newest")).not.toThrow();
   });
 });
 

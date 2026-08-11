@@ -620,11 +620,6 @@ class SparkListPatch(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: SparkListName | None = None
-    # Bounded because it is written straight into a Postgres int4: an unbounded
-    # int lets `{"position": 3000000000}` past Pydantic and turns a 422 into a
-    # 500 on commit. The ceiling leaves room for a reorder UI that spreads
-    # positions rather than renumbering.
-    position: Annotated[int, Field(ge=0, le=1_000_000)] | None = None
     sparks: list[SparkRef] | None = None
 
     @field_validator("sparks")
@@ -670,8 +665,8 @@ class SparkListOut(BaseModel):
 
     id: int
     name: str
-    # Explicit, because the user curates the order — the list route sorts on
-    # it and breaks ties on `id`.
-    position: int
+    # For the management page's "Last Edited" sort; `id` carries creation
+    # order, so there is no created_at (DECISIONS.md #44).
+    updated_at: dt.datetime
     sparks: list[SparkRef]
     model_config = {"from_attributes": True}

@@ -27,20 +27,23 @@ The server half of the green rule shipped with #58 (DECISIONS.md #39):
 of #33, which had the axis backwards.** A `hunting` bit stored per spark what
 actually varies per session — which build you are working on this week, and
 it can be more than one at a time. `watched_sparks` and `hunting` are dropped.
-What replaced them is one table, `spark_lists`, holding `(name, position,
+What replaced them is one table, `spark_lists`, holding `(name, updated_at,
 sparks)` per owner, with `GET`/`POST`/`PATCH`/`DELETE` under
-`/api/spark-lists`. Names are unique per owner **ignoring case** (an
-expression index; stored as typed). Favorites in the chooser is the **union**
-of the lists, and which lists are *active* is a device-local `localStorage`
-view, not a column. The chooser's ★ opens a picker of your lists rather than
-toggling one flag; list UI beyond that is the **Lists filter disclosure**
-(#67 + #27, DECISIONS.md #43): one selection, one control, every proc
-surface — the chooser's band, where pressed lists narrow the browse
-alongside Current Sparks, and every Sparks-tab table (trainee and
-members), where nothing selected keeps the table's own rows with listed
-sparks tinted and a selection swaps the rows for the union of the chosen
-lists, "—" for a spark not carried. The picker can only **create**;
-rename, delete and bulk editing are #70's management page.
+`/api/spark-lists` (`id` is creation order; a `position` column shipped and
+was stripped unused, DECISIONS.md #44). Names are unique per owner
+**ignoring case** (an expression index; stored as typed). Favorites in the
+chooser is the **union** of the lists, and which lists are *active* is a
+device-local `localStorage` view, not a column. The chooser's ★ opens a
+picker of your lists rather than toggling one flag; list UI beyond that is
+the **Lists filter disclosure** (#67 + #27, DECISIONS.md #43): one
+selection, one control, every proc surface — the chooser's band, where
+pressed lists narrow the browse alongside Current Sparks, and every
+Sparks-tab table (trainee and members), where nothing selected keeps the
+table's own rows with listed sparks tinted and a selection swaps the rows
+for the union of the chosen lists, "—" for a spark not carried. The **Lists
+page** (`/lists`, issue #70, DECISIONS.md #44) manages the lists
+themselves: create, rename, delete, a device-local sort (name / newest /
+last edited), and an Edit Sparks popout toggling one list's membership.
 
 Previous milestone: deep-tree designer V2, over the 31-node blueprint document
 (DECISIONS.md #25/#26). Shipped so far: V1's persisted four-generation

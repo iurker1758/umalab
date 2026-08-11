@@ -29,7 +29,7 @@ several:
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
-  (the Lists filter)
+  (the Lists filter), 44 (the Lists page)
 - **Multi-user & auth:** 32
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
@@ -1883,3 +1883,58 @@ marked in each.
   kills the clip assumption the live pills and the tint lean on.
   Wanting "what will I get" and "what am I hunting" at once — that
   is the stacked block coming back.
+
+## 44. The lists get a page: create, rename, delete, sort, edit sparks
+
+- **Requirements:** issue #70 — #37 deferred rename, delete and bulk
+  membership here, and until Delete exists the 50-list cap is a
+  deadlock: at cap, `POST` 409s with no in-app way to free a slot.
+  Design review set the rest: no manual reorder (sort orders instead —
+  name, newest, last edited), creation joins the page rather than
+  staying picker-only, and the membership popout must not filter by
+  OTHER lists. Last-write-wins on the list row stays accepted (issue
+  #66); the ★ picker stays the per-spark control.
+- **Choice:** a third route, `/lists`, page-local state — pages
+  refetch on mount, so a store lifted to the shell would be the staler
+  copy, and nothing user-held dies with this page. Rename is the
+  blueprint idiom (the field IS the name, commit on blur, a refused
+  draft kept for correction); create is the picker's `New List` field
+  at page scale. The rows sort by a device-local selector, a view like
+  the active selection: `position` is STRIPPED from the table and API
+  (nothing ever set one — every row still held its create-time append
+  value, so the column was `id` order wearing a second name) and
+  `updated_at` added for Last Edited, DB-generated so every writer
+  agrees on it. Editing membership is a NEW list-scoped popout
+  ("Edit Sparks", matching the chooser's naming) sharing the popout
+  CSS and ranking comparator — rows toggle with the same per-toggle,
+  non-optimistic writes as every list surface, so Escape can close at
+  any moment with nothing staged. Members at open sit pinned in an
+  **In This List** section on top and nowhere else — the chooser's
+  Favorites shape (#35/#36), frozen per open, so the membership is
+  reviewable without hunting the kind sections and un-toggling keeps
+  the row in place for the mis-tap. No list filter inside it: it
+  edits one list, and what other lists hold is #43's control on the
+  proc surfaces, not this one's. The page's membership chips are
+  display-only: one write surface per list, and rows that cannot move
+  under a tap. `detailOr`, `refocus` and the query comparator moved
+  to shared modules for the second consumer.
+- **Alternatives rejected:** up/down reorder buttons — built and cut
+  at review; a hand-curated order is upkeep the sorts make free, and
+  it cost a column plus renumbering writes; drag-and-drop — same,
+  plus pointer/a11y cost at 390px; a `created_at` column — `id`
+  already carries creation order; extracting the chooser popout's
+  browse layer — bound to the slot document (stars, greens, a pink)
+  and the invariants of four review rounds; batch-membership-on-close
+  — the unconditional Escape would discard staged work or demand a
+  confirm, against the app-wide non-optimistic rule; lifting the
+  store into `App.tsx` — relocating the Designer's write-race guard
+  and epoch machinery (issue #89's surface) for staleness that
+  refetch-on-mount already bounds; an etag/version on the row —
+  issue #66's territory, not this page's.
+- **What would change my mind:** a real want for a hand-arranged
+  order — that reopens reorder UI, and `position` comes back by
+  migration; the sort needing to follow between devices (a user
+  setting, #32's line); real cross-device collisions (issue #66 names
+  the join table); per-toggle writes turning chatty over the tunnel
+  (issue #69's revisit, which would bring optimistic staging); a
+  third page needing the lists, which is when the store lifts.

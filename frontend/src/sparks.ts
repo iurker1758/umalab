@@ -187,9 +187,9 @@ export const toggleActive = (active: number[], id: number): number[] =>
 // would arrive as a filled ★ in a kind section. Wholesale refresh is
 // `onReload`'s job, and it bumps `epoch` so the snapshot is retaken.
 
-/** Server order: position, ties on id — where the next GET would put it. */
+/** Server order: creation (`id`) — where the next GET would put it. */
 const ordered = (lists: SparkList[]): SparkList[] =>
-  [...lists].sort((a, b) => a.position - b.position || a.id - b.id);
+  [...lists].sort((a, b) => a.id - b.id);
 
 const replacing = (lists: SparkList[], saved: SparkList): SparkList[] =>
   ordered(
@@ -323,3 +323,46 @@ export async function toggleMembership(
     : [...list.sparks, { kind, key }];
   return setMembership(lists, id, sparks);
 }
+
+// ---------- the management page's sort (device-local) ----------
+// A view over server rows, like the active selection above it — which is why
+// it lives here and in localStorage rather than as a column: two devices
+// sorting differently is a feature, and there is no curated order to protect
+// (`position` was stripped before any UI set one, DECISIONS.md #44).
+
+export const LIST_SORT_STORE = "umalab.sparkLists.sort";
+
+export const LIST_SORTS = ["name", "newest", "edited"] as const;
+export type ListSort = (typeof LIST_SORTS)[number];
+
+export function loadListSort(store: string = LIST_SORT_STORE): ListSort {
+  try {
+    const raw = localStorage.getItem(store);
+    if (raw !== null) {
+      const parsed: unknown = JSON.parse(raw);
+      if ((LIST_SORTS as readonly string[]).includes(parsed as string)) {
+        return parsed as ListSort;
+      }
+    }
+  } catch {
+    // absent, blocked, or not JSON — fall through to the default
+  }
+  return "name";
+}
+
+export const saveListSort = (sort: ListSort, store: string = LIST_SORT_STORE): void =>
+  writeStore(store, sort);
+
+/**
+ * Pure and total: every mode falls back to `id` so equal keys cannot swap
+ * places between renders. `updated_at` is an ISO timestamp and compares as a
+ * string; ties fall to newest-first, matching what "just edited" reads as.
+ */
+export const sortLists = (lists: SparkList[], sort: ListSort): SparkList[] =>
+  [...lists].sort((a, b) => {
+    if (sort === "name") return a.name.localeCompare(b.name) || a.id - b.id;
+    if (sort === "edited") {
+      return b.updated_at.localeCompare(a.updated_at) || b.id - a.id;
+    }
+    return b.id - a.id;
+  });

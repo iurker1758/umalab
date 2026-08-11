@@ -67,7 +67,7 @@ async def test_a_list_round_trips(client: Any, users: list[User]):
     body = response.json()
     assert body["id"] > 0
     assert body["name"] == "Front Runner"
-    assert body["position"] == 0
+    assert body["updated_at"]
     assert body["sparks"] == []
     assert await listing(client, a) == [body]
 
@@ -162,9 +162,11 @@ async def test_two_users_may_hold_case_variants_of_one_name(
     assert (await create(client, b, "front runner")).status_code == 201
 
 
-# ---------- order ----------
+# ---------- order and edit times ----------
 
-async def test_new_lists_append(client: Any, users: list[User]):
+async def test_lists_read_back_in_creation_order(client: Any, users: list[User]):
+    """`id` order — total and stable, so a list never jumps between reads.
+    The management page re-sorts client-side (DECISIONS.md #44)."""
     a, _ = users
     for name in ("Front Runner", "Medium", "Long"):
         await a_list(client, a, name)
@@ -173,30 +175,32 @@ async def test_new_lists_append(client: Any, users: list[User]):
         "Medium",
         "Long",
     ]
-    assert [row["position"] for row in await listing(client, a)] == [0, 1, 2]
 
 
-async def test_position_decides_the_order(client: Any, users: list[User]):
-    """Explicit rather than `id` order, so reordering is a PATCH and not a
-    delete-and-recreate."""
+async def test_position_is_refused_like_any_unknown_field(
+    client: Any, users: list[User]
+):
+    """The column shipped and was stripped before any UI set one (DECISIONS.md
+    #44). `extra="forbid"` makes a straggling client's reorder a loud 422
+    rather than a 200 that silently wrote nothing."""
     a, _ = users
-    first = await a_list(client, a, "Front Runner")
-    await a_list(client, a, "Medium")
-    assert (await patch(client, a, first, position=99)).status_code == 200
-    assert [row["name"] for row in await listing(client, a)] == [
-        "Medium",
-        "Front Runner",
+    list_id = await a_list(client, a)
+    assert (await patch(client, a, list_id, position=3)).status_code == 422
+    assert "position" not in (await listing(client, a))[0]
+
+
+async def test_an_edit_bumps_updated_at(client: Any, users: list[User]):
+    """What the management page's "Last Edited" sort reads: a rename and a
+    membership write both count as edits."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    born = (await listing(client, a))[0]["updated_at"]
+    renamed = (await patch(client, a, list_id, name="Medium")).json()["updated_at"]
+    assert renamed > born
+    filled = (await patch(client, a, list_id, sparks=[spark("white", 10)])).json()[
+        "updated_at"
     ]
-
-
-async def test_ties_break_on_id(client: Any, users: list[User]):
-    """Two lists at the same position must not swap places between reads."""
-    a, _ = users
-    first = await a_list(client, a, "Front Runner")
-    second = await a_list(client, a, "Medium")
-    for list_id in (first, second):
-        await patch(client, a, list_id, position=0)
-    assert [row["id"] for row in await listing(client, a)] == [first, second]
+    assert filled > renamed
 
 
 # ---------- membership ----------
@@ -397,7 +401,7 @@ async def test_an_empty_patch_changes_nothing(client: Any, users: list[User]):
     assert response.json()["sparks"] == [spark("white", 10)]
 
 
-@pytest.mark.parametrize("field", ["name", "position", "sparks"])
+@pytest.mark.parametrize("field", ["name", "sparks"])
 async def test_an_explicit_null_leaves_the_field_alone(
     client: Any, users: list[User], field: str
 ):
@@ -409,7 +413,6 @@ async def test_an_explicit_null_leaves_the_field_alone(
     response = await patch(client, a, list_id, **{field: None})
     assert response.status_code == 200
     assert response.json()["name"] == "Front Runner"
-    assert response.json()["position"] == 0
     assert response.json()["sparks"] == [spark("white", 10)]
 
 
@@ -617,19 +620,6 @@ async def test_the_cap_is_per_owner(client: Any, users: list[User]):
         assert (await create(client, a, f"build {n}")).status_code == 201
     assert (await create(client, a, "one more")).status_code == 409
     assert (await create(client, b, "my first")).status_code == 201
-
-
-async def test_a_bad_position_is_refused_rather_than_500ing(
-    client: Any, users: list[User]
-):
-    """`position` lands in a Postgres int4, so an unbounded int turns a 422
-    into a NumericValueOutOfRange 500 on commit. schemas.py is the authority
-    on what the server accepts, so it has to say no first."""
-    a, _ = users
-    list_id = await a_list(client, a)
-    assert (await patch(client, a, list_id, position=3_000_000_000)).status_code == 422
-    assert (await patch(client, a, list_id, position=-1)).status_code == 422
-    assert (await patch(client, a, list_id, position=7)).status_code == 200
 
 
 # ---------- delete ----------

@@ -782,6 +782,53 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    filters. */
 .spark-list-menu { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 8.5rem; overflow-y: auto; }
 
+/* ---------- Spark-list management (issue #70) ---------- */
+.lists-page { display: flex; flex-direction: column; gap: 0.6rem; }
+/* Create on the left, the device-local sort on the right. One row that
+   wraps: at 390px the sort drops under the field. */
+.list-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+/* The ★ picker's New List idiom at page scale. `margin: 0` on the field for
+   `.spark-list-new`'s reason — `.uma-search` carries a bottom margin for the
+   stacked panels it was written for. */
+.list-new { display: flex; align-items: center; gap: 0.3rem; flex: 1 1 14rem; }
+.list-new .uma-search { flex: 1 1 auto; min-width: 0; width: auto; margin: 0; font-size: 0.85rem; padding: 0.34rem 0.6rem; }
+.list-sort { margin-left: auto; }
+.list-sort .seg { cursor: pointer; font-size: 0.72rem; padding: 0.34rem 0.6rem; }
+.list-row { background: #141a21; border: 1px solid #2a3340; border-radius: 10px; padding: 0.45rem 0.7rem 0.55rem; }
+.list-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
+/* The blueprint-name idiom: the field is the name, a border only where the
+   affordance is needed — on hover to say "editable", on focus to say
+   "editing". A basis wide enough for 40 characters at this size forces the
+   controls onto their own line at 390px instead of crushing the name. */
+.list-name { flex: 1 1 11rem; min-width: 0; background: transparent; border: 0; border-bottom: 1px solid transparent; color: inherit; padding: 0.3rem 0.2rem 0.2rem 0; font-size: 0.95rem; font-weight: 600; }
+.list-name:hover:not(:disabled) { border-bottom-color: #3a4756; }
+.list-name:focus { outline: none; border-bottom-color: #2a76c9; }
+.list-controls { display: flex; align-items: center; gap: 0.3rem; margin-left: auto; }
+/* The app's rectangular action shape (`.spark-open`, `.spark-list-disclose`). */
+.list-action { display: inline-flex; align-items: center; padding: 0.3rem 0.6rem; font-size: 0.72rem; font-weight: 600; color: inherit; background: #16202c; border: 1px solid #253040; border-radius: 5px; opacity: 0.85; cursor: pointer; }
+.list-action:hover:not(:disabled) { opacity: 1; background: #1d2b3a; }
+.list-action:disabled { opacity: 0.35; cursor: default; }
+.list-delete:hover:not(:disabled) { color: #ff8a80; border-color: #4a2a2a; }
+/* Display-only membership — a readout, not a control surface: removal lives
+   in the popout with the adds, so the page's rows can't move under a tap. */
+.list-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0 0; padding: 0; }
+.list-chip { display: inline-flex; align-items: center; font-size: 0.75rem; background: #1a2027; border: 1px solid #232c37; border-radius: 999px; padding: 0.13rem 0.55rem; }
+.list-empty { margin: 0.4rem 0 0.1rem; font-size: 0.78rem; opacity: 0.55; }
+.list-fail { margin: 0; font-size: 0.85rem; }
+/* Names the list the popout is scoped to — the query and pills below narrow
+   a browse that writes into THIS list, and the title is what says so. */
+.list-popout-title { margin: 0 0 0.4rem; font-size: 0.95rem; font-weight: 600; }
+/* The popout's rows: one full-width toggle per spark, membership in the
+   pill gold. Background-only when held — a border would shift the row 1px
+   under the very pointer that toggled it. */
+.list-picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.list-toggle { display: flex; align-items: center; gap: 0.4rem; width: 100%; box-sizing: border-box; padding: 0.4rem 0.5rem 0.4rem 0.3rem; font-size: 0.82rem; text-align: left; color: inherit; background: #16202c; border: 0; border-radius: 4px; cursor: pointer; }
+.list-toggle:hover:not(:disabled) { background: #1d2b3a; }
+.list-toggle:disabled { cursor: default; opacity: 0.6; }
+.list-toggle.active { background: #3a3122; }
+.list-toggle.active:hover:not(:disabled) { background: #463a28; }
+.list-toggle .spark-list-mark { margin-left: auto; font-size: 0.78rem; }
+
 /* The ten-letter table: final letters only, boosted highlighted (no
    strikethrough — the cause math lives in the From column). */
 /* Set off from the affinity block above it — wider than the 0.5rem that

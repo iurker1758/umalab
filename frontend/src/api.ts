@@ -250,8 +250,9 @@ export interface SparkList {
   id: number;
   // The user's own build name, unique per user.
   name: string;
-  // Their curated order. The server sorts on it and breaks ties on `id`.
-  position: number;
+  // What the management page's "Last Edited" sort reads; `id` carries
+  // creation order (DECISIONS.md #44). ISO timestamp, compared as a string.
+  updated_at: string;
   // Membership, in the order it was added. Deduped server-side.
   sparks: SparkRef[];
 }
@@ -263,7 +264,7 @@ export interface SparkList {
 // `sparks: []` empties the list; omitting `sparks` does not. Hence a Partial
 // rather than nullable fields — `undefined` is unsendable in JSON, which is
 // exactly the "absent" the route wants.
-export type SparkListPatch = Partial<Omit<SparkList, "id">>;
+export type SparkListPatch = Partial<Omit<SparkList, "id" | "updated_at">>;
 
 // Carries the status so a caller can tell "this row is gone" (404) from
 // "the backend is down" — the designer's autosave recovers from the first
@@ -277,6 +278,17 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+// The server's own words for a refusal it can explain — 409 for the name
+// rules, 422 for everything `app/schemas.py` validates. 422 matters as much
+// as 409: without it an over-long name reports "try again" forever, a
+// permanent refusal phrased as a transient one. Anything else is a blip.
+export const detailOr = (error: unknown, fallback: string): string =>
+  error instanceof ApiError &&
+  (error.status === 409 || error.status === 422) &&
+  error.message !== ""
+    ? `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`
+    : fallback;
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {

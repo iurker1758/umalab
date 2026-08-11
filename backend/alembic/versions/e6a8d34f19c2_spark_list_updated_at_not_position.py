@@ -7,6 +7,11 @@ what the last-edited sort reads; `position` goes because no shipped UI ever
 set one, so every row still holds the create-time append value and the
 column is `id` order wearing a second name.
 
+The backfill is one shared now() for every existing row — the table never
+recorded edits, so there is no history to restore; pre-migration rows tie
+and the client's Last Edited sort degrades to creation order among them
+until a row is actually edited.
+
 The downgrade restores the column with its old default; the values it held
 were derivable (creation order), so nothing is owed back.
 

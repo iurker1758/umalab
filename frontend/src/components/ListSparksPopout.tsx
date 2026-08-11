@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   LIST_SPARK_KINDS,
   type FactorRef,
@@ -59,7 +59,10 @@ export function ListSparksPopout({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const names = new Map(refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name]));
+  const names = useMemo(
+    () => new Map(refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name])),
+    [refs]
+  );
   // WHICH rows sit in the In This List section, snapshotted for the life of
   // this open — the chooser's Favorites shape (DECISIONS.md #35/#36), for
   // its reasons: un-toggling a member keeps its row in place with a "+", so

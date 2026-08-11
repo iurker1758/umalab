@@ -227,6 +227,11 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
       )}
       {!failed && (
         <div className="list-bar">
+          {/* Disabled until the mount fetch settles: a create resolving
+              first would bump `writes`, so the fetch's rows lose to the
+              guard above and every pre-existing list vanishes from the
+              page. This gate is what makes that guard unreachable — the
+              other controls only exist once the rows do. */}
           <span className="list-new">
             <input
               className="uma-search"
@@ -235,7 +240,7 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
               placeholder="New List…"
               maxLength={40}
               value={draft}
-              disabled={busy}
+              disabled={busy || epoch === 0}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) {
@@ -246,7 +251,7 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
             />
             <button
               className="list-action"
-              disabled={busy || draft.trim() === ""}
+              disabled={busy || epoch === 0 || draft.trim() === ""}
               onClick={(e) => submitCreate(e.currentTarget)}
             >
               Add

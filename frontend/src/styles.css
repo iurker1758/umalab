@@ -888,13 +888,15 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
 .picker-dock { position: sticky; z-index: 5; bottom: 0; right: auto; max-width: none;
   margin: 0 -0.2rem -0.3rem; padding: 0.5rem 0.2rem; background: none; pointer-events: none; }
 .picker-dock > * { pointer-events: auto; }
-/* Where the popout gets too narrow for all three pills, the wrap is made
-   deliberate rather than ragged: the sort takes a full row and the two
-   pills above split the other, so every row runs the same width. */
+/* The popout's side padding leaves the dock ~30px poorer than the roster
+   page's at the same viewport, and the three pills lose the single row by
+   a couple of pixels. Trimmed just enough to keep the row (holds down to
+   ~360px), so both docks read the same. */
 @media (max-width: 480px) {
-  .picker-dock > * { flex: 1 1 auto; }
-  .picker-dock .filter-float { justify-content: center; }
-  .picker-dock .sort-float { flex-basis: 100%; justify-content: center; }
+  .picker-dock { gap: 0.35rem; }
+  .picker-dock .filter-float { padding: 0.55rem 0.75rem; }
+  .picker-dock .caption-float { min-width: 4rem; }
+  .picker-dock .sort-float select { padding-left: 0.35rem; }
 }
 /* Roster picks render as the roster page's own cards, so they get its grid —
    narrower tracks, since the popout is 520px against the page's 1100. */

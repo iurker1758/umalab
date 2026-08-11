@@ -339,7 +339,7 @@ export function TreeMap({
   // has no " — " so it can never match a chip locator.
   const strip = (i: number) => {
     const open = expanded.has(i);
-    const summary = windowSummary(design, i);
+    const summary = open ? [] : windowSummary(design, i);
     return (
       <button
         className="g2-strip"

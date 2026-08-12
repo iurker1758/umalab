@@ -257,14 +257,12 @@ export interface SparkList {
   sparks: SparkRef[];
 }
 
-// What a write SENDS, which is not what a list HOLDS: only the fields it means
-// to change, so the picker can send `sparks` without guessing the list's
-// current name.
-//
-// `sparks: []` empties the list; omitting `sparks` does not. Hence a Partial
-// rather than nullable fields — `undefined` is unsendable in JSON, which is
-// exactly the "absent" the route wants.
-export type SparkListPatch = Partial<Omit<SparkList, "id" | "updated_at">>;
+// What a write SENDS, which is not what a list HOLDS: rename-only, since
+// membership has its own per-spark verbs (issue #66, DECISIONS.md #48) —
+// a whole `sparks` array in this body is a stale client and the server
+// 422s it. Partial rather than nullable — `undefined` is unsendable in
+// JSON, which is exactly the "absent" the route wants.
+export type SparkListPatch = Partial<Pick<SparkList, "name">>;
 
 // Carries the status so a caller can tell "this row is gone" (404) from
 // "the backend is down" — the designer's autosave recovers from the first
@@ -379,12 +377,25 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }).then((r) => json<SparkList>(r)),
-  // Rename, reorder, or set membership — whichever the body carries.
+  // Rename. Membership never travels through this — see the verbs below.
   updateSparkList: (id: number, body: SparkListPatch) =>
     fetch(`/api/spark-lists/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    }).then((r) => json<SparkList>(r)),
+  // One membership each, idempotent, answering the list's current state —
+  // single-row writes commute, so two devices editing one list converge
+  // instead of overwriting each other (issue #66, DECISIONS.md #48). A 404
+  // means the LIST is gone and does throw, unlike deleteSparkList's: the
+  // caller needs it to drop the dead list in place.
+  addListSpark: (id: number, kind: ListSparkKind, key: number) =>
+    fetch(`/api/spark-lists/${id}/sparks/${kind}/${key}`, {
+      method: "PUT",
+    }).then((r) => json<SparkList>(r)),
+  removeListSpark: (id: number, kind: ListSparkKind, key: number) =>
+    fetch(`/api/spark-lists/${id}/sparks/${kind}/${key}`, {
+      method: "DELETE",
     }).then((r) => json<SparkList>(r)),
   deleteSparkList: (id: number) =>
     fetch(`/api/spark-lists/${id}`, { method: "DELETE" }).then((r) => {

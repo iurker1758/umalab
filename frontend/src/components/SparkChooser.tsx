@@ -22,6 +22,7 @@ import {
   createListWith,
   favorites as unionOf,
   listById,
+  ListGone,
   listsWith,
   PartialWrite,
   toggleMembership,
@@ -688,10 +689,9 @@ function ChooserPopout({
   };
 
   // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
-  // `busy` silently swallows the keypress. What that leaves open — close
-  // mid-write, reopen, and the fresh popout has `busy` false, so a second
-  // whole-array PATCH can be built from state the first hasn't updated yet and
-  // land last — is filed rather than guarded.
+  // `busy` silently swallows the keypress. What that used to leave open —
+  // close mid-write, reopen, write again from state the first never
+  // updated — stopped mattering with #48's per-spark verbs, which commute.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -851,10 +851,11 @@ function ChooserPopout({
       // Half of it landed — adopt that half, or the row exists server-side
       // and nowhere on screen. See sparks.ts PartialWrite.
       if (error instanceof PartialWrite) sparkLists.onChange(error.lists);
-      // A 404 means the list was deleted elsewhere and this copy is stale. NOT
-      // corrected here — a reload bumps `epoch`, which remounts the popout and
-      // discards the user's search and open picker. The dead pill survives
-      // until the popout is reopened.
+      // The list this write named was deleted elsewhere. Adopting the
+      // corrected lists drops its pill in place — no reload and no `epoch`
+      // bump, which would remount the popout and discard the user's search
+      // and open picker.
+      if (error instanceof ListGone) sparkLists.onChange(error.lists);
       onError(failure(error));
       return { ok: false, error };
     } finally {
@@ -879,7 +880,10 @@ function ChooserPopout({
     onToggleList: (s: ListableSpark, listId: number) =>
       write(
         () => toggleMembership(sparkLists.lists, listId, s.kind, s.key),
-        () => "Couldn't save that list change — try again."
+        (error) =>
+          error instanceof ListGone
+            ? "That list was deleted somewhere else."
+            : "Couldn't save that list change — try again."
       ),
     // Resolves "did the NAME get consumed", which is not the same question as
     // "did the write succeed" — see the PartialWrite case below. The field

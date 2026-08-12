@@ -27,8 +27,12 @@ The server half of the green rule shipped with #58 (DECISIONS.md #39):
 of #33, which had the axis backwards.** A `hunting` bit stored per spark what
 actually varies per session — which build you are working on this week, and
 it can be more than one at a time. `watched_sparks` and `hunting` are dropped.
-What replaced them is one table, `spark_lists`, holding `(name, updated_at,
-sparks)` per owner, with `GET`/`POST`/`PATCH`/`DELETE` under
+What replaced them is `spark_lists`, holding `(name, updated_at)` per owner,
+with membership as rows in `spark_list_members` — one `(kind, key)` per
+listed spark, edited through idempotent `PUT`/`DELETE` on
+`/api/spark-lists/{id}/sparks/{kind}/{key}` so concurrent edits commute
+(DECISIONS.md #48 closed issue #66's last-write-wins; the `PATCH` is
+rename-only). List CRUD is `GET`/`POST`/`PATCH`/`DELETE` under
 `/api/spark-lists` (`id` is creation order; a `position` column shipped and
 was stripped unused, DECISIONS.md #44). Names are unique per owner
 **ignoring case** (an expression index; stored as typed). Favorites in the

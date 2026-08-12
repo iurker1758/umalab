@@ -7,7 +7,9 @@ the skip/PYTEST_REQUIRE_DB rules apply identically.
 
 These replace test_watched_sparks.py wholesale. #33's shape had a `hunting`
 bit and a derived group vocabulary; #37 holds why the axis was wrong and what
-each of its rulings became.
+each of its rulings became. Membership is rows in `spark_list_members` with
+per-member verbs (DECISIONS.md #48, issue #66) — the whole-array PATCH these
+originally drove is the shape the 422s below pin as gone.
 """
 from __future__ import annotations
 
@@ -15,10 +17,11 @@ import asyncio
 from typing import Any
 
 import pytest
-from fastapi.exceptions import ResponseValidationError
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from app.models import User
+from app.routers import sparks
 from app.schemas import MAX_LISTS_PER_OWNER
 
 LISTS = "/api/spark-lists"
@@ -28,7 +31,7 @@ LISTS = "/api/spark-lists"
 # at or below conftest's engine default pool_size (5): a surplus request
 # waits on a NEW connection, and connection establishment staggers the field
 # back into the accidental serialization measured in #76.
-CONCURRENT_CREATES = 5
+CONCURRENT_WRITES = 5
 
 
 async def create(as_user: Any, user: User, name: str):
@@ -39,6 +42,16 @@ async def create(as_user: Any, user: User, name: str):
 async def patch(as_user: Any, user: User, list_id: int, **body: Any):
     async with as_user(user) as http:
         return await http.patch(f"{LISTS}/{list_id}", json=body)
+
+
+async def add(as_user: Any, user: User, list_id: int, kind: str, key: int):
+    async with as_user(user) as http:
+        return await http.put(f"{LISTS}/{list_id}/sparks/{kind}/{key}")
+
+
+async def remove(as_user: Any, user: User, list_id: int, kind: str, key: int):
+    async with as_user(user) as http:
+        return await http.delete(f"{LISTS}/{list_id}/sparks/{kind}/{key}")
 
 
 async def listing(as_user: Any, user: User) -> list[dict[str, Any]]:
@@ -75,7 +88,8 @@ async def test_a_list_round_trips(client: Any, users: list[User]):
 async def test_a_list_is_created_empty_and_stays(client: Any, users: list[User]):
     """The state #33's derived group vocabulary could not represent at all: a
     named list with nothing in it. The picker's `New List` creates one and the
-    PATCH that fills it is a separate request, so this has to survive a read.
+    membership write that fills it is a separate request, so this has to
+    survive a read.
     """
     a, _ = users
     await a_list(client, a, "Medium")
@@ -190,143 +204,239 @@ async def test_position_is_refused_like_any_unknown_field(
 
 
 async def test_an_edit_bumps_updated_at(client: Any, users: list[User]):
-    """What the management page's "Last Edited" sort reads: a rename and a
-    membership write both count as edits."""
+    """What the management page's "Last Edited" sort reads: a rename and both
+    membership verbs count as edits. The bump is explicit in the routes —
+    member writes never touch the list row, so the model's `onupdate` alone
+    would leave this sort frozen at creation time."""
     a, _ = users
     list_id = await a_list(client, a)
     born = (await listing(client, a))[0]["updated_at"]
     renamed = (await patch(client, a, list_id, name="Medium")).json()["updated_at"]
     assert renamed > born
-    filled = (await patch(client, a, list_id, sparks=[spark("white", 10)])).json()[
-        "updated_at"
-    ]
+    filled = (await add(client, a, list_id, "white", 10)).json()["updated_at"]
     assert filled > renamed
+    emptied = (await remove(client, a, list_id, "white", 10)).json()["updated_at"]
+    assert emptied > filled
+
+
+async def test_a_no_op_membership_write_does_not_bump_updated_at(
+    client: Any, users: list[User]
+):
+    """The idempotent verbs answer 200 either way, but "already what you
+    asked for" is not an edit — a bump here would float the list to the top
+    of Last Edited for writes that changed nothing."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    filled = (await add(client, a, list_id, "white", 10)).json()["updated_at"]
+    repeat = (await add(client, a, list_id, "white", 10)).json()["updated_at"]
+    assert repeat == filled
+    absent = (await remove(client, a, list_id, "white", 20)).json()["updated_at"]
+    assert absent == filled
 
 
 # ---------- membership ----------
 
-async def test_setting_membership(client: Any, users: list[User]):
+async def test_adding_sparks(client: Any, users: list[User]):
     a, _ = users
     list_id = await a_list(client, a)
-    response = await patch(
-        client, a, list_id, sparks=[spark("white", 2010), spark("race", 40)]
-    )
+    assert (await add(client, a, list_id, "white", 2010)).status_code == 200
+    response = await add(client, a, list_id, "race", 40)
     assert response.status_code == 200, response.text
     assert response.json()["sparks"] == [spark("white", 2010), spark("race", 40)]
 
 
-async def test_membership_keeps_the_order_it_was_sent_in(
+async def test_membership_keeps_the_order_it_was_added_in(
     client: Any, users: list[User]
 ):
-    """The array's order IS the list's order — what the picker appends to and
-    what the list renders."""
+    """Member-id order IS the list's order — what the picker appends to and
+    what the list renders, the role the old array's order carried."""
     a, _ = users
     list_id = await a_list(client, a)
-    sent = [spark("white", 30), spark("white", 10), spark("white", 20)]
-    assert (await patch(client, a, list_id, sparks=sent)).json()["sparks"] == sent
+    for key in (30, 10, 20):
+        await add(client, a, list_id, "white", key)
+    assert (await listing(client, a))[0]["sparks"] == [
+        spark("white", 30),
+        spark("white", 10),
+        spark("white", 20),
+    ]
 
 
 async def test_the_same_key_under_a_different_kind_is_a_different_spark(
     client: Any, users: list[User]
 ):
     """Identity is (kind, key), not key — the kinds' id ranges are an ingest
-    heuristic rather than a guarantee, so dedupe must not collapse these."""
+    heuristic rather than a guarantee, so the unique triple must not collapse
+    these."""
     a, _ = users
     list_id = await a_list(client, a)
-    sent = [spark("white", 1), spark("race", 1)]
-    assert (await patch(client, a, list_id, sparks=sent)).json()["sparks"] == sent
+    await add(client, a, list_id, "white", 1)
+    response = await add(client, a, list_id, "race", 1)
+    assert response.json()["sparks"] == [spark("white", 1), spark("race", 1)]
 
 
-async def test_duplicates_collapse_keeping_the_first(client: Any, users: list[User]):
-    """The client sends the list's whole membership and "already in it" is the
-    state it asked for, so this is a 200 rather than a 422. First occurrence
-    wins so the order the user built survives the collapse."""
+async def test_a_repeated_add_keeps_one_row_in_its_place(
+    client: Any, users: list[User]
+):
+    """"Already in it" is the state the caller asked for, so a repeat is a
+    200 rather than a 422 — and the member keeps its original position, so a
+    mis-tap cannot shuffle the list."""
     a, _ = users
     list_id = await a_list(client, a)
-    response = await patch(
-        client,
-        a,
-        list_id,
-        sparks=[spark("white", 10), spark("white", 20), spark("white", 10)],
-    )
+    await add(client, a, list_id, "white", 10)
+    await add(client, a, list_id, "white", 20)
+    response = await add(client, a, list_id, "white", 10)
     assert response.status_code == 200
     assert response.json()["sparks"] == [spark("white", 10), spark("white", 20)]
 
 
-async def test_a_repeated_spark_collapses_rather_than_being_refused(
+async def test_a_removed_and_re_added_spark_moves_to_the_end(
     client: Any, users: list[User]
 ):
-    """The client sends the whole membership and "already in it" is the state
-    it asked for, so a repeat is a 200."""
+    """A fresh row gets a fresh id — the same place the old client-side
+    filter-and-append landed it."""
     a, _ = users
     list_id = await a_list(client, a)
-    response = await patch(client, a, list_id, sparks=[spark("white", 10)] * 300)
+    await add(client, a, list_id, "white", 10)
+    await add(client, a, list_id, "white", 20)
+    await remove(client, a, list_id, "white", 10)
+    response = await add(client, a, list_id, "white", 10)
+    assert response.json()["sparks"] == [spark("white", 20), spark("white", 10)]
+
+
+async def test_removing_a_spark(client: Any, users: list[User]):
+    a, _ = users
+    list_id = await a_list(client, a)
+    await add(client, a, list_id, "white", 10)
+    await add(client, a, list_id, "white", 20)
+    response = await remove(client, a, list_id, "white", 10)
+    assert response.status_code == 200
+    assert response.json()["sparks"] == [spark("white", 20)]
+
+
+async def test_removing_an_absent_spark_is_not_an_error(
+    client: Any, users: list[User]
+):
+    """Idempotent like the add: already absent is the state the path named."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    await add(client, a, list_id, "white", 10)
+    response = await remove(client, a, list_id, "white", 999)
     assert response.status_code == 200
     assert response.json()["sparks"] == [spark("white", 10)]
 
 
-async def test_membership_is_unbounded(client: Any, users: list[User]):
-    """No cap, deliberately. The chooser adds from the factor reference, so
-    the reachable maximum IS the reference size — 432 today and growing every
-    time the game ships skills — and any constant either binds too early or
-    ages into binding too early. An earlier cut used 200 while 256 whites
-    alone could pass it.
+async def test_membership_writes_to_a_missing_list_are_404s(
+    client: Any, users: list[User]
+):
+    """Unlike removing an absent MEMBER: "put this spark in that list" is not
+    satisfied by the list not existing. The 404 names the whole list, which
+    is what lets a stale client drop a deleted list's pill in place instead
+    of retrying a dead write forever (issue #66's absorbed #73)."""
+    a, _ = users
+    async with client(a) as http:
+        assert (await http.put(f"{LISTS}/987654/sparks/white/10")).status_code == 404
+        assert (
+            await http.delete(f"{LISTS}/987654/sparks/white/10")
+        ).status_code == 404
 
-    1000 here is well past today's reference precisely to show nothing
-    refuses it."""
+
+def _delete_after_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Interleave the cross-device delete after `_owned` sees the list,
+    before the member write runs. The routes cannot close the window, so
+    they must classify what it produces.
+
+    ONE-SHOT: the shim restores the real `_owned` as it fires, so the
+    answer path's own re-read afterwards goes through the genuine lookup
+    rather than deleting again."""
+    real = sparks._owned  # pyright: ignore[reportPrivateUsage]
+
+    async def owned_then_deleted(session: Any, user: User, list_id: int):
+        monkeypatch.setattr(sparks, "_owned", real)
+        row = await real(session, user, list_id)
+        await session.execute(
+            text("DELETE FROM spark_lists WHERE id = :i").bindparams(i=list_id)
+        )
+        return row
+
+    monkeypatch.setattr(sparks, "_owned", owned_then_deleted)
+
+
+async def test_a_list_deleted_mid_add_is_a_404_not_a_500(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
+):
+    """The insert hits the member FK once the list is gone, and unhandled
+    that IntegrityError was a 500 — which the client shows as a transient
+    failure instead of dropping the dead list. Classified structurally, not
+    by constraint name: a create_all-built schema (this suite) names the FK
+    differently than the migration does, so a name match would pass in
+    production and silently stop classifying here."""
     a, _ = users
     list_id = await a_list(client, a)
-    sparks = [spark("white", n) for n in range(1, 1001)]
-    response = await patch(client, a, list_id, sparks=sparks)
-    assert response.status_code == 200, response.text
-    assert len(response.json()["sparks"]) == 1000
+    _delete_after_owned(monkeypatch)
+    assert (await add(client, a, list_id, "white", 10)).status_code == 404
 
 
-async def test_an_unreadable_entry_fails_the_read_rather_than_vanishing(
-    client: Any, users: list[User], sessions: Any
+async def test_a_list_deleted_mid_remove_is_a_404_not_a_500(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
 ):
-    """LOUD, on purpose, and this is the accepted tradeoff rather than an
-    oversight.
-
-    A lenient read was written and reverted. Membership is a whole-array
-    PATCH, so an entry the response quietly drops is missing from the
-    client's copy and is DELETED by that client's next write — silent,
-    permanent data loss on the first pill click. Failing the read keeps the
-    row intact: nothing has told the client a truncated array is the truth.
-
-    The cost is the `BlueprintOut` failure CLAUDE.md records — one bad row
-    takes the whole list response with it — which is filed rather than
-    papered over, because the fix that actually helps is a lossless round
-    trip (#66), not a quieter loss.
-
-    Written straight to the column, because the request model refuses this.
-    """
+    """The same race through the other verb fails differently unfixed: the
+    member DELETE matches nothing (the cascade beat it), and the answer then
+    refreshed a row that no longer existed — an unhandled
+    InvalidRequestError. The answer re-selects instead, and gone is the same
+    404 whether the list went before or just after the write."""
     a, _ = users
-    first = await a_list(client, a, "Front Runner")
-    await patch(client, a, first, sparks=[spark("white", 10)])
-    async with sessions() as session:
-        await session.execute(
-            text(
-                "UPDATE spark_lists SET sparks = CAST(:s AS jsonb) WHERE id = :i"
-            ).bindparams(
-                s='[{"kind": "white", "key": 10}, {"kind": "pink", "key": 70}]',
-                i=first,
+    list_id = await a_list(client, a)
+    await add(client, a, list_id, "white", 10)
+    _delete_after_owned(monkeypatch)
+    assert (await remove(client, a, list_id, "white", 10)).status_code == 404
+
+
+async def test_concurrent_adds_to_one_list_all_land(
+    client: Any, users: list[User]
+):
+    """THE defect issue #66 was filed on, at the shape that closes it: five
+    simultaneous adds of different sparks must all survive. Under the
+    whole-array PATCH each writer rewrote the list from its own copy, so the
+    last commit won and four sparks vanished behind five 200s; single-row
+    inserts commute, so there is no longer a version of events where one add
+    overwrites another.
+
+    Warmed pool per DECISIONS.md #38 — on a cold pool, connection
+    establishment staggers the field into running one at a time, and a
+    serialized run would pass even against the old shape."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    async with client(a) as http:
+        await asyncio.gather(*(http.get(LISTS) for _ in range(CONCURRENT_WRITES)))
+        responses = await asyncio.gather(
+            *(
+                http.put(f"{LISTS}/{list_id}/sparks/white/{10 * (n + 1)}")
+                for n in range(CONCURRENT_WRITES)
             )
         )
-        await session.commit()
-    # The ASGI test client re-raises server exceptions rather than
-    # returning the 500 a browser would see; either way the read fails
-    # loudly, which is the point.
-    with pytest.raises(ResponseValidationError):
-        async with client(a) as http:
-            await http.get(LISTS)
-    # The row is untouched by the failed read — nothing has been dropped.
+    assert [r.status_code for r in responses] == [200] * CONCURRENT_WRITES
+    held = {(s["kind"], s["key"]) for s in (await listing(client, a))[0]["sparks"]}
+    assert held == {("white", 10 * (n + 1)) for n in range(CONCURRENT_WRITES)}
+
+
+async def test_a_kind_outside_the_set_is_unrepresentable(
+    client: Any, users: list[User], sessions: Any
+):
+    """What retired the loud-read tradeoff (issue #66's absorbed #75): the
+    JSONB column could hold an entry the strict read model refused, and one
+    such entry 500'd the owner's every list. Member rows carry a CHECK
+    mirroring ListSparkKind, so the bad entry is refused at the write — the
+    read can never meet one, and stays strict for free."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    smuggled = text(
+        "INSERT INTO spark_list_members (list_id, kind, key)"
+        " VALUES (:i, 'pink', 70)"
+    ).bindparams(i=list_id)
     async with sessions() as session:
-        stored = await session.scalar(
-            text("SELECT jsonb_array_length(sparks) FROM spark_lists WHERE id = :i")
-            .bindparams(i=first)
-        )
-    assert stored == 2
+        with pytest.raises(IntegrityError, match="ck_spark_list_member_kind"):
+            await session.execute(smuggled)
+    assert (await listing(client, a))[0]["sparks"] == []
 
 
 async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
@@ -335,17 +445,18 @@ async def test_an_unknown_key_is_accepted(client: Any, users: list[User]):
     missing from it is still a legitimate thing to want."""
     a, _ = users
     list_id = await a_list(client, a)
-    response = await patch(client, a, list_id, sparks=[spark("white", 999_999)])
+    response = await add(client, a, list_id, "white", 999_999)
     assert response.status_code == 200
     assert response.json()["sparks"] == [spark("white", 999_999)]
 
 
 async def test_an_unknown_kind_is_refused(client: Any, users: list[User]):
-    """`kind` decides the proc base rate, so unlike `key` it is closed. The
-    pink stays outside it — it has its own editor, never a list."""
+    """`kind` decides the proc base rate, so unlike `key` it is closed — now
+    by the path segment's Literal, before any handler runs. The pink stays
+    outside it — it has its own editor, never a list."""
     a, _ = users
     list_id = await a_list(client, a)
-    assert (await patch(client, a, list_id, sparks=[spark("pink", 1)])).status_code == 422
+    assert (await add(client, a, list_id, "pink", 1)).status_code == 422
 
 
 async def test_blues_and_greens_are_not_listable(client: Any, users: list[User]):
@@ -353,30 +464,46 @@ async def test_blues_and_greens_are_not_listable(client: Any, users: list[User])
     parent carries her blue and her own green regardless (DECISIONS.md #40)."""
     a, _ = users
     list_id = await a_list(client, a)
-    assert (await patch(client, a, list_id, sparks=[spark("blue", 1)])).status_code == 422
-    greens = [spark("unique", 100101)]
-    assert (await patch(client, a, list_id, sparks=greens)).status_code == 422
+    assert (await add(client, a, list_id, "blue", 1)).status_code == 422
+    assert (await add(client, a, list_id, "unique", 100101)).status_code == 422
 
 
-async def test_a_mis_keyed_spark_entry_is_refused(client: Any, users: list[User]):
+@pytest.mark.parametrize("key", [0, 2_147_483_648])
+async def test_a_key_outside_int4_is_refused(
+    client: Any, users: list[User], key: int
+):
+    """The same bound SparkRef puts on the old body shape: an oversized key
+    is unrepresentable everywhere else the app puts a factor id."""
     a, _ = users
     list_id = await a_list(client, a)
-    response = await patch(
-        client, a, list_id, sparks=[{"kind": "white", "key": 1, "stars": 3}]
-    )
-    assert response.status_code == 422
+    assert (await add(client, a, list_id, "white", key)).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "sparks", [None, [], [{"kind": "white", "key": 10}]]
+)
+async def test_a_whole_array_patch_is_refused(
+    client: Any, users: list[User], sparks: Any
+):
+    """The pre-#48 write shape. `extra="forbid"` turns a stale client's
+    whole-array PATCH into a loud 422 rather than a 200 that would silently
+    drop every edit that landed since that client last read."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    await add(client, a, list_id, "white", 30)
+    assert (await patch(client, a, list_id, sparks=sparks)).status_code == 422
+    assert (await listing(client, a))[0]["sparks"] == [spark("white", 30)]
 
 
 # ---------- partial updates ----------
 # The one thing about #33's request shape that carried over intact: an omitted
-# field is left alone, and an explicit empty array is a different request from
-# a missing key.
+# field is left alone, and null means the same as absent.
 
 
-async def test_setting_membership_leaves_the_name(client: Any, users: list[User]):
+async def test_adding_a_spark_leaves_the_name(client: Any, users: list[User]):
     a, _ = users
     list_id = await a_list(client, a, "Front Runner")
-    response = await patch(client, a, list_id, sparks=[spark("white", 10)])
+    response = await add(client, a, list_id, "white", 10)
     assert response.json()["name"] == "Front Runner"
 
 
@@ -385,7 +512,7 @@ async def test_renaming_leaves_the_membership(client: Any, users: list[User]):
     own table rather than a name repeated across every spark that holds it."""
     a, _ = users
     list_id = await a_list(client, a, "Front Runner")
-    await patch(client, a, list_id, sparks=[spark("white", 10)])
+    await add(client, a, list_id, "white", 10)
     response = await patch(client, a, list_id, name="Front")
     assert response.json()["name"] == "Front"
     assert response.json()["sparks"] == [spark("white", 10)]
@@ -394,38 +521,34 @@ async def test_renaming_leaves_the_membership(client: Any, users: list[User]):
 async def test_an_empty_patch_changes_nothing(client: Any, users: list[User]):
     a, _ = users
     list_id = await a_list(client, a, "Front Runner")
-    await patch(client, a, list_id, sparks=[spark("white", 10)])
+    await add(client, a, list_id, "white", 10)
     response = await patch(client, a, list_id)
     assert response.status_code == 200
     assert response.json()["name"] == "Front Runner"
     assert response.json()["sparks"] == [spark("white", 10)]
 
 
-@pytest.mark.parametrize("field", ["name", "sparks"])
-async def test_an_explicit_null_leaves_the_field_alone(
-    client: Any, users: list[User], field: str
+async def test_an_explicit_null_leaves_the_name_alone(
+    client: Any, users: list[User]
 ):
     """Absent and null mean the same thing, so a client serializing an unset
     field as null gets the same answer as one omitting it."""
     a, _ = users
     list_id = await a_list(client, a, "Front Runner")
-    await patch(client, a, list_id, sparks=[spark("white", 10)])
-    response = await patch(client, a, list_id, **{field: None})
+    response = await patch(client, a, list_id, name=None)
     assert response.status_code == 200
     assert response.json()["name"] == "Front Runner"
-    assert response.json()["sparks"] == [spark("white", 10)]
 
 
-async def test_an_empty_spark_list_clears_the_membership(
+async def test_removing_the_last_spark_keeps_the_list(
     client: Any, users: list[User]
 ):
-    """`[]` is how you empty a list; omitting the key is not. That distinction
-    is what the shape rests on — and emptying is not deleting, so the list
-    itself survives."""
+    """Emptying is not deleting — an empty list is a normal state, the same
+    one it was created in."""
     a, _ = users
     list_id = await a_list(client, a, "Front Runner")
-    await patch(client, a, list_id, sparks=[spark("white", 10)])
-    response = await patch(client, a, list_id, sparks=[])
+    await add(client, a, list_id, "white", 10)
+    response = await remove(client, a, list_id, "white", 10)
     assert response.json()["sparks"] == []
     assert [row["name"] for row in await listing(client, a)] == ["Front Runner"]
 
@@ -465,11 +588,10 @@ async def test_renaming_a_list_to_its_own_name_is_fine(client: Any, users: list[
 
 
 async def test_patching_a_missing_list_is_a_404(client: Any, users: list[User]):
-    """Unlike DELETE, "make this list hold these sparks" is not satisfied by
-    the list not existing — a client told it succeeded would show membership
-    nothing stored."""
+    """Unlike DELETE, "rename this list" is not satisfied by the list not
+    existing — a client told it succeeded would show a name nothing stored."""
     a, _ = users
-    assert (await patch(client, a, 987_654, sparks=[])).status_code == 404
+    assert (await patch(client, a, 987_654, name="Medium")).status_code == 404
 
 
 # ---------- the list cap ----------
@@ -519,16 +641,16 @@ async def test_concurrent_creates_cannot_exceed_the_cap(
         await session.commit()
     async with client(a) as http:
         await asyncio.gather(
-            *(http.get(LISTS) for _ in range(CONCURRENT_CREATES))
+            *(http.get(LISTS) for _ in range(CONCURRENT_WRITES))
         )
         responses = await asyncio.gather(
             *(
                 http.post(LISTS, json={"name": f"race {n}"})
-                for n in range(CONCURRENT_CREATES)
+                for n in range(CONCURRENT_WRITES)
             )
         )
     codes = sorted(r.status_code for r in responses)
-    assert codes == [201] + [409] * (CONCURRENT_CREATES - 1), codes
+    assert codes == [201] + [409] * (CONCURRENT_WRITES - 1), codes
     assert len(await listing(client, a)) == MAX_LISTS_PER_OWNER
 
 
@@ -625,17 +747,23 @@ async def test_the_cap_is_per_owner(client: Any, users: list[User]):
 # ---------- delete ----------
 
 async def test_deleting_removes_the_list_and_its_membership(
-    client: Any, users: list[User]
+    client: Any, users: list[User], sessions: Any
 ):
-    """Membership is a column on the list, so there is nothing left behind to
-    sweep — the whole argument for this shape over the two that keep
-    membership on the spark (DECISIONS.md #37)."""
+    """The member table's FK cascades at the database, so nothing is left
+    behind to sweep — the property #37 chose membership-on-the-list for,
+    kept by #48's move to rows."""
     a, _ = users
     list_id = await a_list(client, a)
-    await patch(client, a, list_id, sparks=[spark("white", 10)])
+    await add(client, a, list_id, "white", 10)
     async with client(a) as http:
         assert (await http.delete(f"{LISTS}/{list_id}")).status_code == 204
     assert await listing(client, a) == []
+    async with sessions() as session:
+        stranded = await session.scalar(
+            text("SELECT count(*) FROM spark_list_members WHERE list_id = :i")
+            .bindparams(i=list_id)
+        )
+    assert stranded == 0
 
 
 async def test_deleting_something_gone_is_not_an_error(client: Any, users: list[User]):
@@ -685,6 +813,18 @@ async def test_you_cannot_patch_another_users_list(client: Any, users: list[User
     list_id = await a_list(client, a, "Front Runner")
     assert (await patch(client, b, list_id, name="Mine Now")).status_code == 404
     assert [row["name"] for row in await listing(client, a)] == ["Front Runner"]
+
+
+async def test_you_cannot_edit_membership_of_another_users_list(
+    client: Any, users: list[User]
+):
+    """The member verbs answer for `_owned` the same way the PATCH does."""
+    a, b = users
+    list_id = await a_list(client, a, "Front Runner")
+    await add(client, a, list_id, "white", 10)
+    assert (await add(client, b, list_id, "white", 20)).status_code == 404
+    assert (await remove(client, b, list_id, "white", 10)).status_code == 404
+    assert (await listing(client, a))[0]["sparks"] == [spark("white", 10)]
 
 
 async def test_you_cannot_delete_another_users_list(client: Any, users: list[User]):

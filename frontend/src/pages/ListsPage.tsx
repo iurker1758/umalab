@@ -7,6 +7,7 @@ import {
   createList,
   deleteList,
   listById,
+  ListGone,
   loadListSort,
   loadSparkLists,
   PartialWrite,
@@ -96,8 +97,8 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
   // 409'd name can be corrected rather than retyped.
   const [draft, setDraft] = useState("");
   // One flag for every write surface on the page and in the popout — the
-  // chooser's idiom, and what keeps the whole-array membership writes from
-  // racing each other.
+  // chooser's idiom. UI serialization only: since #48's per-spark verbs,
+  // membership writes commute anyway.
   const [busy, setBusy] = useState(false);
   // Which list's Edit Sparks popout is open. Rendered through a live lookup,
   // so a list deleted elsewhere closes its own popout on the next adopt.
@@ -150,7 +151,9 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
   );
 
   // The chooser's shared write shape: non-optimistic, one busy gate, a
-  // PartialWrite's half-landed state adopted before the error is shown.
+  // PartialWrite's half-landed state adopted before the error is shown, a
+  // ListGone's corrected state adopted so a list deleted on another device
+  // drops from the rows in place (issue #66's absorbed #73).
   // Returns whether it wrote, which is what the create field's clear needs.
   const write = async (
     op: () => Promise<SparkList[]>,
@@ -162,6 +165,7 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
       return true;
     } catch (error) {
       if (error instanceof PartialWrite) onChange(error.lists);
+      if (error instanceof ListGone) onChange(error.lists);
       onError(failure(error));
       return false;
     } finally {
@@ -209,7 +213,10 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     const restore = refocus(control);
     void write(
       () => toggleMembership(lists, openFor, kind, key),
-      (e) => detailOr(e, "Couldn't save that change — try again.")
+      (e) =>
+        e instanceof ListGone
+          ? "That list was deleted somewhere else."
+          : detailOr(e, "Couldn't save that change — try again.")
     ).finally(restore);
   };
 

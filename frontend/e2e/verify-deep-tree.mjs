@@ -591,6 +591,179 @@ const rowFrom = async (label) =>
 try {
   await page.goto(BASE);
   await page.waitForSelector(".nav");
+
+  // ---------- the roster dock: persisted sort, caption, filters (issue #37) ----------
+  // First in the narrative on purpose: the context's storage is fresh, so the
+  // defaults are actually testable, and the reloads below have no designer
+  // state to disturb. Everything derives from the roster fetched above — the
+  // suite never imports (DECISIONS.md #3) — so an empty roster skips the
+  // section; CI's E2E_REQUIRE_ROSTER gate has already exited by now if the
+  // seeding step failed.
+  if (roster.length === 0) {
+    console.log("  skip: roster dock checks (empty roster — nothing to sort or filter)");
+  } else {
+    // The dock's three-pill shape: Filters + badge, the caption cycle, and
+    // the sort select with its direction toggle.
+    await page.waitForSelector(".pill-dock");
+    const rosterSort = () => page.locator('.pill-dock select[aria-label="Sort By"]');
+    const sortDir = () => page.locator(".pill-dock .sort-dir");
+    const rosterCaption = () => page.locator(".pill-dock .caption-float");
+    const rosterBadge = () =>
+      page.locator(".pill-dock .filter-float", { hasText: "Filters" }).locator(".filter-count");
+    // Null when the badge isn't rendered — textContent() alone would auto-wait
+    // 30s and throw, which inside until() aborts the run instead of retrying.
+    const badgeText = () => rosterBadge().textContent({ timeout: 250 }).catch(() => null);
+    const openRosterFilters = async () => {
+      await page.locator(".pill-dock .filter-float", { hasText: "Filters" }).click();
+      await page.waitForSelector(".filter-panel");
+    };
+    const closeRosterFilters = async () => {
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".filter-panel", { state: "detached" });
+    };
+    check("the dock opens on the default sort, newest first",
+      (await rosterSort().inputValue()) === "register_time" &&
+      (await sortDir().getAttribute("aria-label")) === "Sort Descending");
+    check("and on Score captions",
+      (await rosterCaption().textContent()) === "Score" &&
+      (await page.locator(".grid .card .card-score").count()) === roster.length);
+
+    // Ranks are read off each card's strip
+    // (its pink group titles "<name> ★<stars>") and compared against an
+    // independent reimplementation over the API roster: aptitude in the
+    // game's group order, star within the aptitude, no pink before 1★ Turf.
+    // Sequence equality against the SORTED expected ranks — not against a
+    // second stable sort — so ties can land in any order without coupling
+    // the check to the app's tie-breaking.
+    const PINK_NAME_RANK = {
+      Turf: 0, Dirt: 1,
+      Sprint: 2, Mile: 3, Medium: 4, Long: 5,
+      "Front Runner": 6, "Pace Chaser": 7, "Late Surger": 8, "End Closer": 9,
+    };
+    const pinkRankOf = (v) => {
+      let best = null;
+      for (const f of v.factors) {
+        const r = PINK_NAME_RANK[f.name];
+        if (f.kind !== "pink" || r === undefined || f.star < 1 || f.star > 3) continue;
+        if (best === null || f.star > best.star) best = { r, star: f.star };
+      }
+      return best === null ? -1 : best.r * 3 + best.star - 1;
+    };
+    const expectedRanks = roster.map(pinkRankOf).sort((a, b) => a - b);
+    const domRanks = () =>
+      page.evaluate((ranks) =>
+        [...document.querySelectorAll(".grid .card")].map((card) => {
+          const g = card.querySelector(".spark-group.pink");
+          const m = g === null ? null : /^(.+) ★(\d)$/.exec(g.title);
+          const r = m === null ? undefined : ranks[m[1]];
+          return r === undefined ? -1 : r * 3 + Number(m[2]) - 1;
+        }), PINK_NAME_RANK);
+    await rosterSort().selectOption("pink_spark");
+    check("picking Pink starts ascending, its own default direction",
+      (await sortDir().getAttribute("aria-label")) === "Sort Ascending");
+    // The caption cycle first: the strips it swaps in are what the rank
+    // reads below run against.
+    await rosterCaption().click();
+    check("the caption pill cycles to Sparks and the strips replace the scores",
+      (await rosterCaption().textContent()) === "Sparks" &&
+      (await page.locator(".grid .card .spark-strip").count()) === roster.length);
+    const pinkRanks = JSON.stringify(await domRanks());
+    check("Pink orders the grid by the veteran's own pink",
+      pinkRanks === JSON.stringify(expectedRanks),
+      pinkRanks);
+    await sortDir().click();
+    check("the direction toggle reverses it",
+      (await sortDir().getAttribute("aria-label")) === "Sort Descending" &&
+      JSON.stringify(await domRanks()) === JSON.stringify([...expectedRanks].reverse()));
+
+    // A pink chip, not a roster-derived one — the ten are static, so this
+    // doesn't depend on what your dump happens to hold (the picker block
+    // makes the same choice).
+    const turfCount = roster.filter((v) =>
+      v.factors.some((f) => f.kind === "pink" && f.name === "Turf")
+    ).length;
+    await openRosterFilters();
+    await page.locator(".filter-panel .fchip.pink", { hasText: "Turf" }).first().click();
+    await closeRosterFilters();
+    check("a Turf filter badges the dock and narrows the grid to its carriers",
+      (await rosterBadge().textContent()) === "1" &&
+      (await page.locator(".grid .card").count()) === turfCount,
+      `expected ${turfCount} cards`);
+    // The other half of DECISIONS.md #31's rule — the picker block asserts
+    // its keys never reach these; here, these never reach its keys.
+    check("none of it leaks into the picker's own keys",
+      await page.evaluate(() => {
+        const sort = localStorage.getItem("umalab.picker.sort");
+        const caption = localStorage.getItem("umalab.picker.caption");
+        const filters = localStorage.getItem("umalab.picker.filters");
+        return (sort === null || JSON.parse(sort).key !== "pink_spark") &&
+          (caption === null || JSON.parse(caption) !== "sparks") &&
+          (filters === null || !JSON.parse(filters).pink.names.includes("Turf"));
+      }));
+
+    const dockReads = async () => ({
+      sort: await rosterSort().inputValue(),
+      dir: await sortDir().getAttribute("aria-label"),
+      caption: await rosterCaption().textContent(),
+      badge: await badgeText(),
+    });
+    const dockState = JSON.stringify({
+      sort: "pink_spark", dir: "Sort Descending", caption: "Sparks", badge: "1",
+    });
+    await page.goto(BASE);
+    await page.waitForSelector(".pill-dock");
+    const afterReload = JSON.stringify(await dockReads());
+    check("a reload keeps the sort, its direction, the caption, and the filter",
+      afterReload === dockState, afterReload);
+    // The route round-trip is what actually re-reads storage for the sort
+    // and caption — RosterPage remounts — while the filters ride the shell.
+    await page.locator(".nav a", { hasText: "Lists" }).click();
+    await page.waitForSelector(".lists-page");
+    await page.locator(".nav a", { hasText: "Roster" }).click();
+    await page.waitForSelector(".pill-dock");
+    const afterRoundTrip = JSON.stringify(await dockReads());
+    check("so does a route round-trip through Lists",
+      afterRoundTrip === dockState, afterRoundTrip);
+
+    // Reconciliation: a filter whose target left in a full-replace import is
+    // cleared on load, not masked — otherwise the page opens empty with
+    // nothing in the panel to explain why. The suite can't stage that with a
+    // real import, so it writes the same end state directly: targets no
+    // roster row carries, appended to the persisted set in a shape
+    // loadFilters accepts — so what's under test is reconcileFilters, not
+    // the loader's shape fallback.
+    const bogusCard = Math.max(...roster.map((v) => v.card_id)) + 1;
+    await page.evaluate(([card]) => {
+      const f = JSON.parse(localStorage.getItem("umalab.filters"));
+      f.cards.push(card);
+      f.marks.push("mark_e2e_bogus");
+      f.whites.push({ name: "e2e nonexistent spark", stars: "all", legacy: false });
+      localStorage.setItem("umalab.filters", JSON.stringify(f));
+    }, [bogusCard]);
+    await page.goto(BASE);
+    await page.waitForSelector(".pill-dock");
+    check("filters whose targets aren't in the roster are reconciled away on load",
+      (await until(async () => (await badgeText()) === "1")) &&
+      (await page.locator(".grid .card").count()) === turfCount,
+      (await badgeText()) ?? "(no badge)");
+    check("and the pruned set is what's persisted back",
+      await until(() =>
+        page.evaluate(([card]) => {
+          const f = JSON.parse(localStorage.getItem("umalab.filters"));
+          return !f.cards.includes(card) && !f.marks.includes("mark_e2e_bogus") &&
+            f.whites.length === 0 && f.pink.names.includes("Turf");
+        }, [bogusCard])));
+
+    // Back to the defaults, so the rest of the run — the picker block's
+    // roster-side independence check included — starts from a clean dock.
+    await openRosterFilters();
+    await page.locator(".filter-panel .filter-clear").click();
+    await closeRosterFilters();
+    check("Reset Filters clears the badge", (await rosterBadge().count()) === 0);
+    await rosterSort().selectOption("register_time");
+    await rosterCaption().click(); // Sparks → Score: the cycle wraps
+  }
+
   await page.locator(".nav a", { hasText: "Designer" }).click();
   await page.waitForURL("**/designer");
   await page.waitForSelector(".designer");
@@ -2799,15 +2972,25 @@ try {
     await toRosterTab();
     check("and is still Sparks on the next open",
       (await captionPill().textContent()) === "Sparks");
+    // Checked while the two modes DIFFER — after the wrap below both read
+    // Score, and a leak into the roster's key would be invisible.
+    check("under its own key — the roster page's caption is untouched",
+      await page.evaluate(() => {
+        const raw = localStorage.getItem("umalab.caption");
+        return raw === null || JSON.parse(raw) !== "sparks";
+      }));
     await captionPill().click();
     check("cycling wraps back to Score", (await captionPill().textContent()) === "Score");
-    // The half of the original rule that still holds: the two filter sets are
+    // The half of the original rule that still holds: the two surfaces are
     // independent in both directions, so narrowing the picker must not reach
-    // the roster page you go back to.
-    check("without touching the roster page's own filters",
+    // the roster page you go back to. The roster-side halves live in the
+    // dock section at the top of the run.
+    check("without touching the roster page's own filters or sort",
       await page.evaluate(() => {
-        const raw = localStorage.getItem("umalab.filters");
-        return raw === null || !JSON.parse(raw).pink.names.includes("Turf");
+        const filters = localStorage.getItem("umalab.filters");
+        const sort = localStorage.getItem("umalab.sort");
+        return (filters === null || !JSON.parse(filters).pink.names.includes("Turf")) &&
+          (sort === null || JSON.parse(sort).key !== "blue_spark");
       }));
 
     // ---------- Legacy Sparks stops at the parents ----------

@@ -350,6 +350,9 @@ const pillKey = (id: number, kind: ListSparkKind, key: number) =>
 // at every chain start (the screen matches the server when nothing is in
 // flight), advanced on each success; entries are only ever read mid-chain,
 // so stale ones are harmless and growth is bounded by pills touched.
+// Not merged into `inflight`'s entry: that entry is reclaimed on settle,
+// one microtask BEFORE the failure continuation reads the revert target —
+// the merged shape fails the chain-failure test.
 const acked = new Map<string, boolean>();
 
 /**
@@ -441,6 +444,8 @@ export function toggleListSpark(
         onChange((prev) => prev.filter((l) => l.id !== id));
         onError("That list was deleted somewhere else.");
       } else {
+        // Seeded at every chain start and never deleted, so the `??` arm is
+        // type appeasement, not a reachable fallback.
         const revert = acked.get(pill) ?? !desired;
         onChange((prev) => withMembership(prev, id, kind, key, revert));
         onError("Couldn't save that list change — try again.");

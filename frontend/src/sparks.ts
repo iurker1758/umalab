@@ -54,11 +54,10 @@ export type SparkListStore = {
   failed: boolean;
   // Empty means "everything", not "nothing" — see `activeSparks`.
   active: number[];
-  // Takes React's functional form because membership toggles are optimistic
-  // (issue #69, DECISIONS.md #49): a flip or revert applies against whatever
-  // state holds when it lands, so it cannot clobber another pill's in-flight
-  // flip. The awaited writes still hand back plain arrays — what the server
-  // ended up with.
+  // Takes React's functional form because every write applies against
+  // whatever state holds when it lands (issue #69, DECISIONS.md #49): flips
+  // and reverts by nature, and the awaited writes because an array built
+  // before their round trip would overwrite a flip that landed during it.
   onChange: (next: SparkListUpdate) => void;
   // A toggle, not a value setter: two presses resolved against one render
   // would each compute the next selection from the same stale array and the
@@ -187,10 +186,12 @@ export const toggleActive = (active: number[], id: number): number[] =>
   active.includes(id) ? active.filter((n) => n !== id) : [...active, id];
 
 // ---------- writes ----------
-// The awaited writes (create, rename, delete) each return the new array of
-// lists for the caller to put back in state; membership toggles are
-// optimistic and split into a local flip and a background request (issue
-// #69, DECISIONS.md #49).
+// The awaited writes (create, rename, delete) each resolve to a FOLD over
+// the caller's current state, never to an array: an array would be built
+// from the lists as of the call, and adopting it when the write resolves
+// would overwrite any optimistic flip that landed during the round trip —
+// the review round's clobber. Membership toggles are optimistic and split
+// into a local flip and a background request (issue #69, DECISIONS.md #49).
 //
 // A write folds in the ONE list it touched rather than adopting a fresh
 // fetch: the chooser freezes its Favorites membership at open and filters the
@@ -219,10 +220,10 @@ export const loadSparkLists = (): Promise<SparkList[]> => api.sparkLists();
  * swallowed: the create bar has a field the user can correct.
  */
 export async function createList(
-  lists: SparkList[],
   name: string
-): Promise<SparkList[]> {
-  return replacing(lists, await api.createSparkList(name));
+): Promise<(prev: SparkList[]) => SparkList[]> {
+  const saved = await api.createSparkList(name);
+  return (prev) => replacing(prev, saved);
 }
 
 /**
@@ -233,20 +234,33 @@ export async function createList(
  * `PartialWrite` error the two-request shape needed.
  */
 export async function createListWith(
-  lists: SparkList[],
   name: string,
   kind: ListSparkKind,
   key: number
-): Promise<SparkList[]> {
-  return replacing(lists, await api.createSparkList(name, [{ kind, key }]));
+): Promise<(prev: SparkList[]) => SparkList[]> {
+  const saved = await api.createSparkList(name, [{ kind, key }]);
+  // A fresh id: nothing local can hold a flip for it, so the whole row folds.
+  return (prev) => replacing(prev, saved);
 }
 
+/**
+ * The fold takes the server's name and stamp and nothing else — membership
+ * stays the flip's (DECISIONS.md #49), so a rename resolving mid-toggle
+ * cannot re-fight the toggle's optimistic state.
+ */
 export async function renameList(
-  lists: SparkList[],
   id: number,
   name: string
-): Promise<SparkList[]> {
-  return replacing(lists, await api.updateSparkList(id, { name }));
+): Promise<(prev: SparkList[]) => SparkList[]> {
+  const saved = await api.updateSparkList(id, { name });
+  return (prev) =>
+    withStamp(
+      prev.map((list) =>
+        list.id === saved.id ? { ...list, name: saved.name } : list
+      ),
+      saved.id,
+      saved.updated_at
+    );
 }
 
 /**
@@ -254,11 +268,10 @@ export async function renameList(
  * Favorites with it — the union orphans nothing, so there is nothing to sweep.
  */
 export async function deleteList(
-  lists: SparkList[],
   id: number
-): Promise<SparkList[]> {
+): Promise<(prev: SparkList[]) => SparkList[]> {
   await api.deleteSparkList(id);
-  return lists.filter((list) => list.id !== id);
+  return (prev) => prev.filter((list) => list.id !== id);
 }
 
 /**
@@ -334,15 +347,22 @@ const inflight = new Map<string, Promise<unknown>>();
  * so the last click's request lands last and the server converges to the
  * screen — while different pills stay parallel.
  *
- * A 404 throws `ListGone`; anything else passes through for the caller's
- * revert and toast.
+ * **A superseded failure resolves `null`.** When a newer write for the same
+ * pill is already queued, this write's failure decides nothing: the newer
+ * verb states the end state and reports its own outcome. Rejecting anyway
+ * made a double-click toast "Couldn't save" while the server ended exactly
+ * where the screen shows (the review round's false-toast finding) — and the
+ * revert it triggered was already a no-op, `withMembership` being absolute.
+ *
+ * A 404 with no newer write queued throws `ListGone`; any other final
+ * failure passes through for the caller's revert and toast.
  */
 export async function syncMembership(
   id: number,
   kind: ListSparkKind,
   key: number,
   desired: boolean
-): Promise<SparkList> {
+): Promise<SparkList | null> {
   const pill = `${id}|${kind}|${key}`;
   const issue = () =>
     desired ? api.addListSpark(id, kind, key) : api.removeListSpark(id, kind, key);
@@ -360,6 +380,11 @@ export async function syncMembership(
   try {
     return await run;
   } catch (error) {
+    // Still the chain's tail here: the map entry only ever moves when a
+    // newer write replaces it, and the delayed cleanup above cannot run
+    // before this catch — `settled`'s handler resolves first and only
+    // QUEUES the delete behind this continuation.
+    if (inflight.get(pill) !== settled) return null;
     if (error instanceof ApiError && error.status === 404) {
       throw new ListGone();
     }

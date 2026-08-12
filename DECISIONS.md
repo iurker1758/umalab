@@ -2171,8 +2171,15 @@ marked in each.
   of that write, and folding it could resurrect an older membership
   when responses land out of order. Requests for the same
   (list, kind, key) chain behind each other so the last click's verb
-  lands last; different pills stay parallel. Create/rename/delete
-  stay awaited under `busy` — a created chip needs the server's id.
+  lands last; different pills stay parallel — and a failure a newer
+  same-pill write supersedes resolves `null` instead of rejecting,
+  because the newer verb owns the outcome and a toast for it is false
+  (the review round's double-click finding). Create/rename/delete
+  stay awaited under `busy` — a created chip needs the server's id —
+  but resolve to FOLDS over current state, never arrays: pills stay
+  clickable during the round trip, and an array built before it
+  overwrote any flip that landed mid-flight (the round's clobber
+  finding; rename folds name and stamp only, by the same rule).
   Membership pills no longer disable, so #74's focus dance no longer
   applies to them (the e2e asserts focus stays put instead).
 - **Alternatives rejected:** folding full toggle responses — the

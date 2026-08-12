@@ -251,22 +251,34 @@ describe("the active selection persists per device", () => {
 });
 
 describe("writes", () => {
-  it("creates a list and folds it into the caller's array", async () => {
+  it("creates a list and resolves to a fold that adds it", async () => {
     const calls = stubApi({});
-    const next = await createList([aList({ id: 1 })], "Medium");
+    const fold = await createList("Medium");
     expect(calls.createSparkList).toHaveBeenCalledWith("Medium");
-    expect(next.map((l) => l.id)).toEqual([1, 99]);
+    expect(fold([aList({ id: 1 })]).map((l) => l.id)).toEqual([1, 99]);
   });
 
-  it("renames without touching the membership it wasn't given", async () => {
+  it("renames by folding the name and stamp, never the membership", async () => {
+    // The server's response carries membership as of the rename, and a
+    // toggle can be in flight on the same list — the flip is the record
+    // (DECISIONS.md #49), so the fold must not adopt the response's sparks.
     const calls = stubApi({
       updateSparkList: (id, body) =>
-        Promise.resolve(aList({ id, name: body.name ?? "?", sparks: [spark("white", 1)] })),
+        Promise.resolve(
+          aList({
+            id,
+            name: body.name ?? "?",
+            sparks: [spark("white", 9)],
+            updated_at: "2026-08-12T00:00:00Z",
+          })
+        ),
     });
-    const next = await renameList([aList({ id: 1, name: "Front" })], 1, "Front Runner");
+    const fold = await renameList(1, "Front Runner");
     expect(calls.updateSparkList).toHaveBeenCalledWith(1, { name: "Front Runner" });
+    const next = fold([aList({ id: 1, name: "Front", sparks: [spark("white", 1)] })]);
     expect(next[0]?.name).toBe("Front Runner");
     expect(next[0]?.sparks).toEqual([spark("white", 1)]);
+    expect(next[0]?.updated_at).toBe("2026-08-12T00:00:00Z");
   });
 
   it("deletes the list and everything in it, leaving nothing to sweep", async () => {
@@ -275,7 +287,8 @@ describe("writes", () => {
       aList({ id: 1, sparks: [spark("white", 1)] }),
       aList({ id: 2, sparks: [spark("white", 2)] }),
     ];
-    expect(await deleteList(lists, 1)).toEqual([lists[1]]);
+    const fold = await deleteList(1);
+    expect(fold(lists)).toEqual([lists[1]]);
     expect(calls.deleteSparkList).toHaveBeenCalledWith(1);
   });
 
@@ -283,9 +296,27 @@ describe("writes", () => {
     stubApi({});
     // Handed in reversed: the fold must re-sort to the server's id order, so
     // a write can never make a list swap places between reads.
-    const lists = [aList({ id: 2 }), aList({ id: 1 })];
-    const next = await createList(lists, "Medium");
-    expect(next.map((l) => l.id)).toEqual([1, 2, 99]);
+    const fold = await createList("Medium");
+    expect(fold([aList({ id: 2 }), aList({ id: 1 })]).map((l) => l.id)).toEqual([
+      1, 2, 99,
+    ]);
+  });
+
+  it("cannot clobber a flip that lands during the round trip", async () => {
+    // The review round's finding: resolving to an ARRAY adopted a pre-await
+    // snapshot, and adopting it overwrote any optimistic flip that landed
+    // while the write flew. The fold applies to whatever state holds when
+    // the write resolves, which is the caller's adoption pattern verbatim.
+    stubApi({});
+    let state: SparkList[] = [aList({ id: 1 })];
+    const onChange = (u: SparkList[] | ((prev: SparkList[]) => SparkList[])) => {
+      state = typeof u === "function" ? u(state) : u;
+    };
+    const pending = createList("New");
+    onChange((prev) => withMembership(prev, 1, "white", 700, true));
+    onChange(await pending);
+    expect(state.find((l) => l.id === 1)?.sparks).toEqual([spark("white", 700)]);
+    expect(state.map((l) => l.id)).toEqual([1, 99]);
   });
 });
 
@@ -392,6 +423,25 @@ describe("the request behind a flip", () => {
     expect(calls.removeListSpark).toHaveBeenCalledTimes(1);
   });
 
+  it("resolves null, not a rejection, when a newer write supersedes the failure", async () => {
+    // The review round's false toast: a double-click's first write failing
+    // while its second succeeds ends the server exactly where the screen
+    // shows, so the first write's failure must decide nothing — no revert,
+    // no "Couldn't save".
+    let rejectAdd: (reason: unknown) => void = () => {};
+    const calls = stubApi({
+      addListSpark: () => new Promise((_, reject) => { rejectAdd = reject; }),
+    });
+    const first = syncMembership(1, "white", 700, true);
+    const second = syncMembership(1, "white", 700, false);
+    // The PUT issues on a microtask; `rejectAdd` is a no-op until it has.
+    await new Promise((r) => setTimeout(r, 0));
+    rejectAdd(new ApiError(500, "boom"));
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toEqual(aList({ id: 1 }));
+    expect(calls.removeListSpark).toHaveBeenCalledTimes(1);
+  });
+
   it("lets different pills fly in parallel", async () => {
     const resolvers: Array<(value: SparkList) => void> = [];
     const calls = stubApi({
@@ -487,19 +537,20 @@ describe("creating a list around a spark", () => {
     // The two-request shape needed PartialWrite for its half-committed
     // failure; one transaction retired both (issue #69, DECISIONS.md #49).
     const calls = stubApi({});
-    const next = await createListWith([], "Front Runner", "white", 700);
+    const fold = await createListWith("Front Runner", "white", 700);
     expect(calls.createSparkList).toHaveBeenCalledWith("Front Runner", [
       spark("white", 700),
     ]);
     expect(calls.addListSpark).not.toHaveBeenCalled();
+    const next = fold([]);
     expect(next.map((l) => l.id)).toEqual([99]);
     expect(next[0]?.sparks).toEqual([spark("white", 700)]);
   });
 
   it("folds the created list among the caller's, in id order", async () => {
     stubApi({});
-    const existing = [aList({ id: 1, name: "Medium", sparks: [spark("white", 1)] })];
-    const next = await createListWith(existing, "Front Runner", "white", 700);
+    const fold = await createListWith("Front Runner", "white", 700);
+    const next = fold([aList({ id: 1, name: "Medium", sparks: [spark("white", 1)] })]);
     expect(next.map((l) => l.name)).toEqual(["Medium", "Front Runner"]);
     expect(next[0]?.sparks).toEqual([spark("white", 1)]);
   });
@@ -509,8 +560,6 @@ describe("creating a list around a spark", () => {
     // user can correct it, which only works if this rejects rather than
     // swallowing.
     stubApi({ createSparkList: () => Promise.reject(new ApiError(409, "409")) });
-    await expect(
-      createListWith([aList({ id: 1 })], "Front Runner", "white", 700)
-    ).rejects.toThrow();
+    await expect(createListWith("Front Runner", "white", 700)).rejects.toThrow();
   });
 });

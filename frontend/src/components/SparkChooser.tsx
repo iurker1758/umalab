@@ -827,7 +827,9 @@ function ChooserPopout({
   // The AWAITED write — only `New List` takes this path now; membership
   // toggles are optimistic and live in `onToggleList` below (issue #69,
   // DECISIONS.md #49). A created chip needs the server's id, so the create
-  // still holds `busy` for its round trip.
+  // still holds `busy` for its round trip — but it resolves to a FOLD, not
+  // an array: the pills stay clickable while it flies, and an array built
+  // before the round trip would overwrite a flip that landed during it.
   //
   // Failures go to the PAGE toast, not a note inside this popout: dismissing
   // the popout mid-write is one keystroke, and a note that unmounts with its
@@ -837,7 +839,7 @@ function ChooserPopout({
   // Returns whether it wrote, so the new-list field knows to keep the name it
   // was given when the server refused it.
   const write = async (
-    op: () => Promise<SparkList[]>,
+    op: () => Promise<(prev: SparkList[]) => SparkList[]>,
     failure: (error: unknown) => string
   ): Promise<boolean> => {
     setBusy(true);
@@ -884,10 +886,15 @@ function ChooserPopout({
         withMembership(prev, listId, s.kind, s.key, desired)
       );
       void syncMembership(listId, s.kind, s.key, desired).then(
-        (saved) =>
-          sparkLists.onChange((prev) =>
-            withStamp(prev, listId, saved.updated_at)
-          ),
+        (saved) => {
+          // null = superseded by a newer write for this pill, which owns
+          // the outcome — nothing to fold and nothing to report.
+          if (saved !== null) {
+            sparkLists.onChange((prev) =>
+              withStamp(prev, listId, saved.updated_at)
+            );
+          }
+        },
         (error: unknown) => {
           if (error instanceof ListGone) {
             sparkLists.onChange((prev) => prev.filter((l) => l.id !== listId));
@@ -906,7 +913,7 @@ function ChooserPopout({
     // "did it write" and "is the name spent" are the same question.
     onCreateList: (s: ListableSpark, listName: string) =>
       write(
-        () => createListWith(sparkLists.lists, listName, s.kind, s.key),
+        () => createListWith(listName, s.kind, s.key),
         (error) => detailOr(error, "Couldn't make that list — try again.")
       ),
   };

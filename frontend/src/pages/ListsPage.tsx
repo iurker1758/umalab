@@ -155,11 +155,13 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
   );
 
   // The chooser's shared write shape for the AWAITED ops — create, rename,
-  // delete — with the one busy gate. Membership toggles are optimistic and
-  // live in `toggle` below (issue #69, DECISIONS.md #49).
+  // delete — with the one busy gate, each resolving to a FOLD over current
+  // state so a write landing after an optimistic flip cannot overwrite it.
+  // Membership toggles are optimistic and live in `toggle` below (issue
+  // #69, DECISIONS.md #49).
   // Returns whether it wrote, which is what the create field's clear needs.
   const write = async (
-    op: () => Promise<SparkList[]>,
+    op: () => Promise<(prev: SparkList[]) => SparkList[]>,
     failure: (error: unknown) => string
   ): Promise<boolean> => {
     setBusy(true);
@@ -179,7 +181,7 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     if (trimmed === "") return;
     const restore = refocus(control);
     void write(
-      () => createList(lists, trimmed),
+      () => createList(trimmed),
       (e) => detailOr(e, "Couldn't make that list — try again.")
     )
       .then((made) => {
@@ -190,7 +192,7 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
 
   const rename = (id: number, name: string) =>
     void write(
-      () => renameList(lists, id, name),
+      () => renameList(id, name),
       (e) => detailOr(e, "Couldn't rename the list — try again.")
     );
 
@@ -204,7 +206,7 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     // row, and focus falls back to the row's remains or dies quietly (#74).
     const restore = refocus(control);
     void write(
-      () => deleteList(lists, list.id),
+      () => deleteList(list.id),
       () => "Couldn't delete the list — try again."
     ).finally(restore);
   };
@@ -222,7 +224,11 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     const desired = !list.sparks.some((s) => s.kind === kind && s.key === key);
     onChange((prev) => withMembership(prev, id, kind, key, desired));
     void syncMembership(id, kind, key, desired).then(
-      (saved) => onChange((prev) => withStamp(prev, id, saved.updated_at)),
+      (saved) => {
+        // null = superseded by a newer write for this pill, which owns the
+        // outcome — nothing to fold and nothing to report.
+        if (saved !== null) onChange((prev) => withStamp(prev, id, saved.updated_at));
+      },
       (error: unknown) => {
         if (error instanceof ListGone) {
           onChange((prev) => prev.filter((l) => l.id !== id));

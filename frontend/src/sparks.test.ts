@@ -29,6 +29,7 @@ import {
   sortLists,
   syncMembership,
   toggleActive,
+  toggleListSpark,
   union,
   withMembership,
   withStamp,
@@ -303,10 +304,10 @@ describe("writes", () => {
   });
 
   it("cannot clobber a flip that lands during the round trip", async () => {
-    // The review round's finding: resolving to an ARRAY adopted a pre-await
-    // snapshot, and adopting it overwrote any optimistic flip that landed
-    // while the write flew. The fold applies to whatever state holds when
-    // the write resolves, which is the caller's adoption pattern verbatim.
+    // Resolving to an ARRAY adopted a pre-await snapshot, and adopting it
+    // overwrote any optimistic flip that landed while the write flew. The
+    // fold applies to whatever state holds when the write resolves, which
+    // is the caller's adoption pattern verbatim.
     stubApi({});
     let state: SparkList[] = [aList({ id: 1 })];
     const onChange = (u: SparkList[] | ((prev: SparkList[]) => SparkList[])) => {
@@ -424,10 +425,9 @@ describe("the request behind a flip", () => {
   });
 
   it("resolves null, not a rejection, when a newer write supersedes the failure", async () => {
-    // The review round's false toast: a double-click's first write failing
-    // while its second succeeds ends the server exactly where the screen
-    // shows, so the first write's failure must decide nothing — no revert,
-    // no "Couldn't save".
+    // A double-click's first write failing while its second succeeds ends
+    // the server exactly where the screen shows, so the first write's
+    // failure must decide nothing — no revert, no "Couldn't save".
     let rejectAdd: (reason: unknown) => void = () => {};
     const calls = stubApi({
       addListSpark: () => new Promise((_, reject) => { rejectAdd = reject; }),
@@ -475,6 +475,94 @@ describe("the request behind a flip", () => {
     const error = await syncMembership(1, "race", 40, false).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).not.toBeInstanceOf(ListGone);
+  });
+});
+
+describe("the shared optimistic toggle", () => {
+  // Both surfaces hand `toggleListSpark` a setState-shaped onChange; this
+  // harness is that contract with the state held locally.
+  const harness = (initial: SparkList[]) => {
+    let state = initial;
+    const errors: string[] = [];
+    return {
+      get state() {
+        return state;
+      },
+      errors,
+      onChange: (next: SparkList[] | ((prev: SparkList[]) => SparkList[])) => {
+        state = typeof next === "function" ? next(state) : next;
+      },
+      onError: (message: string) => {
+        errors.push(message);
+      },
+    };
+  };
+
+  it("flips before the request settles, then folds only the stamp", async () => {
+    let resolveAdd: (value: SparkList) => void = () => {};
+    stubApi({
+      addListSpark: () => new Promise((resolve) => (resolveAdd = resolve)),
+    });
+    const h = harness([aList({ id: 11 })]);
+    toggleListSpark(h.state, 11, "white", 700, h.onChange, h.onError);
+    expect(h.state[0]?.sparks).toEqual([spark("white", 700)]);
+    // The PUT issues on a microtask; `resolveAdd` is a no-op until it has.
+    await new Promise((r) => setTimeout(r, 0));
+    resolveAdd(
+      aList({ id: 11, name: "renamed elsewhere", updated_at: "2026-08-11T00:00:00Z" })
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state[0]?.sparks).toEqual([spark("white", 700)]);
+    expect(h.state[0]?.updated_at).toBe("2026-08-11T00:00:00Z");
+    expect(h.state[0]?.name).toBe("list 11");
+    expect(h.errors).toEqual([]);
+  });
+
+  it("re-states the opposite membership and toasts on a final failure", async () => {
+    stubApi({
+      addListSpark: () => Promise.reject(new ApiError(500, "boom")),
+    });
+    const h = harness([aList({ id: 12 })]);
+    toggleListSpark(h.state, 12, "white", 700, h.onChange, h.onError);
+    expect(h.state[0]?.sparks).toEqual([spark("white", 700)]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state[0]?.sparks).toEqual([]);
+    expect(h.errors).toEqual(["Couldn't save that list change — try again."]);
+  });
+
+  it("stays quiet when a newer toggle supersedes the failure", async () => {
+    let rejectAdd: (reason: unknown) => void = () => {};
+    stubApi({
+      addListSpark: () => new Promise((_, reject) => (rejectAdd = reject)),
+    });
+    const h = harness([aList({ id: 13 })]);
+    toggleListSpark(h.state, 13, "white", 700, h.onChange, h.onError);
+    toggleListSpark(h.state, 13, "white", 700, h.onChange, h.onError);
+    await new Promise((r) => setTimeout(r, 0));
+    rejectAdd(new ApiError(500, "boom"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state[0]?.sparks).toEqual([]);
+    expect(h.errors).toEqual([]);
+  });
+
+  it("drops the dead row in place on ListGone", async () => {
+    stubApi({
+      addListSpark: () => Promise.reject(new ApiError(404, "no such list")),
+    });
+    const h = harness([aList({ id: 14 }), aList({ id: 15 })]);
+    toggleListSpark(h.state, 14, "white", 700, h.onChange, h.onError);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state.map((l) => l.id)).toEqual([15]);
+    expect(h.errors).toEqual(["That list was deleted somewhere else."]);
+  });
+
+  it("is a no-op for a list the caller no longer holds", () => {
+    const calls = stubApi({});
+    const h = harness([aList({ id: 16 })]);
+    toggleListSpark(h.state, 999, "white", 700, h.onChange, h.onError);
+    expect(h.state).toEqual([aList({ id: 16 })]);
+    expect(calls.addListSpark).not.toHaveBeenCalled();
+    expect(calls.removeListSpark).not.toHaveBeenCalled();
   });
 });
 

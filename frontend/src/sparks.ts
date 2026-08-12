@@ -189,8 +189,8 @@ export const toggleActive = (active: number[], id: number): number[] =>
 // The awaited writes (create, rename, delete) each resolve to a FOLD over
 // the caller's current state, never to an array: an array would be built
 // from the lists as of the call, and adopting it when the write resolves
-// would overwrite any optimistic flip that landed during the round trip —
-// the review round's clobber. Membership toggles are optimistic and split
+// would overwrite any optimistic flip that landed during the round trip.
+// Membership toggles are optimistic and split
 // into a local flip and a background request (issue #69, DECISIONS.md #49).
 //
 // A write folds in the ONE list it touched rather than adopting a fresh
@@ -351,8 +351,8 @@ const inflight = new Map<string, Promise<unknown>>();
  * pill is already queued, this write's failure decides nothing: the newer
  * verb states the end state and reports its own outcome. Rejecting anyway
  * made a double-click toast "Couldn't save" while the server ended exactly
- * where the screen shows (the review round's false-toast finding) — and the
- * revert it triggered was already a no-op, `withMembership` being absolute.
+ * where the screen shows — and the revert it triggered was already a no-op,
+ * `withMembership` being absolute.
  *
  * A 404 with no newer write queued throws `ListGone`; any other final
  * failure passes through for the caller's revert and toast.
@@ -390,6 +390,46 @@ export async function syncMembership(
     }
     throw error;
   }
+}
+
+/**
+ * The whole optimistic toggle, shared by both list surfaces (the chooser's
+ * picker and the Lists page's popout — the second surface DECISIONS.md #49
+ * named as the extraction trigger): flip now against current state, run the
+ * request behind it, fold only the settled `updated_at`. A failure re-states
+ * the opposite membership; a superseded write's `null` folds nothing and
+ * reports nothing; a `ListGone` drops the dead row in place, no reload and
+ * no `epoch` bump. A list the caller's `lists` no longer holds is a no-op —
+ * the `withMembership` rule.
+ */
+export function toggleListSpark(
+  lists: SparkList[],
+  id: number,
+  kind: ListSparkKind,
+  key: number,
+  onChange: (next: SparkListUpdate) => void,
+  onError: (message: string) => void
+): void {
+  const list = listById(lists, id);
+  if (list === undefined) return;
+  const desired = !list.sparks.some((s) => sameSpark(s, kind, key));
+  onChange((prev) => withMembership(prev, id, kind, key, desired));
+  void syncMembership(id, kind, key, desired).then(
+    (saved) => {
+      if (saved !== null) {
+        onChange((prev) => withStamp(prev, id, saved.updated_at));
+      }
+    },
+    (error: unknown) => {
+      if (error instanceof ListGone) {
+        onChange((prev) => prev.filter((l) => l.id !== id));
+        onError("That list was deleted somewhere else.");
+      } else {
+        onChange((prev) => withMembership(prev, id, kind, key, !desired));
+        onError("Couldn't save that list change — try again.");
+      }
+    }
+  );
 }
 
 // ---------- the management page's sort (device-local) ----------

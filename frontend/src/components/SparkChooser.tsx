@@ -22,11 +22,8 @@ import {
   createListWith,
   favorites as unionOf,
   listById,
-  ListGone,
   listsWith,
-  syncMembership,
-  withMembership,
-  withStamp,
+  toggleListSpark,
   type SparkListStore,
 } from "../sparks";
 
@@ -868,46 +865,18 @@ function ChooserPopout({
     onAdd,
     onRemove,
     onOpenPicker: setOpenPicker,
-    // The optimistic path (issue #69, DECISIONS.md #49): the pill flips
-    // before the request leaves, the request chains per pill in the
-    // background, and the server's answer only stamps `updated_at` — the
-    // flip is the record. A failure re-states the opposite membership
-    // against CURRENT state, so it cannot clobber another pill's in-flight
-    // flip; a `ListGone` drops the dead list in place — no reload and no
-    // `epoch` bump, which would remount the popout and discard the user's
-    // search and open picker.
-    onToggleList: (s: ListableSpark, listId: number) => {
-      const list = listById(sparkLists.lists, listId);
-      if (list === undefined) return;
-      const desired = !list.sparks.some(
-        (m) => m.kind === s.kind && m.key === s.key
-      );
-      sparkLists.onChange((prev) =>
-        withMembership(prev, listId, s.kind, s.key, desired)
-      );
-      void syncMembership(listId, s.kind, s.key, desired).then(
-        (saved) => {
-          // null = superseded by a newer write for this pill, which owns
-          // the outcome — nothing to fold and nothing to report.
-          if (saved !== null) {
-            sparkLists.onChange((prev) =>
-              withStamp(prev, listId, saved.updated_at)
-            );
-          }
-        },
-        (error: unknown) => {
-          if (error instanceof ListGone) {
-            sparkLists.onChange((prev) => prev.filter((l) => l.id !== listId));
-            onError("That list was deleted somewhere else.");
-          } else {
-            sparkLists.onChange((prev) =>
-              withMembership(prev, listId, s.kind, s.key, !desired)
-            );
-            onError("Couldn't save that list change — try again.");
-          }
-        }
-      );
-    },
+    // The optimistic path (issue #69, DECISIONS.md #49). Its in-place
+    // ListGone drop matters here: a reload or `epoch` bump would remount
+    // the popout and discard the user's search and open picker.
+    onToggleList: (s: ListableSpark, listId: number) =>
+      toggleListSpark(
+        sparkLists.lists,
+        listId,
+        s.kind,
+        s.key,
+        sparkLists.onChange,
+        onError
+      ),
     // The field keeps the typed name until this resolves true, so a name the
     // server refused can be corrected rather than retyped. One request now:
     // "did it write" and "is the name spent" are the same question.

@@ -2173,13 +2173,13 @@ marked in each.
   (list, kind, key) chain behind each other so the last click's verb
   lands last; different pills stay parallel — and a failure a newer
   same-pill write supersedes resolves `null` instead of rejecting,
-  because the newer verb owns the outcome and a toast for it is false
-  (the review round's double-click finding). Create/rename/delete
+  because the newer verb owns the outcome and a toast for it is
+  false. Create/rename/delete
   stay awaited under `busy` — a created chip needs the server's id —
   but resolve to FOLDS over current state, never arrays: pills stay
   clickable during the round trip, and an array built before it
-  overwrote any flip that landed mid-flight (the round's clobber
-  finding; rename folds name and stamp only, by the same rule).
+  overwrote any flip that landed mid-flight (rename folds name and
+  stamp only, by the same rule).
   Membership pills no longer disable, so #74's focus dance no longer
   applies to them (the e2e asserts focus stays put instead).
 - **Alternatives rejected:** folding full toggle responses — the
@@ -2196,5 +2196,6 @@ marked in each.
   each) — #48's batch verb over the same rows; membership edits
   arriving from another surface mid-session (sync, import) — the
   flip-is-the-record rule then needs a reconciling fetch on a signal,
-  not response folds; a second optimistic surface wanting the
-  chooser's revert wiring — extract it then, not before.
+  not response folds. Both list surfaces share the toggle wiring
+  (`toggleListSpark`), so a fix to the revert or `ListGone` path
+  lands on both.

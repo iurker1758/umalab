@@ -7,15 +7,12 @@ import {
   createList,
   deleteList,
   listById,
-  ListGone,
   loadListSort,
   loadSparkLists,
   renameList,
   saveListSort,
   sortLists,
-  syncMembership,
-  withMembership,
-  withStamp,
+  toggleListSpark,
   type ListSort,
   type SparkListUpdate,
 } from "../sparks";
@@ -211,34 +208,12 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     ).finally(restore);
   };
 
-  // The optimistic path, the chooser's shape (issue #69, DECISIONS.md #49):
-  // flip now against current state, chain the request per pill, fold only
-  // the settled `updated_at`. A failure re-states the opposite membership; a
-  // ListGone drops the row, which closes this popout through the render
-  // guard below. No refocus — the row never disables, so focus never moves.
+  // The optimistic path (issue #69, DECISIONS.md #49). A ListGone drops the
+  // row, which closes this popout through the render guard below. No refocus
+  // — the row never disables, so focus never moves.
   const toggle = (kind: ListSparkKind, key: number) => {
     if (openFor === null) return;
-    const id = openFor;
-    const list = listById(lists, id);
-    if (list === undefined) return;
-    const desired = !list.sparks.some((s) => s.kind === kind && s.key === key);
-    onChange((prev) => withMembership(prev, id, kind, key, desired));
-    void syncMembership(id, kind, key, desired).then(
-      (saved) => {
-        // null = superseded by a newer write for this pill, which owns the
-        // outcome — nothing to fold and nothing to report.
-        if (saved !== null) onChange((prev) => withStamp(prev, id, saved.updated_at));
-      },
-      (error: unknown) => {
-        if (error instanceof ListGone) {
-          onChange((prev) => prev.filter((l) => l.id !== id));
-          onError("That list was deleted somewhere else.");
-        } else {
-          onChange((prev) => withMembership(prev, id, kind, key, !desired));
-          onError("Couldn't save that change — try again.");
-        }
-      }
-    );
+    toggleListSpark(lists, openFor, kind, key, onChange, onError);
   };
 
   const open = openFor === null ? undefined : listById(lists, openFor);

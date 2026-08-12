@@ -610,6 +610,9 @@ try {
     const rosterCaption = () => page.locator(".pill-dock .caption-float");
     const rosterBadge = () =>
       page.locator(".pill-dock .filter-float", { hasText: "Filters" }).locator(".filter-count");
+    // Null when the badge isn't rendered — textContent() alone would auto-wait
+    // 30s and throw, which inside until() aborts the run instead of retrying.
+    const badgeText = () => rosterBadge().textContent({ timeout: 250 }).catch(() => null);
     const openRosterFilters = async () => {
       await page.locator(".pill-dock .filter-float", { hasText: "Filters" }).click();
       await page.waitForSelector(".filter-panel");
@@ -625,7 +628,7 @@ try {
       (await rosterCaption().textContent()) === "Score" &&
       (await page.locator(".grid .card .card-score").count()) === roster.length);
 
-    // Pink joined the sorts in PR #98. Ranks are read off each card's strip
+    // Ranks are read off each card's strip
     // (its pink group titles "<name> ★<stars>") and compared against an
     // independent reimplementation over the API roster: aptitude in the
     // game's group order, star within the aptitude, no pink before 1★ Turf.
@@ -664,9 +667,10 @@ try {
     check("the caption pill cycles to Sparks and the strips replace the scores",
       (await rosterCaption().textContent()) === "Sparks" &&
       (await page.locator(".grid .card .spark-strip").count()) === roster.length);
+    const pinkRanks = JSON.stringify(await domRanks());
     check("Pink orders the grid by the veteran's own pink",
-      JSON.stringify(await domRanks()) === JSON.stringify(expectedRanks),
-      JSON.stringify(await domRanks()));
+      pinkRanks === JSON.stringify(expectedRanks),
+      pinkRanks);
     await sortDir().click();
     check("the direction toggle reverses it",
       (await sortDir().getAttribute("aria-label")) === "Sort Descending" &&
@@ -701,25 +705,25 @@ try {
       sort: await rosterSort().inputValue(),
       dir: await sortDir().getAttribute("aria-label"),
       caption: await rosterCaption().textContent(),
-      badge: await rosterBadge().textContent(),
+      badge: await badgeText(),
     });
     const dockState = JSON.stringify({
       sort: "pink_spark", dir: "Sort Descending", caption: "Sparks", badge: "1",
     });
     await page.goto(BASE);
     await page.waitForSelector(".pill-dock");
+    const afterReload = JSON.stringify(await dockReads());
     check("a reload keeps the sort, its direction, the caption, and the filter",
-      JSON.stringify(await dockReads()) === dockState,
-      JSON.stringify(await dockReads()));
+      afterReload === dockState, afterReload);
     // The route round-trip is what actually re-reads storage for the sort
     // and caption — RosterPage remounts — while the filters ride the shell.
     await page.locator(".nav a", { hasText: "Lists" }).click();
     await page.waitForSelector(".lists-page");
     await page.locator(".nav a", { hasText: "Roster" }).click();
     await page.waitForSelector(".pill-dock");
+    const afterRoundTrip = JSON.stringify(await dockReads());
     check("so does a route round-trip through Lists",
-      JSON.stringify(await dockReads()) === dockState,
-      JSON.stringify(await dockReads()));
+      afterRoundTrip === dockState, afterRoundTrip);
 
     // Reconciliation: a filter whose target left in a full-replace import is
     // cleared on load, not masked — otherwise the page opens empty with
@@ -739,9 +743,9 @@ try {
     await page.goto(BASE);
     await page.waitForSelector(".pill-dock");
     check("filters whose targets aren't in the roster are reconciled away on load",
-      (await until(async () => (await rosterBadge().textContent()) === "1")) &&
+      (await until(async () => (await badgeText()) === "1")) &&
       (await page.locator(".grid .card").count()) === turfCount,
-      await rosterBadge().textContent().catch(() => "(no badge)"));
+      (await badgeText()) ?? "(no badge)");
     check("and the pruned set is what's persisted back",
       await until(() =>
         page.evaluate(([card]) => {

@@ -65,15 +65,20 @@ def _missing_list(exc: IntegrityError) -> bool:
     """Whether this violation is the member table's list FK: the list was
     deleted between `_owned` and the insert — another device, mid-request.
 
-    Matched structurally, NOT by constraint name like `_duplicate_name`
-    below: the migration names this FK, but a create_all-built schema (the
-    whole DB test suite) gets Postgres's default name, so a name match
-    would classify in production and silently stop in every test.
+    Classified by the error's structured fields, which survive both ways a
+    text match here fails: the constraint's NAME differs between
+    migration-built and create_all-built schemas (the whole DB test
+    suite), and the message TEXT follows the server's lc_messages locale.
+    sqlstate 23503 is foreign_key_violation; the table field pins it to
+    this FK, the only one on the member table. (`_duplicate_name` below
+    can keep matching its index by name — the model names it explicitly,
+    so both schema paths agree, and names are never localized.)
     """
-    message = str(getattr(exc, "orig", exc))
+    orig = getattr(exc, "orig", None)
+    cause = getattr(orig, "__cause__", None)
     return (
-        "violates foreign key constraint" in message
-        and "spark_list_members" in message
+        getattr(orig, "sqlstate", None) == "23503"
+        and getattr(cause, "table_name", None) == "spark_list_members"
     )
 
 

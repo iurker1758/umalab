@@ -341,12 +341,17 @@ async def test_membership_writes_to_a_missing_list_are_404s(
 
 
 def _delete_after_owned(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Interleave the cross-device delete at the only seam the race has:
-    after `_owned` sees the list, before the member write runs. The routes
-    cannot close the window, so they must classify what it produces."""
+    """Interleave the cross-device delete after `_owned` sees the list,
+    before the member write runs. The routes cannot close the window, so
+    they must classify what it produces.
+
+    ONE-SHOT: the shim restores the real `_owned` as it fires, so the
+    answer path's own re-read afterwards goes through the genuine lookup
+    rather than deleting again."""
     real = sparks._owned  # pyright: ignore[reportPrivateUsage]
 
     async def owned_then_deleted(session: Any, user: User, list_id: int):
+        monkeypatch.setattr(sparks, "_owned", real)
         row = await real(session, user, list_id)
         await session.execute(
             text("DELETE FROM spark_lists WHERE id = :i").bindparams(i=list_id)

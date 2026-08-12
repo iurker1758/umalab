@@ -370,12 +370,14 @@ export const api = {
     }),
   sparkLists: () => fetch("/api/spark-lists").then((r) => json<SparkList[]>(r)),
   // 409 if the name is taken — surfaced rather than swallowed, because the
-  // picker's `New List` has a field the user can correct.
-  createSparkList: (name: string) =>
+  // picker's `New List` has a field the user can correct. `sparks` seeds the
+  // membership in the same transaction (issue #69): a refused create leaves
+  // no half-made list behind.
+  createSparkList: (name: string, sparks: SparkRef[] = []) =>
     fetch("/api/spark-lists", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, sparks }),
     }).then((r) => json<SparkList>(r)),
   // Rename. Membership never travels through this — see the verbs below.
   updateSparkList: (id: number, body: SparkListPatch) =>

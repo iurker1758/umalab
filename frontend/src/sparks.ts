@@ -29,6 +29,12 @@ import { writeStore } from "./storage";
 
 export type { SparkList, SparkRef } from "./api";
 
+/** What `onChange` accepts — `setState`'s two shapes, for the same reason
+ *  React has both: the optimistic paths must update against current state. */
+export type SparkListUpdate =
+  | SparkList[]
+  | ((prev: SparkList[]) => SparkList[]);
+
 export const ACTIVE_LISTS_STORE = "umalab.sparkLists.active";
 
 // Everything a consumer needs to render and write the lists, as ONE prop —
@@ -48,9 +54,12 @@ export type SparkListStore = {
   failed: boolean;
   // Empty means "everything", not "nothing" — see `activeSparks`.
   active: number[];
-  // Non-optimistic: the mutators return what the server ended up with, so a
-  // checkbox only moves once the row says so.
-  onChange: (next: SparkList[]) => void;
+  // Takes React's functional form because membership toggles are optimistic
+  // (issue #69, DECISIONS.md #49): a flip or revert applies against whatever
+  // state holds when it lands, so it cannot clobber another pill's in-flight
+  // flip. The awaited writes still hand back plain arrays — what the server
+  // ended up with.
+  onChange: (next: SparkListUpdate) => void;
   // A toggle, not a value setter: two presses resolved against one render
   // would each compute the next selection from the same stale array and the
   // later write would drop the earlier press — the onSetFactors rule.
@@ -178,9 +187,10 @@ export const toggleActive = (active: number[], id: number): number[] =>
   active.includes(id) ? active.filter((n) => n !== id) : [...active, id];
 
 // ---------- writes ----------
-// Each returns the new array of lists for the caller to put back in state.
-// The server is the authority on order and membership, so a returned list
-// replaces the local one rather than being merged into it.
+// The awaited writes (create, rename, delete) each return the new array of
+// lists for the caller to put back in state; membership toggles are
+// optimistic and split into a local flip and a background request (issue
+// #69, DECISIONS.md #49).
 //
 // A write folds in the ONE list it touched rather than adopting a fresh
 // fetch: the chooser freezes its Favorites membership at open and filters the
@@ -202,11 +212,11 @@ const replacing = (lists: SparkList[], saved: SparkList): SparkList[] =>
 export const loadSparkLists = (): Promise<SparkList[]> => api.sparkLists();
 
 /**
- * Create an empty list — creating and filling are separate requests, and a
- * list with nothing in it is a normal state.
+ * Create an empty list — the Lists page's bare create. A list with nothing
+ * in it is a normal state.
  *
  * Rejects with a 409 `ApiError` if the name is taken. Surfaced rather than
- * swallowed: the picker has a field the user can correct.
+ * swallowed: the create bar has a field the user can correct.
  */
 export async function createList(
   lists: SparkList[],
@@ -216,41 +226,11 @@ export async function createList(
 }
 
 /**
- * A write whose first half committed and whose second half did not, carrying
- * the state the caller must adopt anyway.
- *
- * Thrown rather than returned so a caller cannot mistake it for success, and
- * carrying `lists` because throwing alone would strand a row that really
- * exists: the caller has to both show the error AND fold in what landed.
- */
-export class PartialWrite extends Error {
-  constructor(
-    readonly lists: SparkList[],
-    readonly reason: unknown
-  ) {
-    super("the list was created but its membership was not saved");
-    this.name = "PartialWrite";
-  }
-}
-
-/**
- * Create a list and put this spark in it — the picker's `New List`, always
- * reached while starring something.
- *
- * **If the create succeeds and the fill fails, the created list is still
- * handed back**, as `PartialWrite.lists`. Rejecting outright would discard a
- * row the server committed: it would appear nowhere, so there would be no
- * pill to retry on, and re-typing the same name would 409 forever against a
- * list the user cannot see. Surfacing it empty means the next click on its
- * pill finishes the job.
- *
- * `PartialWrite.lists` is built from the `lists` this was CALLED with, so
- * adopting it overwrites any write that resolved in between — the price of
- * pure functions over a caller-held list, shared by every mutator here. It
- * cannot fire from the chooser, where `busy` disables the popout for the
- * whole of a write. Stated rather than guarded: a guard would have to be a
- * merge, and a merge needs an identity for "the newest version of a list"
- * that the server does not give us.
+ * Create a list holding this spark — the picker's `New List`, always reached
+ * while starring something. The membership rides the create in one request
+ * (issue #69, DECISIONS.md #49), so a refused name leaves nothing behind:
+ * there is no half-made list to adopt, which is what retired the
+ * `PartialWrite` error the two-request shape needed.
  */
 export async function createListWith(
   lists: SparkList[],
@@ -258,13 +238,7 @@ export async function createListWith(
   kind: ListSparkKind,
   key: number
 ): Promise<SparkList[]> {
-  const created = await api.createSparkList(name);
-  const withList = replacing(lists, created);
-  try {
-    return replacing(withList, await api.addListSpark(created.id, kind, key));
-  } catch (reason) {
-    throw new PartialWrite(withList, reason);
-  }
+  return replacing(lists, await api.createSparkList(name, [{ kind, key }]));
 }
 
 export async function renameList(
@@ -289,48 +263,105 @@ export async function deleteList(
 
 /**
  * The list this write named no longer exists — deleted on another device or
- * in another tab. Mirrors `PartialWrite`: thrown so a caller cannot mistake
- * it for success, and carrying the state it must adopt anyway — the given
- * lists with the dead row dropped, so the pill disappears in place with no
- * reload, no `epoch` bump and no remount (issue #66's absorbed #73; the two
- * reverted corrective-reload shapes are recorded there).
+ * in another tab. A marker, not a payload: the caller drops the dead row
+ * from its CURRENT state with a functional update, so the pill disappears
+ * in place with no reload, no `epoch` bump and no remount (issue #66's
+ * absorbed #73; the two reverted corrective-reload shapes are recorded
+ * there).
  */
 export class ListGone extends Error {
-  constructor(readonly lists: SparkList[]) {
+  constructor() {
     super("that list was deleted elsewhere");
     this.name = "ListGone";
   }
 }
 
 /**
- * One checkbox in the picker: add or remove a single membership, matching
- * the per-spark routes (issue #66, DECISIONS.md #48). Which verb is computed
- * from the caller's copy, so the worst a stale copy can do is flip one spark
- * the wrong way — and the returned list is the server's current state, so
- * the display converges on what other devices have done either way.
- *
- * A list the caller does not have is a no-op rather than a create: the id
- * came from a control rendered off these same lists, so its absence means
- * the list was deleted, and re-creating it would resurrect what another
- * device just removed. A list the SERVER no longer has throws `ListGone`.
+ * One membership, applied locally — the optimistic flip and its revert are
+ * this same function with `present` inverted, so a revert states the world
+ * it wants instead of undoing a snapshot. A list the caller does not have
+ * is a no-op rather than a create: the id came from a control rendered off
+ * these same lists, so its absence means the list was deleted, and
+ * re-creating it would resurrect what another device just removed. Adds
+ * append, matching where the server's member-id order puts a fresh row.
  */
-export async function toggleMembership(
+export const withMembership = (
   lists: SparkList[],
   id: number,
   kind: ListSparkKind,
-  key: number
-): Promise<SparkList[]> {
-  const list = listById(lists, id);
-  if (list === undefined) return lists;
-  const held = list.sparks.some((s) => sameSpark(s, kind, key));
+  key: number,
+  present: boolean
+): SparkList[] =>
+  lists.map((list) => {
+    if (list.id !== id) return list;
+    const held = list.sparks.some((s) => sameSpark(s, kind, key));
+    if (held === present) return list;
+    return {
+      ...list,
+      sparks: present
+        ? [...list.sparks, { kind, key }]
+        : list.sparks.filter((s) => !sameSpark(s, kind, key)),
+    };
+  });
+
+/**
+ * Fold a settled write's `updated_at`, keeping the later stamp (ISO strings
+ * compare, and max is immune to responses landing out of order). The rest
+ * of the response is deliberately NOT folded: with concurrent pills in
+ * flight each response is the whole list as of THAT write, so adopting one
+ * could clobber a newer flip or resurrect an older one. The flip is the
+ * record; the stamp keeps the Lists page's Last Edited sort honest.
+ */
+export const withStamp = (
+  lists: SparkList[],
+  id: number,
+  updated_at: string
+): SparkList[] =>
+  lists.map((list) =>
+    list.id === id && updated_at > list.updated_at
+      ? { ...list, updated_at }
+      : list
+  );
+
+// In-flight membership requests by (list, spark) — bookkeeping, not a copy
+// of server state, so the no-cache rule in the header holds.
+const inflight = new Map<string, Promise<unknown>>();
+
+/**
+ * The request behind an optimistic flip: PUT or DELETE on the member path
+ * per `desired` (issue #66's absolute, idempotent verbs). Requests for the
+ * SAME (list, spark) chain behind each other — the verbs state end states,
+ * so the last click's request lands last and the server converges to the
+ * screen — while different pills stay parallel.
+ *
+ * A 404 throws `ListGone`; anything else passes through for the caller's
+ * revert and toast.
+ */
+export async function syncMembership(
+  id: number,
+  kind: ListSparkKind,
+  key: number,
+  desired: boolean
+): Promise<SparkList> {
+  const pill = `${id}|${kind}|${key}`;
+  const issue = () =>
+    desired ? api.addListSpark(id, kind, key) : api.removeListSpark(id, kind, key);
+  // Chained on settlement, not success: a failed predecessor must not wedge
+  // the pill, and this request's outcome is its own.
+  const run = (inflight.get(pill) ?? Promise.resolve()).then(issue, issue);
+  const settled = run.then(
+    () => undefined,
+    () => undefined
+  );
+  inflight.set(pill, settled);
+  void settled.then(() => {
+    if (inflight.get(pill) === settled) inflight.delete(pill);
+  });
   try {
-    const saved = held
-      ? await api.removeListSpark(id, kind, key)
-      : await api.addListSpark(id, kind, key);
-    return replacing(lists, saved);
+    return await run;
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
-      throw new ListGone(lists.filter((l) => l.id !== id));
+      throw new ListGone();
     }
     throw error;
   }

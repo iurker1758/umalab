@@ -10,12 +10,14 @@ import {
   ListGone,
   loadListSort,
   loadSparkLists,
-  PartialWrite,
   renameList,
   saveListSort,
   sortLists,
-  toggleMembership,
+  syncMembership,
+  withMembership,
+  withStamp,
   type ListSort,
+  type SparkListUpdate,
 } from "../sparks";
 
 // The management page (issue #70, DECISIONS.md #44): every list with its
@@ -105,9 +107,11 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
   const [openFor, setOpenFor] = useState<number | null>(null);
 
   // The Designer's write-vs-fetch guard, unchanged: a fetch already in
-  // flight when a write lands is stale by definition.
+  // flight when a write lands is stale by definition. An optimistic flip
+  // and its revert both count — either way the rows on screen are newer
+  // than what that fetch will answer with.
   const writes = useRef(0);
-  const onChange = useCallback((next: SparkList[]) => {
+  const onChange = useCallback((next: SparkListUpdate) => {
     writes.current += 1;
     setLists(next);
   }, []);
@@ -150,10 +154,9 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     [refs]
   );
 
-  // The chooser's shared write shape: non-optimistic, one busy gate, a
-  // PartialWrite's half-landed state adopted before the error is shown, a
-  // ListGone's corrected state adopted so a list deleted on another device
-  // drops from the rows in place (issue #66's absorbed #73).
+  // The chooser's shared write shape for the AWAITED ops — create, rename,
+  // delete — with the one busy gate. Membership toggles are optimistic and
+  // live in `toggle` below (issue #69, DECISIONS.md #49).
   // Returns whether it wrote, which is what the create field's clear needs.
   const write = async (
     op: () => Promise<SparkList[]>,
@@ -164,8 +167,6 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
       onChange(await op());
       return true;
     } catch (error) {
-      if (error instanceof PartialWrite) onChange(error.lists);
-      if (error instanceof ListGone) onChange(error.lists);
       onError(failure(error));
       return false;
     } finally {
@@ -208,16 +209,30 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
     ).finally(restore);
   };
 
-  const toggle = (kind: ListSparkKind, key: number, control: HTMLElement | null) => {
+  // The optimistic path, the chooser's shape (issue #69, DECISIONS.md #49):
+  // flip now against current state, chain the request per pill, fold only
+  // the settled `updated_at`. A failure re-states the opposite membership; a
+  // ListGone drops the row, which closes this popout through the render
+  // guard below. No refocus — the row never disables, so focus never moves.
+  const toggle = (kind: ListSparkKind, key: number) => {
     if (openFor === null) return;
-    const restore = refocus(control);
-    void write(
-      () => toggleMembership(lists, openFor, kind, key),
-      (e) =>
-        e instanceof ListGone
-          ? "That list was deleted somewhere else."
-          : detailOr(e, "Couldn't save that change — try again.")
-    ).finally(restore);
+    const id = openFor;
+    const list = listById(lists, id);
+    if (list === undefined) return;
+    const desired = !list.sparks.some((s) => s.kind === kind && s.key === key);
+    onChange((prev) => withMembership(prev, id, kind, key, desired));
+    void syncMembership(id, kind, key, desired).then(
+      (saved) => onChange((prev) => withStamp(prev, id, saved.updated_at)),
+      (error: unknown) => {
+        if (error instanceof ListGone) {
+          onChange((prev) => prev.filter((l) => l.id !== id));
+          onError("That list was deleted somewhere else.");
+        } else {
+          onChange((prev) => withMembership(prev, id, kind, key, !desired));
+          onError("Couldn't save that change — try again.");
+        }
+      }
+    );
   };
 
   const open = openFor === null ? undefined : listById(lists, openFor);
@@ -340,7 +355,6 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
           key={`${open.id}:${epoch}`}
           list={open}
           refs={refs}
-          busy={busy}
           onToggle={toggle}
           onClose={() => setOpenFor(null)}
         />

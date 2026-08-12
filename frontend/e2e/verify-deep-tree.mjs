@@ -1674,24 +1674,73 @@ try {
         (await page.locator(`.spark-fav[data-spark="${favSel}"]`)
           .getAttribute("aria-label")) ?? ""));
     // The pill is the membership editor, so one click takes it back out —
-    // without deleting the list, which is a different act.
+    // without deleting the list, which is a different act. The route is held
+    // open while the next two checks read, because locally the server can
+    // answer faster than the first read — the hold is what makes "before the
+    // write lands" a real observation rather than a race it happens to win.
+    const memberRoute = `**/api/spark-lists/${created.id}/sparks/**`;
+    let releaseRemove;
+    const removeHeld = new Promise((resolve) => { releaseRemove = resolve; });
+    // The handler signals when it has actually handled the request:
+    // unrouting while it still awaits makes Playwright auto-continue the
+    // pending request, and the resumed handler then double-handles it —
+    // an uncaught "Route is already handled" that kills the run before
+    // cleanup.
+    let removeHandled;
+    const removeDone = new Promise((resolve) => { removeHandled = resolve; });
+    await page.route(memberRoute, async (route) => {
+      await removeHeld;
+      await route.continue();
+      removeHandled();
+    });
     await ourPill.click();
+    // The flip is the record (issue #69, DECISIONS.md #49): the pill reads
+    // removed the moment it is clicked, not once the server says so.
+    check("the pill flips before the write lands (optimistic, issue #69)",
+      (await ourPill.getAttribute("aria-pressed")) === "false");
+    // #74 under optimism: the pill never disables, so focus has nothing to
+    // lose — it stays put, where the old shape had to hand it back after
+    // the mid-write disable released.
+    check("and focus never leaves the pill (#74, no disable to survive)",
+      await page.evaluate(() =>
+        document.activeElement !== null &&
+        document.activeElement.classList.contains("spark-list-pill")));
+    releaseRemove();
+    await removeDone;
+    await page.unroute(memberRoute);
     check("and the pill takes it out again, leaving the list itself",
       await until(async () => {
         const list = await ourList();
         return list !== undefined && list.sparks.length === 0;
       }));
-    // The #74 disable variant: the write disables the pill mid-flight, a
-    // disabled element cannot hold focus, and the browser drops it to
-    // <body>. Once the write lands and the pill re-enables, focus must be
-    // back on it — captured in the click handler, not in an effect
-    // observing `busy`, which runs after the disable commits and was the
-    // reverted no-op.
-    check("the write hands focus back to the pill (#74's disable variant)",
-      await until(async () =>
-        page.evaluate(() =>
-          document.activeElement !== null &&
-          document.activeElement.classList.contains("spark-list-pill"))));
+    // A write that fails must take the flip back: the chip already moved at
+    // the click, so the revert plus the page toast is what tells the user
+    // the list did NOT change (issue #69's failure design).
+    await breaking(async () => {
+      let releaseFail;
+      const failHeld = new Promise((resolve) => { releaseFail = resolve; });
+      let failHandled;
+      const failDone = new Promise((resolve) => { failHandled = resolve; });
+      await page.route(memberRoute, async (route) => {
+        await failHeld;
+        await route.abort();
+        failHandled();
+      });
+      await ourPill.click();
+      check("a doomed flip still shows first",
+        (await ourPill.getAttribute("aria-pressed")) === "true");
+      releaseFail();
+      check("and reverts when its write fails",
+        await until(async () =>
+          (await ourPill.getAttribute("aria-pressed")) === "false"));
+      check("and the page toast says so",
+        ((await page.locator("p.error").textContent().catch(() => "")) ?? "")
+          .includes("Couldn't save that list change"));
+      await failDone;
+      await page.unroute(memberRoute);
+      // Dismissed by click, so the later no-error sweeps read a clean page.
+      if (await page.locator("p.error").count()) await page.locator("p.error").click();
+    });
     // Put it back, so the Favorites assertions below have something to show.
     await ourPill.click();
     await until(async () => (await ourList())?.sparks.length === 1);
@@ -3526,7 +3575,7 @@ try {
   await mgmtToggle.click();
   const mgmtSparks = async () =>
     (await getJson("/api/spark-lists")).find((l) => l.id === mgmtRowA.id)?.sparks ?? [];
-  check("a toggle writes the membership, and the row lights when it lands",
+  check("a toggle writes the membership, and the row lights",
     (await until(async () => (await mgmtSparks()).length === 1)) &&
     (await until(async () => (await mgmtToggle.getAttribute("aria-pressed")) === "true")));
   await mgmtToggle.click();

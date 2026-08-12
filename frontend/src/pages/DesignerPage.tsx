@@ -29,6 +29,7 @@ import {
   saveActiveLists,
   toggleActive,
   type SparkListStore,
+  type SparkListUpdate,
 } from "../sparks";
 import { FocusPanel } from "../components/FocusPanel";
 import { CopyIcon, TrashIcon } from "../components/icons";
@@ -174,16 +175,17 @@ export function DesignerPage({
     []
   );
   // How many writes have come back from the chooser. A fetch already in flight
-  // when one lands is stale BY DEFINITION — the server handed the newer list to
-  // the write as its response — and applying the older one would empty a star
-  // the user just filled while the row still existed server-side.
+  // when one lands is stale BY DEFINITION — the rows on screen are newer than
+  // what it will answer with, whether the write was an awaited create or an
+  // optimistic flip — and applying the older one would empty a star the user
+  // just filled while the row still existed server-side.
   //
   // Not reachable today: during the mount fetch the requests settle together,
   // so the popout has no rows to star, and during a retry `failed` disables
   // every ★. Both are incidental to how those two paths happen to be arranged,
   // so the invariant holds here rather than by accident.
   const sparkListWrites = useRef(0);
-  const onSparkListsChange = useCallback((next: SparkList[]) => {
+  const onSparkListsChange = useCallback((next: SparkListUpdate) => {
     sparkListWrites.current += 1;
     setSparkLists(next);
   }, []);

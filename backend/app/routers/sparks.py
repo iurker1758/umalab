@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
-from sqlalchemy import CursorResult, Result, delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,11 +61,20 @@ _NAME_INDEX = "uq_spark_list_owner_lower_name"
 _Key = Annotated[int, Path(ge=1, le=2_147_483_647)]
 
 
-def _changed(result: Result[Any]) -> bool:
-    """Whether this DML statement touched a row. `session.execute` is typed
-    as the base Result, which hides `rowcount`; DML always comes back as a
-    CursorResult, which carries it."""
-    return cast(CursorResult[Any], result).rowcount > 0
+def _missing_list(exc: IntegrityError) -> bool:
+    """Whether this violation is the member table's list FK: the list was
+    deleted between `_owned` and the insert — another device, mid-request.
+
+    Matched structurally, NOT by constraint name like `_duplicate_name`
+    below: the migration names this FK, but a create_all-built schema (the
+    whole DB test suite) gets Postgres's default name, so a name match
+    would classify in production and silently stop in every test.
+    """
+    message = str(getattr(exc, "orig", exc))
+    return (
+        "violates foreign key constraint" in message
+        and "spark_list_members" in message
+    )
 
 
 def _duplicate_name(exc: IntegrityError) -> bool:
@@ -120,14 +129,21 @@ def _out(row: SparkList, members: Sequence[SparkListMember]) -> SparkListOut:
     )
 
 
-async def _touched(session: AsyncSession, row: SparkList) -> SparkListOut:
-    """Commit a membership write, bump nothing further, and answer with the
-    list's current state — the response every membership verb shares, so a
-    toggle folds in whatever other devices have done in the meantime."""
+async def _touched(session: AsyncSession, user: User, list_id: int) -> SparkListOut:
+    """Commit a membership write and answer with the list's current state —
+    the response every membership verb shares, so a toggle folds in whatever
+    other devices have done in the meantime.
+
+    Re-SELECTED rather than refreshed: a list deleted elsewhere while this
+    request was in flight leaves nothing to refresh (an unhandled 500),
+    while a fresh read classifies it as the 404 the client already drops
+    the list on — gone is gone, whether it went before or just after the
+    write landed.
+    """
     await session.commit()
-    # `updated_at` may be expired by the commit; reading it without this
-    # refresh lazy-loads outside the async context and 500s.
-    await session.refresh(row)
+    row = await _owned(session, user, list_id)
+    if row is None:
+        raise HTTPException(404, "no such list")
     return _out(row, await _members_of(session, row.id))
 
 
@@ -266,12 +282,23 @@ async def add_list_spark(
     row = await _owned(session, user, list_id)
     if row is None:
         raise HTTPException(404, "no such list")
-    result = await session.execute(
-        pg_insert(SparkListMember)
-        .values(list_id=row.id, kind=kind, key=key)
-        .on_conflict_do_nothing(index_elements=["list_id", "kind", "key"])
-    )
-    if _changed(result):
+    try:
+        result = await session.execute(
+            pg_insert(SparkListMember)
+            .values(list_id=row.id, kind=kind, key=key)
+            .on_conflict_do_nothing(index_elements=["list_id", "kind", "key"])
+        )
+    except IntegrityError as exc:
+        # The list vanished between `_owned` and this insert — deleted on
+        # another device mid-request. The same 404 as never-existed, which
+        # is what lets the client drop the list in place.
+        await session.rollback()
+        if not _missing_list(exc):
+            raise
+        raise HTTPException(404, "no such list") from None
+    # DML executes return CursorResult at runtime; the session.execute()
+    # stubs only promise Result, hence the cast (the roster bulk-tag idiom).
+    if cast("CursorResult[Any]", result).rowcount:
         # Member writes don't touch this row, and the model's `onupdate`
         # only fires on an ORM flush of the row itself — bumped by hand so
         # the management page's "Last Edited" sort stays honest.
@@ -280,7 +307,7 @@ async def add_list_spark(
             .where(SparkList.id == row.id)
             .values(updated_at=func.now())
         )
-    return await _touched(session, row)
+    return await _touched(session, user, list_id)
 
 
 @router.delete(
@@ -309,13 +336,13 @@ async def remove_list_spark(
             SparkListMember.key == key,
         )
     )
-    if _changed(result):
+    if cast("CursorResult[Any]", result).rowcount:
         await session.execute(
             update(SparkList)
             .where(SparkList.id == row.id)
             .values(updated_at=func.now())
         )
-    return await _touched(session, row)
+    return await _touched(session, user, list_id)
 
 
 @router.delete("/spark-lists/{list_id}", status_code=204)

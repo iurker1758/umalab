@@ -21,6 +21,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.models import User
+from app.routers import sparks
 from app.schemas import MAX_LISTS_PER_OWNER
 
 LISTS = "/api/spark-lists"
@@ -337,6 +338,52 @@ async def test_membership_writes_to_a_missing_list_are_404s(
         assert (
             await http.delete(f"{LISTS}/987654/sparks/white/10")
         ).status_code == 404
+
+
+def _delete_after_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Interleave the cross-device delete at the only seam the race has:
+    after `_owned` sees the list, before the member write runs. The routes
+    cannot close the window, so they must classify what it produces."""
+    real = sparks._owned  # pyright: ignore[reportPrivateUsage]
+
+    async def owned_then_deleted(session: Any, user: User, list_id: int):
+        row = await real(session, user, list_id)
+        await session.execute(
+            text("DELETE FROM spark_lists WHERE id = :i").bindparams(i=list_id)
+        )
+        return row
+
+    monkeypatch.setattr(sparks, "_owned", owned_then_deleted)
+
+
+async def test_a_list_deleted_mid_add_is_a_404_not_a_500(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
+):
+    """The insert hits the member FK once the list is gone, and unhandled
+    that IntegrityError was a 500 — which the client shows as a transient
+    failure instead of dropping the dead list. Classified structurally, not
+    by constraint name: a create_all-built schema (this suite) names the FK
+    differently than the migration does, so a name match would pass in
+    production and silently stop classifying here."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    _delete_after_owned(monkeypatch)
+    assert (await add(client, a, list_id, "white", 10)).status_code == 404
+
+
+async def test_a_list_deleted_mid_remove_is_a_404_not_a_500(
+    client: Any, users: list[User], monkeypatch: pytest.MonkeyPatch
+):
+    """The same race through the other verb fails differently unfixed: the
+    member DELETE matches nothing (the cascade beat it), and the answer then
+    refreshed a row that no longer existed — an unhandled
+    InvalidRequestError. The answer re-selects instead, and gone is the same
+    404 whether the list went before or just after the write."""
+    a, _ = users
+    list_id = await a_list(client, a)
+    await add(client, a, list_id, "white", 10)
+    _delete_after_owned(monkeypatch)
+    assert (await remove(client, a, list_id, "white", 10)).status_code == 404
 
 
 async def test_concurrent_adds_to_one_list_all_land(

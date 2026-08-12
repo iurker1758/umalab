@@ -31,7 +31,8 @@ several:
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
-  (the Lists filter), 44 (the Lists page), 48 (membership as rows)
+  (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
+  (one-shot create + optimistic toggles)
 - **Multi-user & auth:** 32
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
@@ -2146,3 +2147,57 @@ marked in each.
   round-trip audit) — a batch verb over the same rows, never the
   array PATCH back; a real want for hand-ordered members — serial-id
   order stops sufficing and a position column returns by migration.
+
+## 49. One-shot create, and the flip is the record
+
+- **Requirements:** issue #69's two deliberate costs, revisited ahead
+  of the tunnel deployment where a round trip stops being free: the
+  picker's `New List` was a POST plus a member PUT (a failure between
+  them is what `PartialWrite` existed to carry), and every membership
+  toggle awaited the server before the chip moved — 40–50 ms locally,
+  a plausible 100–400 ms over the tunnel. This reverses the app-wide
+  non-optimistic rule #37 set and #48 upheld, in writing, for
+  membership toggles only.
+- **Choice:** `SparkListCreate` grows `sparks: list[SparkRef]`
+  (deduped first-seen, the idempotent-PUT answer), inserted in body
+  order in the create's own transaction — a refused name or the cap
+  leaves nothing behind, which retires `PartialWrite` outright.
+  Toggles flip locally first: `withMembership` states an absolute end
+  state against the caller's CURRENT lists (`onChange` accepts
+  React's functional form), the request runs behind it, and a final
+  failure re-states the last server-acknowledged membership (the
+  flip's opposite when the chain is one write; a chain of failures
+  breaks that equivalence, since superseded failures revert nothing)
+  — never a snapshot, so concurrent pills cannot clobber each other. A settled response folds ONLY
+  `updated_at` (later stamp wins): each response is the whole list as
+  of that write, and folding it could resurrect an older membership
+  when responses land out of order. Requests for the same
+  (list, kind, key) chain behind each other so the last click's verb
+  lands last; different pills stay parallel — and a failure a newer
+  same-pill write supersedes resolves `null` instead of rejecting,
+  because the newer verb owns the outcome and a toast for it is
+  false. Create/rename/delete
+  stay awaited under `busy` — a created chip needs the server's id —
+  but resolve to FOLDS over current state, never arrays: pills stay
+  clickable during the round trip, and an array built before it
+  overwrote any flip that landed mid-flight (rename folds name and
+  stamp only, by the same rule).
+  Membership pills no longer disable, so #74's focus dance no longer
+  applies to them (the e2e asserts focus stays put instead).
+- **Alternatives rejected:** folding full toggle responses — the
+  cross-device convergence it bought was accidental and it re-fights
+  every in-flight flip (reload/`epoch` remains the wholesale refresh);
+  a global write queue — serializes unrelated pills over a slow link
+  for no correctness gain; an optimistic create under a temp id — the
+  chip would need re-keying when the real id lands, and a failed
+  create after the chip appeared is the hard case issue #69 itself
+  names; an inline retry affordance on failure — new UI for a case
+  the revert-plus-toast already explains.
+- **What would change my mind:** same-pill chaining turning visibly
+  laggy over the tunnel (rapid re-toggles queue a full round trip
+  each) — #48's batch verb over the same rows; membership edits
+  arriving from another surface mid-session (sync, import) — the
+  flip-is-the-record rule then needs a reconciling fetch on a signal,
+  not response folds. Both list surfaces share the toggle wiring
+  (`toggleListSpark`), so a fix to the revert or `ListGone` path
+  lands on both.

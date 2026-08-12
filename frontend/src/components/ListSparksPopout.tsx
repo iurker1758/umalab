@@ -17,9 +17,11 @@ import { byQueryRank } from "../rank";
 // and what OTHER lists hold is a different question with its own control
 // (the proc panels' Lists disclosure, DECISIONS.md #43).
 //
-// Writes are per-toggle and non-optimistic like every list surface: a row's
-// +/✕ moves once the server's array says so, and Escape can close at any
-// moment without discarding staged work because nothing is ever staged.
+// Writes are per-toggle and optimistic like every membership surface (issue
+// #69, DECISIONS.md #49): a row's +/✕ flips as it is clicked while the
+// request settles behind it, and Escape can close at any moment without
+// discarding staged work because nothing is ever staged — a flip is already
+// applied, and its request outlives this popout.
 
 type Option = { kind: ListSparkKind; key: number; name: string };
 
@@ -32,19 +34,17 @@ const KINDS = [...LIST_SPARK_KINDS].sort(
 export function ListSparksPopout({
   list,
   refs,
-  busy,
   onToggle,
   onClose,
 }: {
-  // The parent's LIVE copy: membership moves only when the server answers,
-  // and a list deleted on another device unmounts this whole popout through
-  // the parent's render guard.
+  // The parent's LIVE copy: the optimistic flip lands here on the next
+  // render, and a list deleted on another device unmounts this whole popout
+  // through the parent's render guard.
   list: SparkList;
   refs: FactorRef[];
-  busy: boolean;
-  // The write and its focus restore live with the page's shared wrapper; the
-  // control rides along so the restore can capture it before state moves.
-  onToggle: (kind: ListSparkKind, key: number, control: HTMLElement | null) => void;
+  // The flip and its request live with the page; nothing here disables, so
+  // there is no focus to capture or restore.
+  onToggle: (kind: ListSparkKind, key: number) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -156,8 +156,7 @@ export function ListSparksPopout({
                             ? `Remove ${o.name} from ${list.name}`
                             : `Add ${o.name} to ${list.name}`
                         }
-                        disabled={busy}
-                        onClick={(e) => onToggle(o.kind, o.key, e.currentTarget)}
+                        onClick={() => onToggle(o.kind, o.key)}
                       >
                         {/* No kind tag: the section head or the name's own
                             colour says it (#41 — kind owns colour). */}

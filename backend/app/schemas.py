@@ -8,6 +8,7 @@ from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -591,15 +592,34 @@ class SparkRef(BaseModel):
 
 
 class SparkListCreate(BaseModel):
-    """A new list. Name only — it starts empty and the picker fills it.
+    """A new list, with whatever sparks it should open holding.
 
-    Creating empty is the point of the table: #33's derived group vocabulary
-    could not represent a list before something was in it (DECISIONS.md #37).
+    `sparks` exists for the picker's `New List`, reached while starring a
+    spark — carrying the membership makes the create one request instead of
+    a POST plus a member write that can fail separately (issue #69,
+    DECISIONS.md #49). Empty stays a normal state, not a transient: the
+    Lists page creates bare lists, and #33's derived group vocabulary could
+    not represent one at all (DECISIONS.md #37).
+
+    Create-only. Membership EDITS stay per-spark rows on the member routes;
+    the whole-array PATCH remains forbidden (issue #66, DECISIONS.md #48).
     """
 
     model_config = {"extra": "forbid"}
 
     name: SparkListName
+    sparks: list[SparkRef] = []
+
+    @field_validator("sparks")
+    @classmethod
+    def _dedupe(cls, sparks: list[SparkRef]) -> list[SparkRef]:
+        """Distinct (kind, key), first occurrence keeping its place — the
+        same answer a repeated add gets from the member route's idempotent
+        insert, so one request and two cannot disagree."""
+        seen: dict[tuple[str, int], SparkRef] = {}
+        for spark in sparks:
+            seen.setdefault((spark.kind, spark.key), spark)
+        return list(seen.values())
 
 
 class SparkListPatch(BaseModel):

@@ -22,10 +22,8 @@ import {
   createListWith,
   favorites as unionOf,
   listById,
-  ListGone,
   listsWith,
-  PartialWrite,
-  toggleMembership,
+  toggleListSpark,
   type SparkListStore,
 } from "../sparks";
 
@@ -167,13 +165,13 @@ function ListPicker({
   busy: boolean;
   // The ★ that discloses this picker is disabled when the lists failed to
   // load; without the same guard here, an ALREADY-OPEN picker stays writable
-  // after the app has proven its copy stale — and a pill click then PATCHes
-  // the whole membership array built from that stale copy, silently dropping
-  // anything another device added.
+  // after the app has proven its copy stale — and a pill click would compute
+  // its verb from that stale copy, flipping one spark the wrong way.
   listsFailed: boolean;
-  // A promise so the pill can put focus back where it was once the write
-  // settles and the control re-enables (#74).
-  onToggleList: (listId: number) => Promise<unknown>;
+  // Fire-and-forget: the flip is optimistic (issue #69), so the pill never
+  // disables and never loses focus — #74's restore dance is only for the
+  // awaited create below.
+  onToggleList: (listId: number) => void;
   // Resolves false when the server refused the name, which is when the field
   // must keep it.
   onCreateList: (listName: string) => Promise<boolean>;
@@ -219,11 +217,8 @@ function ListPicker({
                 : `Add ${name} to ${list.name}`
             }
             title={holds ? `Remove from ${list.name}` : `Add to ${list.name}`}
-            disabled={busy || listsFailed}
-            onClick={(e) => {
-              const restore = refocus(e.currentTarget);
-              void onToggleList(list.id).finally(restore);
-            }}
+            disabled={listsFailed}
+            onClick={() => onToggleList(list.id)}
           >
             {list.name}
             {/* A glyph inside the button, never a nested one — a button in a
@@ -438,7 +433,7 @@ function SparkRows({
   onAdd: (option: Option, stars: number) => void;
   onRemove: (option: Option) => void;
   onOpenPicker: (id: string | null) => void;
-  onToggleList: (spark: ListableSpark, listId: number) => Promise<unknown>;
+  onToggleList: (spark: ListableSpark, listId: number) => void;
   onCreateList: (spark: ListableSpark, listName: string) => Promise<boolean>;
 }) {
   return (
@@ -826,38 +821,31 @@ function ChooserPopout({
     ]),
   })).filter((s) => s.options.length > 0);
 
-  // Non-optimistic: `sparks.ts` returns the list the server ended up with, so
-  // the star only moves once the row exists.
+  // The AWAITED write — only `New List` takes this path now; membership
+  // toggles are optimistic and live in `onToggleList` below (issue #69,
+  // DECISIONS.md #49). A created chip needs the server's id, so the create
+  // still holds `busy` for its round trip — but it resolves to a FOLD, not
+  // an array: the pills stay clickable while it flies, and an array built
+  // before the round trip would overwrite a flip that landed during it.
   //
   // Failures go to the PAGE toast, not a note inside this popout: dismissing
   // the popout mid-write is one keystroke, and a note that unmounts with its
-  // surface reports nothing at all.
-  //
-  // The message is the CALLER's — the two controls fail differently and this
-  // helper serves both — and it takes the error rather than a fixed string,
-  // since a 409 from the create is either a name collision or the 50-list cap.
+  // surface reports nothing at all. The message takes the error because a
+  // 409 from the create is either a name collision or the 50-list cap.
   //
   // Returns whether it wrote, so the new-list field knows to keep the name it
   // was given when the server refused it.
-  const write = async (
-    op: () => Promise<SparkList[]>,
-    failure: (error: unknown) => string
-  ): Promise<{ ok: true } | { ok: false; error: unknown }> => {
+  const createFor = async (
+    s: ListableSpark,
+    listName: string
+  ): Promise<boolean> => {
     setBusy(true);
     try {
-      sparkLists.onChange(await op());
-      return { ok: true };
+      sparkLists.onChange(await createListWith(listName, s.kind, s.key));
+      return true;
     } catch (error) {
-      // Half of it landed — adopt that half, or the row exists server-side
-      // and nowhere on screen. See sparks.ts PartialWrite.
-      if (error instanceof PartialWrite) sparkLists.onChange(error.lists);
-      // The list this write named was deleted elsewhere. Adopting the
-      // corrected lists drops its pill in place — no reload and no `epoch`
-      // bump, which would remount the popout and discard the user's search
-      // and open picker.
-      if (error instanceof ListGone) sparkLists.onChange(error.lists);
-      onError(failure(error));
-      return { ok: false, error };
+      onError(detailOr(error, "Couldn't make that list — try again."));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -877,31 +865,22 @@ function ChooserPopout({
     onAdd,
     onRemove,
     onOpenPicker: setOpenPicker,
+    // The optimistic path (issue #69, DECISIONS.md #49). Its in-place
+    // ListGone drop matters here: a reload or `epoch` bump would remount
+    // the popout and discard the user's search and open picker.
     onToggleList: (s: ListableSpark, listId: number) =>
-      write(
-        () => toggleMembership(sparkLists.lists, listId, s.kind, s.key),
-        (error) =>
-          error instanceof ListGone
-            ? "That list was deleted somewhere else."
-            : "Couldn't save that list change — try again."
+      toggleListSpark(
+        sparkLists.lists,
+        listId,
+        s.kind,
+        s.key,
+        sparkLists.onChange,
+        onError
       ),
-    // Resolves "did the NAME get consumed", which is not the same question as
-    // "did the write succeed" — see the PartialWrite case below. The field
-    // keeps the typed name until this resolves true, so a name the server
-    // refused can be corrected rather than retyped.
-    onCreateList: async (s: ListableSpark, listName: string) => {
-      const result = await write(
-        () => createListWith(sparkLists.lists, listName, s.kind, s.key),
-        (error) =>
-          error instanceof PartialWrite
-            ? "Made the list, but couldn't add the spark — click its pill to finish."
-            : detailOr(error, "Couldn't make that list — try again.")
-      );
-      // A PartialWrite means the list EXISTS under that name — only its
-      // membership failed — so the name is spent and the field must clear, or
-      // the obvious retry POSTs a name that now 409s against it.
-      return result.ok || result.error instanceof PartialWrite;
-    },
+    // The field keeps the typed name until this resolves true, so a name the
+    // server refused can be corrected rather than retyped. One request now:
+    // "did it write" and "is the name spent" are the same question.
+    onCreateList: createFor,
   };
 
   const factorSection = (s: { kind: SlotFactorKind; options: Option[] }) => (

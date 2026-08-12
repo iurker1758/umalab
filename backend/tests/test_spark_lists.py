@@ -34,9 +34,14 @@ LISTS = "/api/spark-lists"
 CONCURRENT_WRITES = 5
 
 
-async def create(as_user: Any, user: User, name: str):
+async def create(
+    as_user: Any, user: User, name: str, sparks: Any = None
+):
+    body: dict[str, Any] = {"name": name}
+    if sparks is not None:
+        body["sparks"] = sparks
     async with as_user(user) as http:
-        return await http.post(LISTS, json={"name": name})
+        return await http.post(LISTS, json=body)
 
 
 async def patch(as_user: Any, user: User, list_id: int, **body: Any):
@@ -87,9 +92,9 @@ async def test_a_list_round_trips(client: Any, users: list[User]):
 
 async def test_a_list_is_created_empty_and_stays(client: Any, users: list[User]):
     """The state #33's derived group vocabulary could not represent at all: a
-    named list with nothing in it. The picker's `New List` creates one and the
-    membership write that fills it is a separate request, so this has to
-    survive a read.
+    named list with nothing in it. The Lists page creates bare lists (the
+    picker's `New List` now carries its spark in the create, issue #69), so
+    this has to survive a read.
     """
     a, _ = users
     await a_list(client, a, "Medium")
@@ -493,6 +498,105 @@ async def test_a_whole_array_patch_is_refused(
     await add(client, a, list_id, "white", 30)
     assert (await patch(client, a, list_id, sparks=sparks)).status_code == 422
     assert (await listing(client, a))[0]["sparks"] == [spark("white", 30)]
+
+
+# ---------- creating filled (issue #69) ----------
+# The picker's `New List` sends its spark in the create, so the row and its
+# members are one transaction — a refused create leaves nothing behind, and
+# there is no half-made list for the client to adopt.
+
+
+async def test_a_create_can_carry_its_first_sparks(
+    client: Any, users: list[User]
+):
+    a, _ = users
+    response = await create(
+        client, a, "Front Runner", [spark("white", 2010), spark("race", 40)]
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["sparks"] == [spark("white", 2010), spark("race", 40)]
+    assert await listing(client, a) == [body]
+
+
+async def test_created_members_keep_body_order(client: Any, users: list[User]):
+    """Member-id order IS the list's order, so the create inserts in body
+    order — the same place separate adds would have landed each spark."""
+    a, _ = users
+    await create(
+        client, a, "Medium", [spark("white", k) for k in (30, 10, 20)]
+    )
+    assert (await listing(client, a))[0]["sparks"] == [
+        spark("white", 30),
+        spark("white", 10),
+        spark("white", 20),
+    ]
+
+
+async def test_a_repeated_spark_in_the_create_collapses_to_its_first_place(
+    client: Any, users: list[User]
+):
+    """The answer a repeated add gets from the idempotent member verb, so
+    one request and two cannot disagree."""
+    a, _ = users
+    response = await create(
+        client,
+        a,
+        "Long",
+        [spark("white", 10), spark("white", 20), spark("white", 10)],
+    )
+    assert response.json()["sparks"] == [spark("white", 10), spark("white", 20)]
+
+
+async def test_an_unknown_key_in_the_create_is_accepted(
+    client: Any, users: list[User]
+):
+    """The member verb's rule at the create boundary: no validation against
+    the factor reference."""
+    a, _ = users
+    response = await create(client, a, "Front Runner", [spark("white", 999_999)])
+    assert response.status_code == 201
+    assert response.json()["sparks"] == [spark("white", 999_999)]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        spark("pink", 1),
+        spark("blue", 1),
+        spark("unique", 100101),
+        spark("white", 0),
+        spark("white", 2_147_483_648),
+        {"kind": "white", "key": 10, "stars": 3},
+    ],
+)
+async def test_a_bad_spark_fails_the_whole_create(
+    client: Any, users: list[User], bad: dict[str, Any]
+):
+    """Every refusal the member verbs make, made here too, and made atomic:
+    SparkRef's kind Literal and int4 key bound cover the array, its
+    `extra="forbid"` keeps `stars` out (the level belongs to the slot
+    document, DECISIONS.md #33), and a 422 creates no list at all."""
+    a, _ = users
+    response = await create(client, a, "Front Runner", [spark("white", 10), bad])
+    assert response.status_code == 422
+    assert await listing(client, a) == []
+
+
+async def test_a_refused_name_leaves_no_members_behind(
+    client: Any, users: list[User], sessions: Any
+):
+    """The atomicity the two-request shape could not offer: under it a name
+    collision arrived AFTER the create committed, which is what PartialWrite
+    existed to carry. One transaction means the 409 rolls the members out
+    with the row."""
+    a, _ = users
+    await a_list(client, a, "Front Runner")
+    response = await create(client, a, "front runner", [spark("white", 10)])
+    assert response.status_code == 409
+    async with sessions() as session:
+        held = await session.scalar(text("SELECT count(*) FROM spark_list_members"))
+    assert held == 0
 
 
 # ---------- partial updates ----------

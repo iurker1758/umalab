@@ -11,8 +11,9 @@ identity is a server-assigned id, so the client cannot name a row that does
 not exist yet. Creating and editing are therefore different requests, which
 is what POST/PATCH is for.
 
-Membership is rows in `spark_list_members`, added and removed one at a time
-through PUT/DELETE on the member path (issue #66, DECISIONS.md #48). Two
+Membership is rows in `spark_list_members`, seeded by the create and then
+added and removed one at a time through PUT/DELETE on the member path
+(issue #66, DECISIONS.md #48; issue #69, #49). Two
 devices editing one list commute instead of overwriting each other's whole
 array; both verbs are idempotent, so the state named in the path is the
 state you get; and a 404 concerns one membership, which lets a stale client
@@ -192,12 +193,15 @@ async def create_spark_list(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """Create an empty list.
+    """Create a list holding `body.sparks` — possibly none.
 
-    Empty is the normal case and the reason this table exists: the picker's
-    `New List` is reached while starring a spark, so the list is created and
-    then filled by the membership write that follows. #33's derived group
-    vocabulary could not express this state at all.
+    One transaction for the row and its members (issue #69, DECISIONS.md
+    #49): the picker's `New List` is reached while starring a spark, and a
+    separate membership write could fail after the create committed,
+    leaving a list the client had to adopt half-made. A refused name or the
+    cap now leaves nothing behind. Empty stays a normal state — the Lists
+    page creates bare lists (#33's derived group vocabulary could not
+    express that state at all).
     """
     # Serializes concurrent creates FOR THIS OWNER. The count below is a
     # check-then-act: without this, two requests can both read 49, both pass,
@@ -222,6 +226,15 @@ async def create_spark_list(
     row = SparkList(owner_id=user.id, name=body.name)
     session.add(row)
     try:
+        # The flush surfaces a taken name and assigns `row.id` for the
+        # members, which insert in body order so `_members_of`'s id order
+        # reads back the order the client sent. No `updated_at` bump for
+        # them: a filled create is one edit, and the creation stamp is it.
+        await session.flush()
+        session.add_all(
+            SparkListMember(list_id=row.id, kind=spark.kind, key=spark.key)
+            for spark in body.sparks
+        )
         await session.commit()
     except IntegrityError as exc:
         # The name index. Anything else is a real fault, re-raised rather than
@@ -234,7 +247,7 @@ async def create_spark_list(
     # reading it without this refresh lazy-loads outside the async context
     # and 500s.
     await session.refresh(row)
-    return _out(row, [])
+    return _out(row, await _members_of(session, row.id))
 
 
 @router.patch("/spark-lists/{list_id}", response_model=SparkListOut)

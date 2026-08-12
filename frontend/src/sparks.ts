@@ -340,6 +340,18 @@ export const withStamp = (
 // of server state, so the no-cache rule in the header holds.
 const inflight = new Map<string, Promise<unknown>>();
 
+const pillKey = (id: number, kind: ListSparkKind, key: number) =>
+  `${id}|${kind}|${key}`;
+
+// The last membership the server acknowledged per pill — the revert target.
+// A failed write's own inverse assumes the write before it landed, which a
+// chain of failures breaks: superseded failures revert nothing, so the
+// final failure must revert past them all. Re-initialized from the screen
+// at every chain start (the screen matches the server when nothing is in
+// flight), advanced on each success; entries are only ever read mid-chain,
+// so stale ones are harmless and growth is bounded by pills touched.
+const acked = new Map<string, boolean>();
+
 /**
  * The request behind an optimistic flip: PUT or DELETE on the member path
  * per `desired` (issue #66's absolute, idempotent verbs). Requests for the
@@ -363,7 +375,7 @@ export async function syncMembership(
   key: number,
   desired: boolean
 ): Promise<SparkList | null> {
-  const pill = `${id}|${kind}|${key}`;
+  const pill = pillKey(id, kind, key);
   const issue = () =>
     desired ? api.addListSpark(id, kind, key) : api.removeListSpark(id, kind, key);
   // Chained on settlement, not success: a failed predecessor must not wedge
@@ -396,11 +408,11 @@ export async function syncMembership(
  * The whole optimistic toggle, shared by both list surfaces (the chooser's
  * picker and the Lists page's popout — the second surface DECISIONS.md #49
  * named as the extraction trigger): flip now against current state, run the
- * request behind it, fold only the settled `updated_at`. A failure re-states
- * the opposite membership; a superseded write's `null` folds nothing and
- * reports nothing; a `ListGone` drops the dead row in place, no reload and
- * no `epoch` bump. A list the caller's `lists` no longer holds is a no-op —
- * the `withMembership` rule.
+ * request behind it, fold only the settled `updated_at`. A final failure
+ * re-states the last server-acknowledged membership; a superseded write's
+ * `null` folds nothing and reports nothing; a `ListGone` drops the dead row
+ * in place, no reload and no `epoch` bump. A list the caller's `lists` no
+ * longer holds is a no-op — the `withMembership` rule.
  */
 export function toggleListSpark(
   lists: SparkList[],
@@ -413,10 +425,14 @@ export function toggleListSpark(
   const list = listById(lists, id);
   if (list === undefined) return;
   const desired = !list.sparks.some((s) => sameSpark(s, kind, key));
+  const pill = pillKey(id, kind, key);
+  // Chain start (syncMembership registers the pill synchronously below).
+  if (!inflight.has(pill)) acked.set(pill, !desired);
   onChange((prev) => withMembership(prev, id, kind, key, desired));
   void syncMembership(id, kind, key, desired).then(
     (saved) => {
       if (saved !== null) {
+        acked.set(pill, desired);
         onChange((prev) => withStamp(prev, id, saved.updated_at));
       }
     },
@@ -425,7 +441,8 @@ export function toggleListSpark(
         onChange((prev) => prev.filter((l) => l.id !== id));
         onError("That list was deleted somewhere else.");
       } else {
-        onChange((prev) => withMembership(prev, id, kind, key, !desired));
+        const revert = acked.get(pill) ?? !desired;
+        onChange((prev) => withMembership(prev, id, kind, key, revert));
         onError("Couldn't save that list change — try again.");
       }
     }

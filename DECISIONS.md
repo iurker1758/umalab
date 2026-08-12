@@ -2164,9 +2164,11 @@ marked in each.
   leaves nothing behind, which retires `PartialWrite` outright.
   Toggles flip locally first: `withMembership` states an absolute end
   state against the caller's CURRENT lists (`onChange` accepts
-  React's functional form), the request runs behind it, and a failure
-  re-states the opposite — never restores a snapshot, so concurrent
-  pills cannot clobber each other. A settled response folds ONLY
+  React's functional form), the request runs behind it, and a final
+  failure re-states the last server-acknowledged membership (the
+  flip's opposite when the chain is one write; a chain of failures
+  breaks that equivalence, since superseded failures revert nothing)
+  — never a snapshot, so concurrent pills cannot clobber each other. A settled response folds ONLY
   `updated_at` (later stamp wins): each response is the whole list as
   of that write, and folding it could resurrect an older membership
   when responses land out of order. Requests for the same

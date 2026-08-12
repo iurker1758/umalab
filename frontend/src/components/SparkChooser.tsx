@@ -835,16 +835,16 @@ function ChooserPopout({
   //
   // Returns whether it wrote, so the new-list field knows to keep the name it
   // was given when the server refused it.
-  const write = async (
-    op: () => Promise<(prev: SparkList[]) => SparkList[]>,
-    failure: (error: unknown) => string
+  const createFor = async (
+    s: ListableSpark,
+    listName: string
   ): Promise<boolean> => {
     setBusy(true);
     try {
-      sparkLists.onChange(await op());
+      sparkLists.onChange(await createListWith(listName, s.kind, s.key));
       return true;
     } catch (error) {
-      onError(failure(error));
+      onError(detailOr(error, "Couldn't make that list — try again."));
       return false;
     } finally {
       setBusy(false);
@@ -880,11 +880,7 @@ function ChooserPopout({
     // The field keeps the typed name until this resolves true, so a name the
     // server refused can be corrected rather than retyped. One request now:
     // "did it write" and "is the name spent" are the same question.
-    onCreateList: (s: ListableSpark, listName: string) =>
-      write(
-        () => createListWith(listName, s.kind, s.key),
-        (error) => detailOr(error, "Couldn't make that list — try again.")
-      ),
+    onCreateList: createFor,
   };
 
   const factorSection = (s: { kind: SlotFactorKind; options: Option[] }) => (

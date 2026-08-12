@@ -545,6 +545,28 @@ describe("the shared optimistic toggle", () => {
     expect(h.errors).toEqual([]);
   });
 
+  it("re-states the pre-chain membership when every write in the chain fails", async () => {
+    // Two rapid clicks queue add-then-remove. When BOTH fail, the first is
+    // superseded (quiet, no revert) and the second must revert past it — to
+    // the last membership the server acknowledged, not to its own flip's
+    // inverse, which would leave a phantom member the server never stored.
+    const rejecters: Array<(reason: unknown) => void> = [];
+    stubApi({
+      addListSpark: () => new Promise((_, reject) => rejecters.push(reject)),
+      removeListSpark: () => new Promise((_, reject) => rejecters.push(reject)),
+    });
+    const h = harness([aList({ id: 17 })]);
+    toggleListSpark(h.state, 17, "white", 700, h.onChange, h.onError);
+    toggleListSpark(h.state, 17, "white", 700, h.onChange, h.onError);
+    await new Promise((r) => setTimeout(r, 0));
+    rejecters[0]?.(new ApiError(500, "boom"));
+    await new Promise((r) => setTimeout(r, 0));
+    rejecters[1]?.(new ApiError(500, "boom"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state[0]?.sparks).toEqual([]);
+    expect(h.errors).toEqual(["Couldn't save that list change — try again."]);
+  });
+
   it("drops the dead row in place on ListGone", async () => {
     stubApi({
       addListSpark: () => Promise.reject(new ApiError(404, "no such list")),

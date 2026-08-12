@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type SparkList, type SparkListPatch, type SparkRef } from "./api";
+import {
+  api,
+  ApiError,
+  type ListSparkKind,
+  type SparkList,
+  type SparkListPatch,
+  type SparkRef,
+} from "./api";
 import {
   ACTIVE_LISTS_STORE,
   activeSparkIds,
@@ -12,6 +19,7 @@ import {
   isFavorite,
   LIST_SORT_STORE,
   listById,
+  ListGone,
   listsWith,
   loadActiveLists,
   loadListSort,
@@ -19,7 +27,6 @@ import {
   renameList,
   saveActiveLists,
   saveListSort,
-  setMembership,
   sortLists,
   toggleActive,
   toggleMembership,
@@ -36,7 +43,7 @@ const aList = (over: Partial<SparkList> & Pick<SparkList, "id">): SparkList => (
   ...over,
 });
 
-// The module's four api calls, stubbed on the object itself — `api` is a plain
+// The module's api calls, stubbed on the object itself — `api` is a plain
 // record of functions, so there is nothing to intercept at module load and no
 // mock framework needed. Each stub records what it was sent, which is the
 // whole point of the write tests: the argument threading is the rule.
@@ -44,6 +51,8 @@ const stubApi = (over: {
   sparkLists?: () => Promise<SparkList[]>;
   createSparkList?: (name: string) => Promise<SparkList>;
   updateSparkList?: (id: number, body: SparkListPatch) => Promise<SparkList>;
+  addListSpark?: (id: number, kind: ListSparkKind, key: number) => Promise<SparkList>;
+  removeListSpark?: (id: number, kind: ListSparkKind, key: number) => Promise<SparkList>;
   deleteSparkList?: (id: number) => Promise<void>;
 }) => ({
   sparkLists: vi
@@ -59,6 +68,19 @@ const stubApi = (over: {
     .mockImplementation(
       over.updateSparkList ??
         ((id: number, body: SparkListPatch) => Promise.resolve(aList({ id, ...body })))
+    ),
+  addListSpark: vi
+    .spyOn(api, "addListSpark")
+    .mockImplementation(
+      over.addListSpark ??
+        ((id: number, kind: ListSparkKind, key: number) =>
+          Promise.resolve(aList({ id, sparks: [{ kind, key }] })))
+    ),
+  removeListSpark: vi
+    .spyOn(api, "removeListSpark")
+    .mockImplementation(
+      over.removeListSpark ??
+        ((id: number) => Promise.resolve(aList({ id })))
     ),
   deleteSparkList: vi
     .spyOn(api, "deleteSparkList")
@@ -254,46 +276,52 @@ describe("writes", () => {
     expect(calls.deleteSparkList).toHaveBeenCalledWith(1);
   });
 
-  it("sets membership wholesale", async () => {
-    const calls = stubApi({});
-    await setMembership([aList({ id: 1 })], 1, [spark("race", 40)]);
-    expect(calls.updateSparkList).toHaveBeenCalledWith(1, { sparks: [spark("race", 40)] });
-  });
-
   it("keeps creation order after a write, matching what the next GET returns", async () => {
     const calls = stubApi({});
     // Handed in reversed: the fold must re-sort to the server's id order, so
     // a write can never make a list swap places between reads.
     const lists = [aList({ id: 2 }), aList({ id: 1 })];
-    const next = await setMembership(lists, 2, []);
-    expect(calls.updateSparkList).toHaveBeenCalledTimes(1);
+    const next = await toggleMembership(lists, 2, "race", 40);
+    expect(calls.addListSpark).toHaveBeenCalledTimes(1);
     expect(next.map((l) => l.id)).toEqual([1, 2]);
   });
 });
 
 describe("toggling one list's membership", () => {
-  it("adds the spark when the list doesn't hold it", async () => {
+  it("adds the spark when the list doesn't hold it — one membership, never an array", async () => {
     const calls = stubApi({});
     await toggleMembership([aList({ id: 1, sparks: [spark("white", 1)] })], 1, "race", 40);
-    expect(calls.updateSparkList).toHaveBeenCalledWith(1, {
-      sparks: [spark("white", 1), spark("race", 40)],
-    });
+    expect(calls.addListSpark).toHaveBeenCalledWith(1, "race", 40);
+    expect(calls.removeListSpark).not.toHaveBeenCalled();
+    expect(calls.updateSparkList).not.toHaveBeenCalled();
   });
 
   it("removes it when the list does", async () => {
     const calls = stubApi({});
     const lists = [aList({ id: 1, sparks: [spark("white", 1), spark("race", 40)] })];
     await toggleMembership(lists, 1, "race", 40);
-    expect(calls.updateSparkList).toHaveBeenCalledWith(1, { sparks: [spark("white", 1)] });
+    expect(calls.removeListSpark).toHaveBeenCalledWith(1, "race", 40);
+    expect(calls.addListSpark).not.toHaveBeenCalled();
+  });
+
+  it("adopts the server's answer, not the copy it computed from", async () => {
+    // The convergence the per-spark routes buy (issue #66): the response
+    // carries edits other devices landed in the meantime, and the fold takes
+    // it wholesale.
+    const calls = stubApi({
+      addListSpark: (id, kind, key) =>
+        Promise.resolve(aList({ id, sparks: [spark("white", 9), { kind, key }] })),
+    });
+    const next = await toggleMembership([aList({ id: 1 })], 1, "race", 40);
+    expect(calls.addListSpark).toHaveBeenCalledWith(1, "race", 40);
+    expect(next[0]?.sparks).toEqual([spark("white", 9), spark("race", 40)]);
   });
 
   it("tells the kinds apart at the same key", async () => {
     const calls = stubApi({});
     const lists = [aList({ id: 1, sparks: [spark("white", 700)] })];
     await toggleMembership(lists, 1, "race", 700);
-    expect(calls.updateSparkList).toHaveBeenCalledWith(1, {
-      sparks: [spark("white", 700), spark("race", 700)],
-    });
+    expect(calls.addListSpark).toHaveBeenCalledWith(1, "race", 700);
   });
 
   it("is a NO-OP for a list the caller doesn't have, never a create", async () => {
@@ -303,8 +331,39 @@ describe("toggling one list's membership", () => {
     const calls = stubApi({});
     const lists = [aList({ id: 1 })];
     expect(await toggleMembership(lists, 87, "white", 1)).toBe(lists);
-    expect(calls.updateSparkList).not.toHaveBeenCalled();
+    expect(calls.addListSpark).not.toHaveBeenCalled();
+    expect(calls.removeListSpark).not.toHaveBeenCalled();
     expect(calls.createSparkList).not.toHaveBeenCalled();
+  });
+
+  it("throws ListGone on a 404, carrying the lists with the dead one dropped", async () => {
+    // Deleted on the server since this copy was read. The caller adopts
+    // `lists` so the pill disappears in place — no reload, no remount
+    // (issue #66's absorbed #73).
+    stubApi({
+      addListSpark: () => Promise.reject(new ApiError(404, "no such list")),
+    });
+    const lists = [
+      aList({ id: 1, name: "Medium", sparks: [spark("white", 1)] }),
+      aList({ id: 2, name: "Front Runner" }),
+    ];
+    const error = await toggleMembership(lists, 2, "race", 40).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ListGone);
+    const gone = error as ListGone;
+    expect(gone.lists.map((l) => l.name)).toEqual(["Medium"]);
+    expect(gone.lists[0]?.sparks).toEqual([spark("white", 1)]);
+  });
+
+  it("passes any other failure through untouched", async () => {
+    // Only "the list is gone" earns the corrective drop — a 500 or a network
+    // blip must not delete a list from the screen that still exists.
+    stubApi({
+      removeListSpark: () => Promise.reject(new ApiError(500, "boom")),
+    });
+    const lists = [aList({ id: 1, sparks: [spark("race", 40)] })];
+    const error = await toggleMembership(lists, 1, "race", 40).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).not.toBeInstanceOf(ListGone);
   });
 });
 
@@ -367,9 +426,7 @@ describe("creating a list around a spark", () => {
     const calls = stubApi({});
     const next = await createListWith([], "Front Runner", "white", 700);
     expect(calls.createSparkList).toHaveBeenCalledWith("Front Runner");
-    expect(calls.updateSparkList).toHaveBeenCalledWith(99, {
-      sparks: [spark("white", 700)],
-    });
+    expect(calls.addListSpark).toHaveBeenCalledWith(99, "white", 700);
     expect(next.map((l) => l.id)).toEqual([99]);
   });
 
@@ -381,7 +438,7 @@ describe("creating a list around a spark", () => {
       createSparkList: () => Promise.reject(new Error("409")),
     });
     await expect(createListWith([], "Front Runner", "white", 700)).rejects.toThrow();
-    expect(calls.updateSparkList).not.toHaveBeenCalled();
+    expect(calls.addListSpark).not.toHaveBeenCalled();
   });
 
   it("hands back the created list when only the membership write fails", async () => {
@@ -389,7 +446,7 @@ describe("creating a list around a spark", () => {
     // row the server had COMMITTED. The list showed up nowhere, so there was
     // no pill to retry on, and re-typing the same name 409'd forever against
     // a list the user could not see.
-    stubApi({ updateSparkList: () => Promise.reject(new Error("boom")) });
+    stubApi({ addListSpark: () => Promise.reject(new Error("boom")) });
     const error = await createListWith([], "Front Runner", "white", 700).catch(
       (e: unknown) => e
     );
@@ -401,7 +458,7 @@ describe("creating a list around a spark", () => {
   });
 
   it("keeps the caller's other lists in the partial result", async () => {
-    stubApi({ updateSparkList: () => Promise.reject(new Error("boom")) });
+    stubApi({ addListSpark: () => Promise.reject(new Error("boom")) });
     const existing = [aList({ id: 1, name: "Medium", sparks: [spark("white", 1)] })];
     const error = (await createListWith(existing, "Front Runner", "white", 700).catch(
       (e: unknown) => e

@@ -8,7 +8,6 @@ from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
-    field_validator,
     model_validator,
 )
 
@@ -606,61 +605,38 @@ class SparkListCreate(BaseModel):
 class SparkListPatch(BaseModel):
     """A change to one list; the id travels in the path.
 
-    **Every field is optional and omitting one leaves it alone** — absent and
-    `null` alike, the rule #33's amendment arrived at and the one thing about
-    its request shape that carried over intact. `sparks: []` empties the
-    list, an explicit empty array being a different request from not
-    mentioning it.
+    Rename-only: membership is rows in `spark_list_members`, written one at
+    a time through its own routes, so no client ever sends a whole `sparks`
+    array (issue #66, DECISIONS.md #48). A field that is absent or `null` is
+    left alone — the rule #33's amendment arrived at.
 
     `extra="forbid"` because absence carries meaning: a mis-keyed body would
-    otherwise parse as all-absent and answer 200 having written nothing, so a
-    failed save would reach the user as a successful one.
+    otherwise parse as all-absent and answer 200 having written nothing, so
+    a failed save would reach the user as a successful one. It is also what
+    makes a stale client's `sparks` array a loud 422 rather than a silent
+    no-op.
     """
 
     model_config = {"extra": "forbid"}
 
     name: SparkListName | None = None
-    sparks: list[SparkRef] | None = None
-
-    @field_validator("sparks")
-    @classmethod
-    def _dedupe(cls, sparks: list[SparkRef] | None) -> list[SparkRef] | None:
-        """Collapse duplicates. There is no length bound — see the note on
-        MAX_LISTS_PER_OWNER for why membership is deliberately unbounded.
-
-        The client sends the list's whole membership, and "already in it" is
-        the state it asked for, so a repeat is a 200 rather than a 422.
-
-        First occurrence wins, so dedupe preserves the order the user added
-        them in, which is the order the list renders. It is also the only
-        thing bounding what gets stored: the result cannot exceed the
-        distinct (kind, key) pairs in one request body.
-        """
-        if sparks is None:
-            return None
-        seen: dict[tuple[str, int], SparkRef] = {}
-        for spark in sparks:
-            seen.setdefault((spark.kind, spark.key), spark)
-        return list(seen.values())
 
 
 class SparkListOut(BaseModel):
     """The read side. STRICT, and `sparks` is validated by the same `SparkRef`
     the request uses.
 
-    A lenient read was tried and reverted, because leniency here is not the
-    safe direction — it is the destructive one. Membership is a whole-array
-    PATCH, so anything this model quietly drops on the way out is missing
-    from the client's copy and is deleted by that client's next write. A
-    strict model 500s the list read instead: loud, obvious, and it cannot
-    lose a row, because nothing has told the client a truncated array is the
-    truth.
+    Strictness is safe now for a different reason than it was dangerous
+    before: membership rows have typed columns and a CHECK on `kind`
+    mirroring `ListSparkKind` (models.SparkListMember), so an entry this
+    model cannot parse is unrepresentable — the one-bad-entry-500s-every-
+    list failure the JSONB column was filed under is retired, not tolerated
+    (issue #66's absorbed #75, DECISIONS.md #48).
 
-    So the failure CLAUDE.md records against `BlueprintOut` — one unparseable
-    row taking down the whole response — is accepted here deliberately, and
-    filed rather than papered over. It needs a fix that keeps the round trip
-    lossless (membership as its own rows, #66), not one that makes the loss
-    silent.
+    `sparks` keeps the exact wire shape the array had — bare {kind, key} in
+    member-id order — so every reader (the chooser, the filter surfaces, the
+    e2e's payload comparisons) is untouched by the storage change. The
+    routes build it from the member rows; nothing here maps a relationship.
     """
 
     id: int
@@ -669,4 +645,3 @@ class SparkListOut(BaseModel):
     # order, so there is no created_at (DECISIONS.md #44).
     updated_at: dt.datetime
     sparks: list[SparkRef]
-    model_config = {"from_attributes": True}

@@ -31,7 +31,7 @@ several:
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows)
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
-  (the Lists filter), 44 (the Lists page)
+  (the Lists filter), 44 (the Lists page), 48 (membership as rows)
 - **Multi-user & auth:** 32
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
@@ -1561,9 +1561,9 @@ issues #62, #64).
   client drives concurrent requests through one connection. The
   migration drops `watched_sparks` without carrying rows (Jason's
   call; the table was empty anyway). Last-write-wins on the list row
-  is tolerated, not closed (#66) — one user, two devices, the damage
-  is a spark you re-add; membership-as-rows is the shape to reach for
-  if it bites. Three review rounds each found most of their worst
+  was tolerated, not closed (issue #66) — one user, two devices, the
+  damage a spark you re-add; #48 has since closed it by moving
+  membership to rows. Three review rounds each found most of their worst
   defects in the previous round's fixes; the speculative multi-device
   recovery machinery (the corrective reload and its guards, a lenient
   read that turned a loud failure into the client deleting rows on its
@@ -1585,7 +1585,8 @@ issues #62, #64).
   server-side active selection — view state, #32's line holds.
 - **What would change my mind:** genuine concurrent use — a second
   person on the account, or one person losing sparks across two
-  devices — which turns the join table into the right answer; a
+  devices — which turns the join table into the right answer (fired:
+  #48 adopted it); a
   favourite that belongs in no build proving a real want, which brings
   back a standalone watched set; the active selection needing to
   follow between devices, making it a user setting rather than a view;
@@ -1897,8 +1898,9 @@ marked in each.
   Design review set the rest: no manual reorder (sort orders instead —
   name, newest, last edited), creation joins the page rather than
   staying picker-only, and the membership popout must not filter by
-  OTHER lists. Last-write-wins on the list row stays accepted (issue
-  #66); the ★ picker stays the per-spark control.
+  OTHER lists. Last-write-wins on the list row stayed accepted at the
+  time (issue #66; closed since by #48); the ★ picker stays the
+  per-spark control.
 - **Choice:** a third route, `/lists`, page-local state — pages
   refetch on mount, so a store lifted to the shell would be the staler
   copy, and nothing user-held dies with this page. Rename is the
@@ -1939,8 +1941,9 @@ marked in each.
 - **What would change my mind:** a real want for a hand-arranged
   order — that reopens reorder UI, and `position` comes back by
   migration; the sort needing to follow between devices (a user
-  setting, #32's line); real cross-device collisions (issue #66 names
-  the join table); per-toggle writes turning chatty over the tunnel
+  setting, #32's line); real cross-device collisions (issue #66 named
+  the join table; #48 adopted it); per-toggle writes turning chatty
+  over the tunnel
   (issue #69's revisit, which would bring optimistic staging); a
   third page needing the lists, which is when the store lifts.
 
@@ -2090,3 +2093,56 @@ marked in each.
   mixed default or open just the selected branch); the collapsed
   full tree measuring readable at 390px — Tree Half's removal
   lands as its own change.
+
+## 48. Membership as rows: spark_list_members and per-spark verbs
+
+- **Requirements:** issue #66 — membership as a whole-array PATCH
+  computed from the caller's copy made every pair of concurrent edits
+  to one list last-write-wins, both writers told 200. Its absorbed
+  repros hardened the bill: Escape closes the chooser without checking
+  `busy`, so one device races itself (was #74); a deleted list's pill
+  dead-ends, because both corrective-reload fixes remounted the popout
+  mid-interaction and were reverted (was #73); one unparseable JSONB
+  entry 500s the owner's every list, and leniency would make the loss
+  silent since the next whole-array write deletes whatever was dropped
+  (was #75). Multi-user shipped (#32), so #37's "genuine concurrent
+  use" trigger has fired, and the fix had to satisfy all four repros.
+- **Choice:** membership rows in `spark_list_members` — `list_id` FK
+  CASCADE, `kind`, `key`, unique per triple, serial id as display
+  order (a re-add lands ON CONFLICT DO NOTHING and keeps its place;
+  removed-then-re-added moves to the end, what the old client-side
+  filter-and-append did). Adds and removes are their own idempotent
+  verbs, PUT/DELETE `/api/spark-lists/{id}/sparks/{kind}/{key}`,
+  answering the list's current state so toggles converge devices; the
+  PATCH is rename-only and a stale client's `sparks` array 422s
+  loudly. Both verbs bump `updated_at` by hand (the ORM `onupdate`
+  never fires for member writes) and only when a row changed. The
+  CHECK on `kind` mirrors `ListSparkKind`, which is what lets
+  `SparkListOut` stay strict: a row it cannot parse is now
+  unrepresentable. The GET's wire shape is unchanged — bare
+  `{kind, key}` in member order — so every reader and the e2e's
+  payload comparisons are untouched. Client side, `toggleMembership`
+  picks the verb from its copy (a stale copy at worst flips one spark
+  the wrong way, and the response corrects the display), and a 404
+  throws `ListGone` carrying the lists with the dead one dropped,
+  which both write helpers adopt in place — no reload, no `epoch`
+  bump, no remount. The migration backfills the arrays
+  order-preserving (INSERT..SELECT WITH ORDINALITY, ORDER BY) and the
+  downgrade rebuilds them; both halves are pinned by a seeded
+  migration test, since the schema-parity test only ever runs the
+  chain empty.
+- **Alternatives rejected:** a version/etag column with a 409 the
+  client retries — detects conflicts instead of removing them, leaves
+  the strict read all-or-nothing (#75 stays open), and puts
+  retry/merge machinery on the client, where #37's review rounds kept
+  finding defects; UI guards for the Escape race — the reverted
+  busy-gate fix swallowed the keypress and hung the e2e, and commuting
+  writes make the interleaving harmless instead; a lenient read —
+  destructive under whole-array writes, unnecessary once bad rows are
+  unrepresentable.
+- **What would change my mind:** membership growing per-member
+  attributes (stars, notes) — the rows are ready and the wire shape
+  grows optional fields; bulk edits wanting one request (issue #69's
+  round-trip audit) — a batch verb over the same rows, never the
+  array PATCH back; a real want for hand-ordered members — serial-id
+  order stops sufficing and a position column returns by migration.

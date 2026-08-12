@@ -30,6 +30,7 @@ Same skip/PYTEST_REQUIRE_DB rules as conftest.py.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -38,8 +39,8 @@ from pathlib import Path
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import Connection
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import Connection, text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 # Registers the tables on Base.metadata — the comparison below is empty
 # without it, and reaching them through conftest's transitive imports would
@@ -55,6 +56,48 @@ from tests.conftest import (
 )
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+async def _in_backend(*args: str) -> subprocess.CompletedProcess[str]:
+    """A child process in the backend dir with DATABASE_URL pointed at the
+    test database — the only tie these tests have to it."""
+    return await asyncio.to_thread(
+        subprocess.run,
+        [sys.executable, *args],
+        cwd=BACKEND_DIR,
+        env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+async def _probe_resolves_test_db() -> None:
+    """Refuse before writing, not after: the child's only tie to the test
+    database is DATABASE_URL outranking backend/.env inside a fresh settings
+    import, and conftest's same-database refusal cannot see a subprocess. So
+    ask a child what it resolves FIRST — an env-var precedence change fails
+    here, while the damage is still zero."""
+    probe = await _in_backend(
+        "-c", "from app.config import settings; print(settings.database_url)"
+    )
+    assert probe.returncode == 0, probe.stderr
+    assert probe.stdout.strip() == TEST_DATABASE_URL, (
+        "a subprocess no longer resolves DATABASE_URL to the test "
+        f"database: {probe.stdout.strip()}"
+    )
+
+
+async def _reset_or_skip(engine: AsyncEngine) -> None:
+    try:
+        async with engine.begin() as connection:
+            # Also removes alembic_version, so the upgrade below always
+            # runs the full chain from the initial revision.
+            await reset_public_schema(connection)
+    except DB_UNREACHABLE as e:
+        if REQUIRE_DB:
+            raise
+        pytest.skip(f"no test database at {TEST_DATABASE_URL}: {e}")
 
 
 def _drift(connection: Connection) -> list[object]:
@@ -75,49 +118,10 @@ def _drift(connection: Connection) -> list[object]:
 async def test_upgrade_head_matches_the_models():
     engine = create_async_engine(TEST_DATABASE_URL)
     try:
-        try:
-            async with engine.begin() as connection:
-                # Also removes alembic_version, so the upgrade below always
-                # runs the full chain from the initial revision.
-                await reset_public_schema(connection)
-        except DB_UNREACHABLE as e:
-            if REQUIRE_DB:
-                raise
-            pytest.skip(f"no test database at {TEST_DATABASE_URL}: {e}")
+        await _reset_or_skip(engine)
+        await _probe_resolves_test_db()
 
-        # Refuse before writing, not after: the child's only tie to the test
-        # database is DATABASE_URL outranking backend/.env inside a fresh
-        # settings import, and conftest's same-database refusal cannot see a
-        # subprocess. So ask a child what it resolves FIRST — an env-var
-        # precedence change fails here, while the damage is still zero.
-        probe = await asyncio.to_thread(
-            subprocess.run,
-            [
-                sys.executable,
-                "-c",
-                "from app.config import settings; print(settings.database_url)",
-            ],
-            cwd=BACKEND_DIR,
-            env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL},
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        assert probe.returncode == 0, probe.stderr
-        assert probe.stdout.strip() == TEST_DATABASE_URL, (
-            "a subprocess no longer resolves DATABASE_URL to the test "
-            f"database: {probe.stdout.strip()}"
-        )
-
-        result = await asyncio.to_thread(
-            subprocess.run,
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
-            cwd=BACKEND_DIR,
-            env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL},
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        result = await _in_backend("-m", "alembic", "upgrade", "head")
         assert result.returncode == 0, result.stderr
 
         async with engine.connect() as connection:
@@ -140,5 +144,98 @@ async def test_upgrade_head_matches_the_models():
         # Fix it by making the migration and the model agree — not by
         # regenerating the schema from whichever side happens to be right.
         assert diff == [], f"migrations and models.py disagree: {diff}"
+    finally:
+        await engine.dispose()
+
+
+async def test_spark_list_members_backfill_preserves_order():
+    """Migration f2b6d81c4a3e moves the `sparks` JSONB arrays into
+    `spark_list_members` rows (issue #66). The parity test above runs the
+    chain against an EMPTY database, so its INSERT..SELECT never moves a
+    row — this seeds lists at the parent revision and checks the data half:
+    rows land with per-list order intact (the serial ids follow the
+    INSERT's ORDER BY, which is what the read routes order by), and the
+    downgrade rebuilds the arrays exactly, empties included.
+    """
+    first = [
+        {"kind": "white", "key": 30},
+        {"kind": "race", "key": 10},
+        {"kind": "white", "key": 20},
+    ]
+    second = [{"kind": "scenario", "key": 1}]
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        await _reset_or_skip(engine)
+        await _probe_resolves_test_db()
+
+        staged = await _in_backend("-m", "alembic", "upgrade", "e6a8d34f19c2")
+        assert staged.returncode == 0, staged.stderr
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("INSERT INTO users (email) VALUES ('a@example.com')")
+            )
+            for name, sparks in (
+                ("Front Runner", first),
+                ("Medium", second),
+                ("Empty", []),
+            ):
+                # Scoped by email: the chain itself seeds a dev user, and
+                # an unscoped SELECT would give that user copies of every
+                # list, doubling the member rows the assertion expects.
+                await connection.execute(
+                    text(
+                        "INSERT INTO spark_lists (owner_id, name, sparks)"
+                        " SELECT id, :name, CAST(:sparks AS jsonb) FROM users"
+                        " WHERE email = 'a@example.com'"
+                    ).bindparams(name=name, sparks=json.dumps(sparks))
+                )
+
+        upgraded = await _in_backend("-m", "alembic", "upgrade", "head")
+        assert upgraded.returncode == 0, upgraded.stderr
+        async with engine.connect() as connection:
+            members = (
+                await connection.execute(
+                    text(
+                        "SELECT l.name, m.kind, m.key"
+                        " FROM spark_list_members m"
+                        " JOIN spark_lists l ON l.id = m.list_id"
+                        " ORDER BY m.id"
+                    )
+                )
+            ).all()
+            assert [tuple(row) for row in members] == [
+                ("Front Runner", "white", 30),
+                ("Front Runner", "race", 10),
+                ("Front Runner", "white", 20),
+                ("Medium", "scenario", 1),
+            ]
+            still_there = (
+                await connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns"
+                        " WHERE table_name = 'spark_lists'"
+                        " AND column_name = 'sparks'"
+                    )
+                )
+            ).scalar()
+            assert still_there == 0
+
+        downgraded = await _in_backend(
+            "-m", "alembic", "downgrade", "e6a8d34f19c2"
+        )
+        assert downgraded.returncode == 0, downgraded.stderr
+        async with engine.connect() as connection:
+            stored = (
+                await connection.execute(
+                    text(
+                        "SELECT name, sparks::text FROM spark_lists ORDER BY id"
+                    )
+                )
+            ).all()
+        assert [(name, json.loads(sparks)) for name, sparks in stored] == [
+            ("Front Runner", first),
+            ("Medium", second),
+            ("Empty", []),
+        ]
     finally:
         await engine.dispose()

@@ -1,4 +1,5 @@
 import {
+  ApiError,
   api,
   type ListSparkKind,
   type SlotFactorKind,
@@ -260,7 +261,7 @@ export async function createListWith(
   const created = await api.createSparkList(name);
   const withList = replacing(lists, created);
   try {
-    return await setMembership(withList, created.id, [{ kind, key }]);
+    return replacing(withList, await api.addListSpark(created.id, kind, key));
   } catch (reason) {
     throw new PartialWrite(withList, reason);
   }
@@ -287,27 +288,31 @@ export async function deleteList(
 }
 
 /**
- * Replace one list's membership wholesale, matching the route. The cost is
- * that two devices editing one list at once is last-write-wins — accepted,
- * and DECISIONS.md #37 says what closing it would take.
+ * The list this write named no longer exists — deleted on another device or
+ * in another tab. Mirrors `PartialWrite`: thrown so a caller cannot mistake
+ * it for success, and carrying the state it must adopt anyway — the given
+ * lists with the dead row dropped, so the pill disappears in place with no
+ * reload, no `epoch` bump and no remount (issue #66's absorbed #73; the two
+ * reverted corrective-reload shapes are recorded there).
  */
-export async function setMembership(
-  lists: SparkList[],
-  id: number,
-  sparks: SparkRef[]
-): Promise<SparkList[]> {
-  return replacing(lists, await api.updateSparkList(id, { sparks }));
+export class ListGone extends Error {
+  constructor(readonly lists: SparkList[]) {
+    super("that list was deleted elsewhere");
+    this.name = "ListGone";
+  }
 }
 
 /**
- * One checkbox in the picker. Computed from the caller's copy, so a list
- * changed on another device is written from a stale set — the last-write-wins
- * case above, at its narrowest.
+ * One checkbox in the picker: add or remove a single membership, matching
+ * the per-spark routes (issue #66, DECISIONS.md #48). Which verb is computed
+ * from the caller's copy, so the worst a stale copy can do is flip one spark
+ * the wrong way — and the returned list is the server's current state, so
+ * the display converges on what other devices have done either way.
  *
  * A list the caller does not have is a no-op rather than a create: the id
- * came from a control rendered off these same lists, so its absence means the
- * list was deleted, and re-creating it would resurrect what another device
- * just removed.
+ * came from a control rendered off these same lists, so its absence means
+ * the list was deleted, and re-creating it would resurrect what another
+ * device just removed. A list the SERVER no longer has throws `ListGone`.
  */
 export async function toggleMembership(
   lists: SparkList[],
@@ -318,10 +323,17 @@ export async function toggleMembership(
   const list = listById(lists, id);
   if (list === undefined) return lists;
   const held = list.sparks.some((s) => sameSpark(s, kind, key));
-  const sparks = held
-    ? list.sparks.filter((s) => !sameSpark(s, kind, key))
-    : [...list.sparks, { kind, key }];
-  return setMembership(lists, id, sparks);
+  try {
+    const saved = held
+      ? await api.removeListSpark(id, kind, key)
+      : await api.addListSpark(id, kind, key);
+    return replacing(lists, saved);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      throw new ListGone(lists.filter((l) => l.id !== id));
+    }
+    throw error;
+  }
 }
 
 // ---------- the management page's sort (device-local) ----------

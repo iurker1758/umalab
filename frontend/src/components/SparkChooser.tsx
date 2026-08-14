@@ -621,9 +621,10 @@ function ChooserPopout({
   // and reopened. Frozen membership makes un-starring empty the star and move
   // nothing.
   //
-  // Taken once per mount, and the caller REMOUNTS this popout when the lists
-  // settle (see the `key` below) — which keeps the snapshot from freezing an
-  // empty union mid-fetch without needing an effect or a ref read at render.
+  // Taken once per mount, and frozen even when a fetch lands mid-open: an
+  // open begun over unsettled or failed lists runs without a Favorites
+  // section until reopened, rather than regrouping rows under the pointer
+  // (DECISIONS.md #50).
   const [pinnedRows] = useState(() => unionOf(sparkLists.lists));
   const pinned = new Set(pinnedRows.map((w) => sparkId({ type: w.kind, key: w.key })));
   // Held sparks the reference can't name, frozen per open like everything
@@ -657,10 +658,10 @@ function ChooserPopout({
   // selection, DECISIONS.md #43) and are re-pressed here at the next open,
   // while Current Sparks is per-member and dies with the popout. The lazy
   // initializer IS the snapshot-at-open — the popout mounts fresh per open
-  // (and per `epoch`), and `onToggleActive` never bumps `epoch`, so the map,
-  // not the live `active` prop, is this popout's single source of truth.
-  // Stale active ids name no list and contribute no entry, so an all-stale
-  // selection degrades to browsing everything.
+  // and only per open, so the map, not the live `active` prop, is this
+  // popout's single source of truth. Stale active ids name no list and
+  // contribute no entry, so an all-stale selection degrades to browsing
+  // everything.
   const [filters, setFilters] = useState<Map<"current" | number, Set<string>>>(() => {
     const init = new Map<"current" | number, Set<string>>();
     for (const id of sparkLists.active) {
@@ -866,8 +867,9 @@ function ChooserPopout({
     onRemove,
     onOpenPicker: setOpenPicker,
     // The optimistic path (issue #69, DECISIONS.md #49). Its in-place
-    // ListGone drop matters here: a reload or `epoch` bump would remount
-    // the popout and discard the user's search and open picker.
+    // ListGone drop matters here: a reload would refetch a state the flip
+    // already left behind, and the popout's frozen ordering must outlive
+    // every write (DECISIONS.md #50).
     onToggleList: (s: ListableSpark, listId: number) =>
       toggleListSpark(
         sparkLists.lists,
@@ -1076,16 +1078,12 @@ export function SparkChooser({
       </button>
       {open && (
         <ChooserPopout
-          // Remounts per open (re-snapshotting the favorites and clearing an
-          // abandoned query) and whenever a fetch of the lists LANDS, so a
-          // popout opened mid-fetch re-snapshots instead of showing no
-          // Favorites section at all.
-          //
-          // The generation, not a loaded/loading flag: the retry above fires
-          // precisely when loading is already over, so a boolean key would
-          // never change and the popout that triggered the retry would keep
-          // the empty snapshot it opened with.
-          key={sparkLists.epoch}
+          // Mounts once per open and NEVER remounts while open — no key, the
+          // conditional is the whole lifecycle (DECISIONS.md #50). A lists
+          // fetch landing mid-open (the retry above) updates only the live
+          // parts — ★, pickers, pills, the failure note — while the ordering
+          // snapshots stay frozen; an open begun over unsettled lists runs
+          // without a Favorites section until reopened.
           label={label}
           factors={factors}
           spark={spark}

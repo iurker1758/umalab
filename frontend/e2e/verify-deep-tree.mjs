@@ -2554,6 +2554,98 @@ try {
       .find((b) => b.name === bpName)?.slots.named[3]?.factors ?? [])
       .every((f) => f.key !== orphanKey));
 
+  // ---------- a lists retry landing mid-open moves nothing (issue #89) ----------
+  // The Edit Sparks click itself fires the retry after a failed fetch, so a
+  // settle mid-interaction is the COMMON case of that path, not a race. The
+  // popout used to be keyed on the fetch generation and remounted under the
+  // pointer; now it never remounts while open — the landed lists reach only
+  // the live parts, and the ordering snapshots wait for the next open
+  // (DECISIONS.md #50).
+  await breaking(async () => {
+    // The reopen half needs a favorite to exist: reuse this run's list —
+    // re-created if an earlier section raced it away — and PUT (idempotent)
+    // one known spark into it.
+    let favList = (await getJson("/api/spark-lists")).find((l) => l.name === listName);
+    if (favList === undefined) {
+      listsOwned.add(listName);
+      const made = await fetch(`${BASE}/api/spark-lists`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: listName, sparks: [] }),
+      });
+      favList = made.ok ? await made.json() : undefined;
+    }
+    if (favList === undefined) {
+      check("the retry section has a list to favorite into", false);
+      return;
+    }
+    await fetch(`${BASE}/api/spark-lists/${favList.id}/sparks/white/${added[0].key}`, {
+      method: "PUT",
+    });
+    // Reload with the lists route dead, so the bootstrap fetch fails and the
+    // popout opens over `failed` — the only way into the retry path.
+    const listsRoute = "**/api/spark-lists";
+    await page.route(listsRoute, (route) => route.abort());
+    await page.reload();
+    await page.waitForSelector(".designer-autosave", { timeout: 5000 });
+    await page.waitForFunction(
+      (name) => document.querySelector('.vped button[aria-label^="Trainee — "]')
+        ?.getAttribute("aria-label")?.includes(name) === true,
+      T.entry.name,
+      { timeout: 5000 }
+    );
+    await selectNode("Grandparent 1-1");
+    await openTab("Sparks");
+    // Swap the dead route for one that HOLDS the retry, so popout state can
+    // be built while it is in flight. The handler signals when it has
+    // handled the request — the same double-handle guard as the pill block.
+    await page.unroute(listsRoute);
+    let releaseRetry;
+    const retryHeld = new Promise((resolve) => { releaseRetry = resolve; });
+    let retryHandled;
+    const retryDone = new Promise((resolve) => { retryHandled = resolve; });
+    await page.route(listsRoute, async (route) => {
+      await retryHeld;
+      await route.continue();
+      retryHandled();
+    });
+    await openChooser("G1-1");
+    check("a failed lists fetch is said inline, with the browse intact and no Lists control",
+      (await page.locator(".spark-popout .spark-note").count()) === 1 &&
+      (await page.locator(".spark-popout .spark-matches li").count()) > 0 &&
+      (await page.locator(".spark-popout .spark-list-disclose").count()) === 0);
+    // The state the remount used to destroy: a pressed Current Sparks and a
+    // typed query, both built while the retry hangs.
+    const searchSel = '.spark-popout input[aria-label="G1-1 spark search"]';
+    await page.locator(".spark-popout .spark-current").click();
+    await page.locator(searchSel).fill(added[0].name);
+    const rowsUnder = await page.locator(".spark-popout .spark-matches li").count();
+    releaseRetry();
+    await retryDone;
+    await page.unroute(listsRoute);
+    // The note clearing is the in-app signal that the retry SETTLED — the
+    // route resolving only says the response left.
+    const noteGone = await page
+      .waitForSelector(".spark-popout .spark-note", { state: "detached", timeout: 5000 })
+      .then(() => true, () => false);
+    check("the retry landing mid-open moves nothing (issue #89)",
+      noteGone &&
+      (await page.locator(searchSel).inputValue()) === added[0].name &&
+      (await page.locator(".spark-popout .spark-current").getAttribute("aria-pressed")) === "true" &&
+      (await page.locator(".spark-popout .spark-matches li").count()) === rowsUnder &&
+      (await sectionNamed("Favorites").count()) === 0);
+    check("while the landed lists reach the live parts",
+      (await page.locator(".spark-popout .spark-list-disclose").count()) === 1 &&
+      (await page.locator(".spark-popout .spark-list-disclose").isEnabled()));
+    // The snapshot waits for the next open — reopening is what regains the
+    // Favorites section.
+    await closeChooser();
+    await openChooser("G1-1");
+    check("and the next open retakes the snapshot, Favorites leading",
+      (await page.locator(".spark-popout .spark-section-head").first().textContent()) === "Favorites");
+    await closeChooser();
+  });
+
   // Switch away and back, so the design comes from the server rather than
   // from the page's own state.
   await newBlueprint();

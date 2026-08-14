@@ -331,9 +331,10 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
       ))}
       {open !== undefined && (
         <ListSparksPopout
-          // Remounts when a retry lands, retaking the per-open snapshots —
-          // the chooser's key, with the same narrow #89-shaped hazard.
-          key={`${open.id}:${epoch}`}
+          // The id alone: a direct list→list switch retakes the per-open
+          // snapshots, and nothing else remounts a popout in use — the
+          // chooser's rule (DECISIONS.md #50).
+          key={open.id}
           list={open}
           refs={refs}
           onToggle={toggle}

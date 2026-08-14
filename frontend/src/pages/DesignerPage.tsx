@@ -160,10 +160,6 @@ export function DesignerPage({
   // no lists yet and a user whose fetch failed hold the same value, and only
   // one of them has a reason to see the controls disabled.
   const [sparkListsFailed, setSparkListsFailed] = useState(false);
-  // See SparkListStore. Zero until the first fetch settles; a settle counts
-  // even when it failed, so the popout that opened over a failure remounts
-  // when a retry lands.
-  const [sparkListsEpoch, setSparkListsEpoch] = useState(0);
   // Device-local, not a column: which lists you are working against is a view.
   // Empty means every list.
   const [activeLists, setActiveLists] = useState<number[]>(() => loadActiveLists());
@@ -201,8 +197,6 @@ export function DesignerPage({
         setSparkListsFailed(false);
       } catch {
         setSparkListsFailed(true);
-      } finally {
-        setSparkListsEpoch((n) => n + 1);
       }
     })();
   }, []);
@@ -505,7 +499,6 @@ export function DesignerPage({
       if (cancelled) return;
       if (cat.status === "fulfilled") setCatalog(cat.value);
       if (factors.status === "fulfilled") setFactorRefs(factors.value);
-      setSparkListsEpoch((n) => n + 1);
       // Dropped rather than applied when a write beat it home — the write's
       // response IS the newer list, and it is already in state.
       if (lists.status === "fulfilled") {
@@ -625,7 +618,6 @@ export function DesignerPage({
   const sparkListStore = useMemo(
     (): SparkListStore => ({
       lists: sparkLists,
-      epoch: sparkListsEpoch,
       failed: sparkListsFailed,
       active: activeLists,
       onChange: onSparkListsChange,
@@ -634,7 +626,6 @@ export function DesignerPage({
     }),
     [
       sparkLists,
-      sparkListsEpoch,
       sparkListsFailed,
       activeLists,
       onSparkListsChange,

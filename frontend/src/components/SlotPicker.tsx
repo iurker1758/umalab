@@ -2,21 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { CatalogEntry, Veteran } from "../api";
 import { APTITUDE_LABELS } from "../aptitude";
 import {
-  CAPTION_LABELS,
-  DEFAULT_ASC,
   PICKER_CAPTION_STORE,
   PICKER_SORT_STORE,
-  SORTS,
   loadCaptionMode,
   loadSortPref,
-  nextCaptionMode,
   pinkOf,
   rosterCardsOf,
   saveCaptionMode,
   saveSortPref,
   sortVeterans,
   type CaptionMode,
-  type SortKey,
   type SortPref,
 } from "../domain";
 import {
@@ -29,6 +24,7 @@ import {
   saveFilters,
   type Filters,
 } from "../filters";
+import { CaptionPill, SortPill } from "./dockPills";
 import { FilterPanel } from "./FilterPanel";
 import { PopoutBackdrop } from "./popout";
 import { UmaCardChip } from "./UmaCardChip";
@@ -294,42 +290,8 @@ export function SlotPicker({
                 <span className="filter-count">{countFilters(filters)}</span>
               )}
             </button>
-            <button
-              className="filter-float caption-float"
-              title={`Captions: ${CAPTION_LABELS[caption]} — click for ${CAPTION_LABELS[nextCaptionMode(caption)]}`}
-              aria-label={`Captions: ${CAPTION_LABELS[caption]}`}
-              onClick={() => setCaption(nextCaptionMode(caption))}
-            >
-              {CAPTION_LABELS[caption]}
-            </button>
-            <label className="sort-float">
-              <select
-                aria-label="Sort Roster By"
-                value={sort.key}
-                onChange={(e) => {
-                  const key = e.target.value as SortKey;
-                  setSort({ key, asc: DEFAULT_ASC[key] });
-                }}
-              >
-                {SORTS.map(([label, key]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="sort-dir"
-                title={
-                  sort.asc
-                    ? "Ascending — click for descending"
-                    : "Descending — click for ascending"
-                }
-                aria-label={sort.asc ? "Sort Ascending" : "Sort Descending"}
-                onClick={() => setSort({ ...sort, asc: !sort.asc })}
-              >
-                {sort.asc ? "▲" : "▼"}
-              </button>
-            </label>
+            <CaptionPill caption={caption} onChange={setCaption} />
+            <SortPill sort={sort} onChange={setSort} selectLabel="Sort Roster By" />
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   LIST_SPARK_KINDS,
   type FactorRef,
@@ -6,7 +6,9 @@ import {
   type SparkList,
 } from "../api";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
-import { byQueryRank } from "../rank";
+import { matchingByQuery } from "../rank";
+import { PopoutBackdrop } from "./popout";
+import { useEscapeClose } from "./useEscapeClose";
 
 // The membership editor for ONE list (issue #70): every listable spark as a
 // row that toggles, so building a "Front Runner" list is one open instead of
@@ -49,15 +51,7 @@ export function ListSparksPopout({
 }) {
   const [query, setQuery] = useState("");
 
-  // Escape closes UNCONDITIONALLY, including mid-write — the chooser's rule,
-  // for its reasons.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeClose(onClose);
 
   const names = useMemo(
     () => new Map(refs.map((r) => [sparkId({ type: r.kind, key: r.key }), r.name])),
@@ -83,11 +77,7 @@ export function ListSparksPopout({
   const held = new Set(list.sparks.map((s) => sparkId({ type: s.kind, key: s.key })));
 
   const q = query.trim().toLowerCase();
-  const byQuery = byQueryRank(q);
-  const matching = (options: Option[]): Option[] => {
-    const hits = options.filter((o) => o.name.toLowerCase().includes(q));
-    return q === "" ? hits : hits.sort(byQuery);
-  };
+  const matching = matchingByQuery<Option>(q);
 
   // A member at open is up top and NOWHERE ELSE — the same spark twice on
   // one surface reads as "which of these did I already have" (the chooser's
@@ -116,9 +106,7 @@ export function ListSparksPopout({
 
   return (
     <>
-      {/* Dismisses on mousedown, not click — the chooser's cursor-freeze
-          workaround, kept identical. */}
-      <div className="uma-popout-backdrop" onMouseDown={onClose} />
+      <PopoutBackdrop onClose={onClose} />
       <div
         className="uma-popout spark-popout"
         role="dialog"

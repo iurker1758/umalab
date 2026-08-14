@@ -13,6 +13,7 @@ import {
   type WhiteFilter,
 } from "../filters";
 import { MarkIcon } from "./MarkIcon";
+import { PopoutBackdrop } from "./popout";
 import { UmaCardChip } from "./UmaCardChip";
 
 function StarModeRow({
@@ -324,7 +325,7 @@ export function FilterPanel({
 
       {umaOpen && (
         <>
-          <div className="uma-popout-backdrop" onMouseDown={() => setUmaOpen(false)} />
+          <PopoutBackdrop onClose={() => setUmaOpen(false)} />
           <div className="uma-popout" role="dialog" aria-label="Choose Umas">
             <input
               className="uma-search"
@@ -353,7 +354,7 @@ export function FilterPanel({
 
       {sparkOpen && (
         <>
-          <div className="uma-popout-backdrop" onMouseDown={() => setSparkOpen(false)} />
+          <PopoutBackdrop onClose={() => setSparkOpen(false)} />
           <div className="uma-popout" role="dialog" aria-label="Choose Common Sparks">
             <input
               className="uma-search"

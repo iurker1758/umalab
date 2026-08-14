@@ -2863,7 +2863,9 @@ try {
     (await page.locator('select[aria-label="Parent 1 pink spark"]').inputValue()) === "turf");
 
   // ---------- responsive ----------
-  await page.setViewportSize({ width: 800, height: 900 });
+  // 880 sits inside the 861–900 band issue #93 moved into the half tree —
+  // a width below 860 would pass under the old breakpoint too.
+  await page.setViewportSize({ width: 880, height: 900 });
   const columns = await page.evaluate(() =>
     getComputedStyle(document.querySelector(".designer-combo")).gridTemplateColumns
       .split(" ").length

@@ -659,14 +659,18 @@ function ChooserPopout({
   // while Current Sparks is per-member and dies with the popout. The lazy
   // initializer IS the snapshot-at-open — the popout mounts fresh per open
   // and only per open, so the map, not the live `active` prop, is this
-  // popout's single source of truth. Stale active ids name no list and
-  // contribute no entry, so an all-stale selection degrades to browsing
-  // everything.
+  // popout's single source of truth. Every active id is pressed, known or
+  // not: one naming no list yet — a stale id, or any of them while the
+  // fetch is failed or unsettled — takes the empty snapshot, which imposes
+  // no filter, so an all-stale selection still browses everything. Skipping
+  // unknown ids instead left the entry out, and when the lists landed
+  // mid-open the pill rendered un-pressed over an active store — the first
+  // click then silently DEACTIVATED the persisted selection.
   const [filters, setFilters] = useState<Map<"current" | number, Set<string>>>(() => {
     const init = new Map<"current" | number, Set<string>>();
     for (const id of sparkLists.active) {
       const list = listById(sparkLists.lists, id);
-      if (list !== undefined) init.set(id, membershipIds(list));
+      init.set(id, list === undefined ? new Set() : membershipIds(list));
     }
     return init;
   });

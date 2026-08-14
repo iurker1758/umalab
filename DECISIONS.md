@@ -2223,11 +2223,16 @@ marked in each.
   ordering snapshots stay frozen — #35's "only the ordering freezes"
   rule, extended from writes to fetches. The cost, accepted in
   writing: an open begun over unsettled or failed lists runs without
-  a Favorites section or pre-pressed pills until reopened, where the
-  key used to regroup it mid-open. The Lists page's popout keys on
-  the list id alone under the same rule (its mid-open-landing window
-  was already unreachable — reloads there fire only while no rows
-  are on screen).
+  a Favorites section until reopened, where the key used to regroup
+  it mid-open. The filters map still pre-presses every active id —
+  one naming no list yet takes the empty, filterless snapshot — so a
+  pill whose list lands mid-open renders pressed, matching the store
+  its toggle writes; skipping unknown ids made that pill un-pressed
+  over an active store, and the first click silently deactivated the
+  persisted selection. The Lists page's popout drops its key under
+  the same rule (its mid-open-landing window was already unreachable
+  — reloads there fire only while no rows are on screen, and the
+  backdrop closes the popout before another row's could open).
 - **Alternatives rejected:** lifting individual fields (the filter,
   the query) into `SparkChooser` — patches symptoms while the
   remount still rebuilds every row and resets the scroll; re-taking

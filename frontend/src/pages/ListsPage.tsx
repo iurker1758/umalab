@@ -331,10 +331,10 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
       ))}
       {open !== undefined && (
         <ListSparksPopout
-          // The id alone: a direct list→list switch retakes the per-open
-          // snapshots, and nothing else remounts a popout in use — the
-          // chooser's rule (DECISIONS.md #50).
-          key={open.id}
+          // No key: the conditional is the whole lifecycle — the backdrop
+          // closes this popout before another row's Edit Sparks can be
+          // reached, so `open` never changes while it is mounted (the
+          // chooser's rule, DECISIONS.md #50).
           list={open}
           refs={refs}
           onToggle={toggle}

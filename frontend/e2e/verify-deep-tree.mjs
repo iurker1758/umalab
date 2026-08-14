@@ -2582,6 +2582,12 @@ try {
     await fetch(`${BASE}/api/spark-lists/${favList.id}/sparks/white/${added[0].key}`, {
       method: "PUT",
     });
+    // The persisted active selection, present BEFORE the failed load: the
+    // pills must stay truthful to it when the lists land mid-open.
+    await page.evaluate(
+      (id) => localStorage.setItem("umalab.sparkLists.active", JSON.stringify([id])),
+      favList.id
+    );
     // Reload with the lists route dead, so the bootstrap fetch fails and the
     // popout opens over `failed` — the only way into the retry path.
     const listsRoute = "**/api/spark-lists";
@@ -2637,9 +2643,18 @@ try {
     check("while the landed lists reach the live parts",
       (await page.locator(".spark-popout .spark-list-disclose").count()) === 1 &&
       (await page.locator(".spark-popout .spark-list-disclose").isEnabled()));
+    // The active list's pill renders PRESSED once its list lands: the map
+    // pre-pressed the id at open with the empty, filterless snapshot. An
+    // un-pressed pill over an active store would make the first click
+    // silently DEACTIVATE the persisted selection.
+    await page.locator(".spark-popout .spark-list-disclose").click();
+    check("and the active list's pill stays truthful to the store",
+      (await page.locator(`.spark-popout .spark-list-filter[data-list="${favList.id}"]`)
+        .getAttribute("aria-pressed")) === "true");
     // The snapshot waits for the next open — reopening is what regains the
     // Favorites section.
     await closeChooser();
+    await page.evaluate(() => localStorage.removeItem("umalab.sparkLists.active"));
     await openChooser("G1-1");
     check("and the next open retakes the snapshot, Favorites leading",
       (await page.locator(".spark-popout .spark-section-head").first().textContent()) === "Favorites");

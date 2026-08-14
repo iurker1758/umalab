@@ -266,6 +266,15 @@ export async function renameList(
 const deletedHere = new Set<number>();
 
 /**
+ * Test seam. Unlike `inflight` (reclaimed on settle) and `acked` (re-seeded
+ * at chain start), this set never self-heals, so without a reset every test
+ * id a delete touched stays suppressed for the module's life.
+ */
+export function forgetLocalDeletes(): void {
+  deletedHere.clear();
+}
+
+/**
  * Delete the list and everything in it. A spark in no other list leaves
  * Favorites with it — the union orphans nothing, so there is nothing to sweep.
  */

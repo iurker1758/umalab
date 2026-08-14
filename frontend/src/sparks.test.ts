@@ -16,6 +16,7 @@ import {
   createListWith,
   deleteList,
   favorites,
+  forgetLocalDeletes,
   isFavorite,
   LIST_SORT_STORE,
   listById,
@@ -93,6 +94,7 @@ const stubApi = (over: {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  forgetLocalDeletes();
 });
 
 describe("reads over the caller's lists", () => {

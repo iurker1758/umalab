@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   APTITUDE_KEYS,
   detailOr,
@@ -14,10 +14,12 @@ import {
 } from "../api";
 import { APTITUDE_LABELS, UNDROPPABLE_TITLE, undroppableMessage } from "../aptitude";
 import { ListFilter } from "./ListFilter";
+import { PopoutBackdrop } from "./popout";
 import { refocus } from "./refocus";
+import { useEscapeClose } from "./useEscapeClose";
 import { deriveCharaId, factorsWith } from "../blueprint";
 import { SPARK_TYPE_LABELS, SPARK_TYPE_ORDER, sparkId } from "../procs";
-import { byQueryRank } from "../rank";
+import { matchingByQuery } from "../rank";
 import {
   createListWith,
   favorites as unionOf,
@@ -691,17 +693,7 @@ function ChooserPopout({
     sparkLists.onToggleActive(id);
   };
 
-  // Escape closes UNCONDITIONALLY, including mid-write: blocking it while
-  // `busy` silently swallows the keypress. What that used to leave open —
-  // close mid-write, reopen, write again from state the first never
-  // updated — stopped mattering with #48's per-spark verbs, which commute.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeClose(onClose);
 
   // What she holds RIGHT NOW, with levels — live, so a row's controls track
   // the document while the section it sits in stays frozen. The pink joins
@@ -788,26 +780,16 @@ function ChooserPopout({
     if (listIds === null) return currentIds === null || inCurrent(id);
     return q !== "" || listIds.has(id) || heldEver(id) || inCurrent(id);
   };
-  const byQuery = byQueryRank(q);
-  const matching = (options: Option[]): Option[] => {
-    const hits = options.filter(
-      (o) =>
-        possible(o) &&
-        o.name.toLowerCase().includes(q) &&
-        inFilter(sparkId({ type: o.kind, key: o.key }), o.kind)
-    );
-    if (q === "") return hits;
-    return hits.sort(byQuery);
-  };
+  const matching = matchingByQuery<Option>(
+    q,
+    (o) => possible(o) && inFilter(sparkId({ type: o.kind, key: o.key }), o.kind)
+  );
   // The pink rows under the same narrowing, over the parallel shape. No
   // possibility rule rides along: any node this chooser renders on can hold
   // any pink.
-  const pinkHits = PINK_OPTIONS.filter(
-    (o) =>
-      o.name.toLowerCase().includes(q) &&
-      inFilter(sparkId({ type: "pink", aptitude: o.aptitude }), "pink")
-  );
-  if (q !== "") pinkHits.sort(byQuery);
+  const pinkHits = matchingByQuery<PinkOption>(q, (o) =>
+    inFilter(sparkId({ type: "pink", aptitude: o.aptitude }), "pink")
+  )(PINK_OPTIONS);
 
   // Built from the frozen snapshot, so a row stays put when you un-star it.
   const favorites = matching(pinnedRows.map(optionFor));
@@ -922,11 +904,7 @@ function ChooserPopout({
 
   return (
     <>
-      {/* Dismisses on mousedown, not click: Chrome freezes the OS cursor when
-          a click unmounts the element under it, which reads as "hover is
-          broken" until the next click. The filter panel's popouts do the
-          same. */}
-      <div className="uma-popout-backdrop" onMouseDown={onClose} />
+      <PopoutBackdrop onClose={onClose} />
       <div className="uma-popout spark-popout" role="dialog" aria-label="Edit Sparks">
         {/* Sticky, so the query stays reachable while you scroll 447 rows past
             it. */}

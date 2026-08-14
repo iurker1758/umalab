@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byQueryRank } from "./rank";
+import { byQueryRank, matchingByQuery } from "./rank";
 
 const names = (list: { name: string }[]) => list.map((o) => o.name);
 
@@ -25,6 +25,36 @@ describe("ranking by query position", () => {
     expect(names([...rows].sort(byQueryRank("")))).toEqual([
       "Corner Adept",
       "Swinging Maestro",
+    ]);
+  });
+});
+
+describe("matching by query", () => {
+  const rows = [
+    { name: "Swinging Maestro" },
+    { name: "Straightaway Recovery" },
+    { name: "Corner Recovery" },
+  ];
+
+  it("keeps the caller's order when the query is empty", () => {
+    expect(names(matchingByQuery("")(rows))).toEqual([
+      "Swinging Maestro",
+      "Straightaway Recovery",
+      "Corner Recovery",
+    ]);
+  });
+
+  it("narrows to name hits and ranks them", () => {
+    expect(names(matchingByQuery("recovery")(rows))).toEqual([
+      "Corner Recovery",
+      "Straightaway Recovery",
+    ]);
+  });
+
+  it("composes the caller's own predicate with the query", () => {
+    const notCorner = (o: { name: string }) => !o.name.startsWith("Corner");
+    expect(names(matchingByQuery("recovery", notCorner)(rows))).toEqual([
+      "Straightaway Recovery",
     ]);
   });
 });

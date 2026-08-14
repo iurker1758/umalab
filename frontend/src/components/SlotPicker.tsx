@@ -30,6 +30,7 @@ import {
   type Filters,
 } from "../filters";
 import { FilterPanel } from "./FilterPanel";
+import { PopoutBackdrop } from "./popout";
 import { UmaCardChip } from "./UmaCardChip";
 import { VeteranCard } from "./VeteranCard";
 
@@ -175,8 +176,7 @@ export function SlotPicker({
 
   return (
     <>
-      {/* mousedown, not click — same cursor-freeze workaround as FilterPanel */}
-      <div className="uma-popout-backdrop" onMouseDown={onClose} />
+      <PopoutBackdrop onClose={onClose} />
       <div className="uma-popout designer-picker" role="dialog" aria-label={title}>
         <header className="picker-head">
           <span className="filter-title">{title}</span>

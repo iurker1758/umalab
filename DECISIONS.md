@@ -29,7 +29,7 @@ several:
   3–4 collapse into strips)
 - **Spark entry & chooser:** 30 (factors join the document), 35
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
-  (Edit Sparks), 42 (pink rows)
+  (Edit Sparks), 42 (pink rows), 50 (no mid-open remount)
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
   (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
   (one-shot create + optimistic toggles)
@@ -2201,3 +2201,52 @@ marked in each.
   not response folds. Both list surfaces share the toggle wiring
   (`toggleListSpark`), so a fix to the revert or `ListGone` path
   lands on both.
+
+## 50. The chooser popout never remounts while open
+
+- **Requirements:** issue #89 — the popout was keyed on the lists'
+  fetch generation (the `epoch` #48 and #49 reference), so the retry
+  Edit Sparks fires when the last fetch failed landed mid-interaction
+  and remounted it: query cleared, Current Sparks and pill presses
+  dropped, the frozen row-existence and Favorites snapshots retaken,
+  scroll reset — the "no row moves under the pointer" rule (#41)
+  broken by the component's own lifecycle, and the open click itself
+  fires that retry, so it is the common case of the failed-open path,
+  not a race. Mid-interaction remounts had already been reverted
+  twice (#48). Whatever the fix, it had to decide for ALL
+  popout-local state at once, not lift fields one by one.
+- **Choice:** no remount vector while open — the key is gone and the
+  mount-per-open conditional is the whole lifecycle; the `epoch`
+  field and its bump machinery left `SparkListStore` unused and were
+  stripped. A lists fetch landing mid-open now feeds only the live
+  parts (★, pickers, the band's pills, the failure note) while the
+  ordering snapshots stay frozen — #35's "only the ordering freezes"
+  rule, extended from writes to fetches. The cost, accepted in
+  writing: an open begun over unsettled or failed lists runs without
+  a Favorites section until reopened, where the key used to regroup
+  it mid-open. The filters map still pre-presses every active id —
+  one naming no list yet takes the empty, filterless snapshot — so a
+  pill whose list lands mid-open renders pressed, matching the store
+  its toggle writes; skipping unknown ids made that pill un-pressed
+  over an active store, and the first click silently deactivated the
+  persisted selection. The Lists page's popout keys on the list id
+  ALONE — no fetch generation (its mid-open-landing window was
+  already unreachable: reloads there fire only while no rows are on
+  screen), but the id stays: the backdrop stops the mouse, yet
+  another row's Edit Sparks is still focusable and Enter switches
+  the open list while the popout is mounted, and without the remount
+  the frozen In This List snapshot is the previous list's — a
+  keyless cut of this shipped briefly and reproduced exactly that.
+- **Alternatives rejected:** lifting individual fields (the filter,
+  the query) into `SparkChooser` — patches symptoms while the
+  remount still rebuilds every row and resets the scroll; re-taking
+  the Favorites snapshot in place on the first successful settle —
+  regroups hundreds of rows under the pointer once, the violation
+  being fixed, and needs a settled-latch no other popout state does;
+  keeping the remount as documented — rejected above as the common
+  case of its own path.
+- **What would change my mind:** lists gaining a background or
+  staleness refresh that makes mid-open settles routine — the
+  no-Favorites failed open stops being a corner and the adopt-once
+  shape gets revisited; that open's missing Favorites section
+  proving confusing in practice — the same revisit.

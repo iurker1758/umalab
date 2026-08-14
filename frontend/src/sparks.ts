@@ -41,13 +41,6 @@ export const ACTIVE_LISTS_STORE = "umalab.sparkLists.active";
 // the chooser sits three levels below the page that owns the fetch.
 export type SparkListStore = {
   lists: SparkList[];
-  // Which generation of `lists` this is. Zero until the first fetch SETTLES,
-  // then bumped by every fetch that lands, including a retry — which an
-  // "already loaded" boolean cannot express, since a retry only happens once
-  // loading is over. The chooser keys its popout on this. Writes deliberately
-  // do NOT bump it: the frozen membership is what keeps a row from moving out
-  // from under the pointer that starred it.
-  epoch: number;
   // Whether the LAST attempt rejected, which an empty array cannot say — a
   // user with no lists yet and a user whose fetch failed hold the same value,
   // and only one of them has a reason to see the controls disabled.
@@ -64,8 +57,9 @@ export type SparkListStore = {
   // later write would drop the earlier press — the onSetFactors rule.
   onToggleActive: (id: number) => void;
   // Re-fetch, for the chooser opening after a FAILED fetch. Not a general
-  // staleness fix: it bumps `epoch`, so calling it while the popout is open
-  // rebuilds it and discards the user's search and any picker they had open.
+  // staleness fix: the popout never remounts while open (DECISIONS.md #50),
+  // so a reload that lands mid-open feeds only the live parts — the frozen
+  // ordering snapshots are retaken on the next open.
   onReload: () => void;
 };
 
@@ -197,7 +191,7 @@ export const toggleActive = (active: number[], id: number): number[] =>
 // fetch: the chooser freezes its Favorites membership at open and filters the
 // kind sections against that snapshot, so a spark the snapshot has never seen
 // would arrive as a filled ★ in a kind section. Wholesale refresh is
-// `onReload`'s job, and it bumps `epoch` so the snapshot is retaken.
+// `onReload`'s job, and the snapshot is retaken on the next open.
 
 /** Server order: creation (`id`) — where the next GET would put it. */
 const ordered = (lists: SparkList[]): SparkList[] =>
@@ -278,7 +272,7 @@ export async function deleteList(
  * The list this write named no longer exists — deleted on another device or
  * in another tab. A marker, not a payload: the caller drops the dead row
  * from its CURRENT state with a functional update, so the pill disappears
- * in place with no reload, no `epoch` bump and no remount (issue #66's
+ * in place with no reload and no remount (issue #66's
  * absorbed #73; the two reverted corrective-reload shapes are recorded
  * there).
  */
@@ -414,7 +408,7 @@ export async function syncMembership(
  * request behind it, fold only the settled `updated_at`. A final failure
  * re-states the last server-acknowledged membership; a superseded write's
  * `null` folds nothing and reports nothing; a `ListGone` drops the dead row
- * in place, no reload and no `epoch` bump. A list the caller's `lists` no
+ * in place, no reload and no remount. A list the caller's `lists` no
  * longer holds is a no-op — the `withMembership` rule.
  */
 export function toggleListSpark(

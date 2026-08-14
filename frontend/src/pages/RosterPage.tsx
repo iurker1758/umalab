@@ -1,24 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Veteran } from "../api";
+import { CaptionPill, SortPill } from "../components/dockPills";
 import { FilterPanel } from "../components/FilterPanel";
 import { MarkIcon } from "../components/MarkIcon";
 import { MarkPicker } from "../components/MarkPicker";
 import { VeteranCard } from "../components/VeteranCard";
 import { VeteranModal } from "../components/VeteranModal";
 import {
-  CAPTION_LABELS,
-  DEFAULT_ASC,
-  SORTS,
   loadCaptionMode,
   loadSortPref,
   markLabel,
-  nextCaptionMode,
   rosterCardsOf,
   saveCaptionMode,
   saveSortPref,
   sortVeterans,
   type CaptionMode,
-  type SortKey,
   type SortPref,
 } from "../domain";
 import { commonSparkNamesOf, countFilters, matchesFilters, type Filters } from "../filters";
@@ -81,8 +77,7 @@ export function RosterPage({
     saveSortPref(next);
   };
 
-  const cycleCaption = () => {
-    const next = nextCaptionMode(caption);
+  const applyCaption = (next: CaptionMode) => {
     setCaption(next);
     saveCaptionMode(next);
   };
@@ -359,10 +354,11 @@ export function RosterPage({
           {/* Filters and sort keep their own dock, live through selection
               mode too: hidden picks go inert via the visibleSelected
               overlap, and the badge keeps an active filter from silently
-              narrowing what the batch dock's "All" means. Frozen during an
-              in-flight confirm like every other selection input — widening
-              the filter mid-request would grow visibleSelected past the
-              payload already on the wire. */}
+              narrowing what the batch dock's "All" means. Filters is frozen
+              during an in-flight confirm like every other selection input —
+              widening the filter mid-request would grow visibleSelected past
+              the payload already on the wire. Sort only reorders, so it
+              stays live. */}
           <button className="filter-float" disabled={bulkBusy} onClick={() => setFilterOpen(true)}>
             Filters
             {countFilters(filters) > 0 && (
@@ -371,38 +367,8 @@ export function RosterPage({
           </button>
           {/* Not frozen with its neighbour during a confirm: the caption is
               purely visual and can't touch the in-flight payload. */}
-          <button
-            className="filter-float caption-float"
-            title={`Captions: ${CAPTION_LABELS[caption]} — click for ${CAPTION_LABELS[nextCaptionMode(caption)]}`}
-            aria-label={`Captions: ${CAPTION_LABELS[caption]}`}
-            onClick={cycleCaption}
-          >
-            {CAPTION_LABELS[caption]}
-          </button>
-          <label className="sort-float">
-            <select
-              aria-label="Sort By"
-              value={sort.key}
-              onChange={(e) => {
-                const key = e.target.value as SortKey;
-                applySort({ key, asc: DEFAULT_ASC[key] });
-              }}
-            >
-              {SORTS.map(([label, key]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
-              className="sort-dir"
-              title={sort.asc ? "Ascending — click for descending" : "Descending — click for ascending"}
-              aria-label={sort.asc ? "Sort Ascending" : "Sort Descending"}
-              onClick={() => applySort({ ...sort, asc: !sort.asc })}
-            >
-              {sort.asc ? "▲" : "▼"}
-            </button>
-          </label>
+          <CaptionPill caption={caption} onChange={applyCaption} />
+          <SortPill sort={sort} onChange={applySort} selectLabel="Sort By" />
         </div>
       )}
 

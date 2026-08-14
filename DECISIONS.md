@@ -2229,10 +2229,14 @@ marked in each.
   pill whose list lands mid-open renders pressed, matching the store
   its toggle writes; skipping unknown ids made that pill un-pressed
   over an active store, and the first click silently deactivated the
-  persisted selection. The Lists page's popout drops its key under
-  the same rule (its mid-open-landing window was already unreachable
-  — reloads there fire only while no rows are on screen, and the
-  backdrop closes the popout before another row's could open).
+  persisted selection. The Lists page's popout keys on the list id
+  ALONE — no fetch generation (its mid-open-landing window was
+  already unreachable: reloads there fire only while no rows are on
+  screen), but the id stays: the backdrop stops the mouse, yet
+  another row's Edit Sparks is still focusable and Enter switches
+  the open list while the popout is mounted, and without the remount
+  the frozen In This List snapshot is the previous list's — a
+  keyless cut of this shipped briefly and reproduced exactly that.
 - **Alternatives rejected:** lifting individual fields (the filter,
   the query) into `SparkChooser` — patches symptoms while the
   remount still rebuilds every row and resets the scroll; re-taking

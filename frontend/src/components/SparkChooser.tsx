@@ -666,12 +666,16 @@ function ChooserPopout({
   // unknown ids instead left the entry out, and when the lists landed
   // mid-open the pill rendered un-pressed over an active store — the first
   // click then silently DEACTIVATED the persisted selection.
+  //
+  // ONE snapshot rule for the initializer and the press: if they diverge,
+  // the pill's state at open stops matching what a click writes.
+  const listSnapshot = (id: number): Set<string> => {
+    const list = listById(sparkLists.lists, id);
+    return list === undefined ? new Set() : membershipIds(list);
+  };
   const [filters, setFilters] = useState<Map<"current" | number, Set<string>>>(() => {
     const init = new Map<"current" | number, Set<string>>();
-    for (const id of sparkLists.active) {
-      const list = listById(sparkLists.lists, id);
-      init.set(id, list === undefined ? new Set() : membershipIds(list));
-    }
+    for (const id of sparkLists.active) init.set(id, listSnapshot(id));
     return init;
   });
   const toggleListFilter = (id: number) => {
@@ -680,8 +684,7 @@ function ChooserPopout({
       if (next.has(id)) {
         next.delete(id);
       } else {
-        const list = listById(sparkLists.lists, id);
-        next.set(id, list === undefined ? new Set() : membershipIds(list));
+        next.set(id, listSnapshot(id));
       }
       return next;
     });

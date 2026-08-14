@@ -331,12 +331,8 @@ export function ListsPage({ onError }: { onError: (msg: string) => void }) {
       ))}
       {open !== undefined && (
         <ListSparksPopout
-          // The id IS load-bearing: the backdrop stops the mouse, but
-          // another row's Edit Sparks stays focusable and Enter switches
-          // `open` while this is mounted — without the remount the frozen
-          // In This List snapshot is the previous list's. No fetch
-          // generation in the key: a settle mid-open must not remount a
-          // popout in use (DECISIONS.md #50).
+          // The id retakes the per-open snapshots on a keyboard-driven
+          // list switch; never a fetch generation (DECISIONS.md #50).
           key={open.id}
           list={open}
           refs={refs}

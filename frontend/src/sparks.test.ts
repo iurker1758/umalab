@@ -16,6 +16,7 @@ import {
   createListWith,
   deleteList,
   favorites,
+  forgetLocalDeletes,
   isFavorite,
   LIST_SORT_STORE,
   listById,
@@ -93,6 +94,7 @@ const stubApi = (over: {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  forgetLocalDeletes();
 });
 
 describe("reads over the caller's lists", () => {
@@ -575,6 +577,38 @@ describe("the shared optimistic toggle", () => {
     toggleListSpark(h.state, 14, "white", 700, h.onChange, h.onError);
     await new Promise((r) => setTimeout(r, 0));
     expect(h.state.map((l) => l.id)).toEqual([15]);
+    expect(h.errors).toEqual(["That list was deleted somewhere else."]);
+  });
+
+  it("stays quiet when the deletion was this client's own", async () => {
+    // Issue #105: a membership toggle can still be in flight when the user
+    // deletes the list, and the member request's 404 can land before the
+    // delete's own response. That ListGone is the user's own doing — the
+    // drop still applies, the toast must not.
+    let rejectAdd: (reason: unknown) => void = () => {};
+    stubApi({
+      addListSpark: () => new Promise((_, reject) => (rejectAdd = reject)),
+    });
+    const h = harness([aList({ id: 18 }), aList({ id: 19 })]);
+    toggleListSpark(h.state, 18, "white", 700, h.onChange, h.onError);
+    await new Promise((r) => setTimeout(r, 0));
+    h.onChange(await deleteList(18));
+    rejectAdd(new ApiError(404, "no such list"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state.map((l) => l.id)).toEqual([19]);
+    expect(h.errors).toEqual([]);
+  });
+
+  it("still toasts for a deletion elsewhere after this client's own delete failed", async () => {
+    stubApi({
+      deleteSparkList: () => Promise.reject(new ApiError(500, "boom")),
+      addListSpark: () => Promise.reject(new ApiError(404, "no such list")),
+    });
+    const h = harness([aList({ id: 20 })]);
+    await expect(deleteList(20)).rejects.toBeInstanceOf(ApiError);
+    toggleListSpark(h.state, 20, "white", 700, h.onChange, h.onError);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state).toEqual([]);
     expect(h.errors).toEqual(["That list was deleted somewhere else."]);
   });
 

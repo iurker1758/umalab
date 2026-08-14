@@ -32,7 +32,7 @@ several:
   (Edit Sparks), 42 (pink rows), 50 (no mid-open remount)
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
   (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
-  (one-shot create + optimistic toggles)
+  (one-shot create + optimistic toggles), 52 (own deletes stay quiet)
 - **Multi-user & auth:** 32
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
@@ -2290,3 +2290,36 @@ marked in each.
   real corpus of raw-read rows appearing, which would mean the write
   path let them in and the strictness belongs in a repair path
   instead.
+
+## 52. A ListGone from your own delete gets no toast
+
+- **Requirements:** issue #105 — membership toggles fly without
+  `busy` (#49), so a toggle can still be in flight when the user
+  deletes the list, and if the DELETE lands at the server first the
+  member request 404s into `ListGone` and toasts "That list was
+  deleted somewhere else." for the user's own deletion. State is
+  correct throughout — the delete's fold already removed the row —
+  so the fix must touch only the toast, and a genuine
+  deleted-elsewhere 404 must keep toasting.
+- **Choice:** a module-level `deletedHere` set in `sparks.ts`,
+  recorded when `deleteList` ISSUES the request — the member 404's
+  response can arrive before the delete's own — and cleared only if
+  the delete rejects; `toggleListSpark`'s `ListGone` arm still drops
+  the row (that drop is what removes it when the 404 beats the
+  delete's resolution) but skips the toast for a tombstoned id.
+  This is #49's superseded-failure rule one level up: a write whose
+  outcome another write owns reports nothing, per-list here instead
+  of per-pill. Entries stay on success — ids are server-issued and
+  never reused — matching `acked`'s never-pruned precedent.
+- **Alternatives rejected:** the delete waiting out that list's
+  in-flight member requests — holds `busy` through an unrelated
+  round trip, and `inflight` is keyed per-pill so it needs a scan;
+  aborting the member request — it may already be at the server, and
+  the api functions take no signal; suppressing when the row is
+  already gone from local state — the 404 can land before the
+  delete's fold, exactly the raced window.
+- **What would change my mind:** list ids ever becoming reusable
+  (the tombstone would then silence a real foreign deletion of a
+  recycled id — prune on the next lists fetch instead); or delete
+  moving off the `busy` path, which would widen the race beyond one
+  toast and reopen the wait-it-out shape.

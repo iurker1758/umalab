@@ -257,6 +257,23 @@ export async function renameList(
     );
 }
 
+// Lists this client deleted itself — a ListGone for one of these is the
+// user's own doing and gets no toast (issue #105). Recorded when the delete
+// is ISSUED, not when it resolves: a still-in-flight membership write's 404
+// can land before the delete's own response. Never pruned on success — ids
+// are server-issued and never reused, so growth is bounded by lists deleted
+// this session, the `acked` precedent.
+const deletedHere = new Set<number>();
+
+/**
+ * Test seam. Unlike `inflight` (reclaimed on settle) and `acked` (re-seeded
+ * at chain start), this set never self-heals, so without a reset every test
+ * id a delete touched stays suppressed for the module's life.
+ */
+export function forgetLocalDeletes(): void {
+  deletedHere.clear();
+}
+
 /**
  * Delete the list and everything in it. A spark in no other list leaves
  * Favorites with it — the union orphans nothing, so there is nothing to sweep.
@@ -264,17 +281,24 @@ export async function renameList(
 export async function deleteList(
   id: number
 ): Promise<(prev: SparkList[]) => SparkList[]> {
-  await api.deleteSparkList(id);
+  deletedHere.add(id);
+  try {
+    await api.deleteSparkList(id);
+  } catch (error) {
+    deletedHere.delete(id);
+    throw error;
+  }
   return (prev) => prev.filter((list) => list.id !== id);
 }
 
 /**
- * The list this write named no longer exists — deleted on another device or
- * in another tab. A marker, not a payload: the caller drops the dead row
+ * The list this write named no longer exists — deleted somewhere, this
+ * client included. A marker, not a payload: the caller drops the dead row
  * from its CURRENT state with a functional update, so the pill disappears
  * in place with no reload and no remount (issue #66's
  * absorbed #73; the two reverted corrective-reload shapes are recorded
- * there).
+ * there), and consults `deletedHere` to decide whether the deletion is
+ * worth a toast.
  */
 export class ListGone extends Error {
   constructor() {
@@ -408,8 +432,9 @@ export async function syncMembership(
  * request behind it, fold only the settled `updated_at`. A final failure
  * re-states the last server-acknowledged membership; a superseded write's
  * `null` folds nothing and reports nothing; a `ListGone` drops the dead row
- * in place, no reload and no remount. A list the caller's `lists` no
- * longer holds is a no-op — the `withMembership` rule.
+ * in place, no reload and no remount, and toasts only when the deletion was
+ * not this client's own. A list the caller's `lists` no longer holds is a
+ * no-op — the `withMembership` rule.
  */
 export function toggleListSpark(
   lists: SparkList[],
@@ -435,8 +460,12 @@ export function toggleListSpark(
     },
     (error: unknown) => {
       if (error instanceof ListGone) {
+        // The drop stays even for a local delete — this 404 can land before
+        // the delete's own fold does. Only the toast is conditional.
         onChange((prev) => prev.filter((l) => l.id !== id));
-        onError("That list was deleted somewhere else.");
+        if (!deletedHere.has(id)) {
+          onError("That list was deleted somewhere else.");
+        }
       } else {
         // Seeded at every chain start and never deleted, so the `??` arm is
         // type appeasement, not a reachable fallback.

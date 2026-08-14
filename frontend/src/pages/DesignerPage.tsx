@@ -74,7 +74,8 @@ import {
 import { charaPlaceholder } from "../domain";
 
 // Matches the styles.css breakpoint where the map drops below the panel.
-const HALF_TREE_QUERY = "(max-width: 860px)";
+// 900, not 860: just above 860 the gen-4 chips pinched to ~32px (issue #93).
+const HALF_TREE_QUERY = "(max-width: 900px)";
 // Long enough that a run of picks collapses into one PUT, short enough that
 // the design on the server is never far behind the one on screen.
 const AUTOSAVE_MS = 800;
@@ -397,7 +398,7 @@ export function DesignerPage({
     () => typeof window !== "undefined" && window.matchMedia(HALF_TREE_QUERY).matches
   );
   const [side, setSide] = useState(1);
-  // ≤860px the panel is a bottom sheet over the map (issue #43, DECISIONS.md
+  // ≤900px the panel is a bottom sheet over the map (issue #43, DECISIONS.md
   // #46): closed on load so the tree starts full-height, opened by map taps
   // only — the toggle and the picker set the selection too, and yanking a
   // sheet up from under those would be motion for its own sake. Closed is

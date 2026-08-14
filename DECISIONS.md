@@ -26,7 +26,7 @@ several:
   (router), 19 (superseded by 26), 25 (31-node document), 26 (v1 +
   autosave), 28 (roster pulls), 31 (corrections), 34 (table sort),
   45 (caption cycle + pink sort), 46 (phone bottom sheet), 47 (gens
-  3–4 collapse into strips)
+  3–4 collapse into strips), 51 (lenient blueprint reads)
 - **Spark entry & chooser:** 30 (factors join the document), 35
   (popout browser), 36 + 39 (greens are card-bound), 40 (blue), 41
   (Edit Sparks), 42 (pink rows), 50 (no mid-open remount)
@@ -2250,3 +2250,41 @@ marked in each.
   no-Favorites failed open stops being a corner and the adopt-once
   shape gets revisited; that open's missing Favorites section
   proving confusing in practice — the same revisit.
+
+## 51. Blueprint reads are lenient: one bad row cannot blank the list
+
+- **Requirements:** issue #92 — `BlueprintOut.slots` was the strict
+  write model, so one stored JSONB row it couldn't parse raised a
+  response-validation 500 for all of `GET /api/blueprints`, the
+  designer's only read surface. The designer then degraded to its
+  worst mode: the mount bail leaves the picker empty and #26's
+  create-when-missing turns the first edit into a fresh row — every
+  saved blueprint looks gone at once, silently. A single bad row must
+  cost at most that row, valid rows must keep parsing exactly as
+  before (including read-side normalization like `factors`
+  defaulting), and the write path stays strict.
+- **Choice:** `slots: BlueprintSlotsIn | JsonValue` with
+  `union_mode="left_to_right"` on `BlueprintOut`. A stored document
+  the strict model rejects comes back as its raw JSON, verbatim; the
+  client's `fromApi` parse is already the per-row gate and `adopt()`
+  already answers a throw with a "couldn't open" toast, so no client
+  change. Left-to-right is load-bearing — pydantic's smart union
+  strict-matches a plain dict against `JsonValue` first, which would
+  hand every row back raw. `JsonValue` over `dict` because nothing
+  constrains the column's shape server-side. With the 500 gone, the
+  write-only placement of rules (#39's green rule) protects
+  openability rather than the list: a read rule an old row fails now
+  strands one design, not all of them.
+- **Alternatives rejected:** skipping unparseable rows server-side —
+  a vanished row reads as deleted, and #26's create-when-missing
+  answers that by writing a new one over it; raw passthrough for all
+  rows (`slots: JsonValue` alone) — removes read validation and
+  normalization for every row to fix a per-row problem; a per-row
+  parse-error marker field — duplicates the client's existing runtime
+  gate and grows the API for a state the client already detects.
+- **What would change my mind:** the document moving out of JSONB
+  into typed rows the way spark-list membership did (#48) — the
+  hazard retires structurally and the union becomes dead weight; or a
+  real corpus of raw-read rows appearing, which would mean the write
+  path let them in and the strictness belongs in a repair path
+  instead.

@@ -295,7 +295,7 @@ button.bp-row:hover { background: #1e2937; }
 .bar-icon:disabled:hover { border-color: #2a3340; background: none; color: inherit; }
 
 /* Option C (DECISIONS.md #26): 31-node vertical map beside a docked focus
-   panel. ≤860px the map collapses to a horizontal strip above the panel. */
+   panel. ≤900px the map collapses to a horizontal strip above the panel. */
 .designer-combo { display: grid; grid-template-columns: minmax(0, 2.6fr) minmax(280px, 1fr); gap: 1rem; align-items: start; }
 .tree-map-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
 
@@ -947,7 +947,8 @@ span.focus-icon { display: inline-flex; font-size: 1.1rem; }
    ProcPanel, and any of those would become the popout's containing block.
    z 7: over the sticky toggle (6) and pill dock (5), under the popout
    layer (9/10). */
-@media (max-width: 860px) {
+/* 900 must stay in sync with HALF_TREE_QUERY in DesignerPage.tsx. */
+@media (max-width: 900px) {
   .designer-combo { grid-template-columns: 1fr; }
   .designer-combo:not(.sheet-open) .focus-dock { display: none; }
   /* Fixed height, not max: the tabs differ in length, and the sheet's top

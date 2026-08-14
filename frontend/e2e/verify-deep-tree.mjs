@@ -2863,12 +2863,14 @@ try {
     (await page.locator('select[aria-label="Parent 1 pink spark"]').inputValue()) === "turf");
 
   // ---------- responsive ----------
-  await page.setViewportSize({ width: 800, height: 900 });
+  // 880 sits inside the 861–900 band issue #93 moved into the half tree —
+  // a width below 860 would pass under the old breakpoint too.
+  await page.setViewportSize({ width: 880, height: 900 });
   const columns = await page.evaluate(() =>
     getComputedStyle(document.querySelector(".designer-combo")).gridTemplateColumns
       .split(" ").length
   );
-  check("≤860px: map collapses above the panel", columns === 1, `columns=${columns}`);
+  check("≤900px: map collapses above the panel", columns === 1, `columns=${columns}`);
   await page.setViewportSize({ width: 390, height: 844 });
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -2928,7 +2930,7 @@ try {
     stuck.visible && stuck.top <= 1, JSON.stringify(stuck));
   await page.evaluate(() => window.scrollTo(0, 0));
 
-  // The sheet (issue #43): at ≤860px the panel is a fixed bottom sheet over
+  // The sheet (issue #43): at ≤900px the panel is a fixed bottom sheet over
   // the map — closed until a map tap, so the tree starts full-height.
   const sheetHidden = () => page.evaluate(
     () => getComputedStyle(document.querySelector(".focus-dock")).display === "none");
@@ -3030,7 +3032,7 @@ try {
   check("wide again: full tree for the open state, no toggle",
     (await page.locator(".vped .vnode").count()) === 7 + 6 * openBranches &&
     (await page.locator(".side-toggle").count()) === 0);
-  // Media-query leak guard: whatever React state holds, above 860px the
+  // Media-query leak guard: whatever React state holds, above 900px the
   // dock must be a plain grid child again.
   check("wide again: panel docked, not a sheet", await page.evaluate(() => {
     const s = getComputedStyle(document.querySelector(".focus-dock"));

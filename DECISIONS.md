@@ -809,7 +809,7 @@ several:
   configuration problems must surface without clicking through 31
   nodes; v2 must layer on without rework.
 - **Choice:** replace `/designer` wholesale with the Option-C layout: a
-  vertical 16-column pedigree map beside a docked focus panel; ≤860px
+  vertical 16-column pedigree map beside a docked focus panel; ≤900px
   the map collapses to a horizontal strip above the panel. The map
   fills its column rather than sizing to its content — its 735px
   intrinsic width exceeds the 544–688px column below ~1150px, and
@@ -854,8 +854,9 @@ several:
   rendered until v2 restores it properly, trainee-only.
 - **Would change my mind:** letter math varying by card in ways
   aptitudes.json doesn't capture (a backend authority); the compressed
-  860–1150px tracks proving unreadable in use — the next lever is the
-  named chips' letter grid, then raising the half-tree breakpoint;
+  900–1150px tracks proving unreadable in use — the next lever is the
+  named chips' letter grid, then raising the half-tree breakpoint
+  further (issue #93 already took it 860→900);
   users reading "+1 (at cap)" as the window's worth rather than its
   yield, which would argue for "+1 of +2".
 
@@ -2000,7 +2001,8 @@ marked in each.
   is up — swapping nodes is the loop, not an interruption — and the
   Edit Sparks popout renders inside the panel and must keep working.
 - **Choice:** the existing `.focus-dock` becomes a fixed, non-modal
-  bottom sheet inside the 860px media query: opened by map taps only
+  bottom sheet inside the half-tree media query (900px as of issue
+  #93): opened by map taps only
   (the toggle and picker set selection without yanking a sheet up),
   dismissed by a mousedown anywhere off it — map chips and the side
   toggle exempt (selection controls swap the content), the picker

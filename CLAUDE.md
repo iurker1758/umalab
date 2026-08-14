@@ -136,10 +136,13 @@ Docs: `npx markdownlint-cli2` from the repo root lints all Markdown (rules in
   script — the app never fetches from uma.moe at runtime.
 - Schema changes go through Alembic migrations, not `create_all`.
 - The blueprint `slots` document only ever grows by adding optional fields to
-  the existing flat shapes. It's a JSONB column with no migration path, and
-  `BlueprintOut` validates strictly — one row it can't parse 500s the whole
-  blueprint list (backlog item, see DECISIONS.md #28 for the flat-vs-nested
-  reasoning). Adding a field is free; restructuring one is not.
+  the existing flat shapes. It's a JSONB column with no migration path;
+  reads are lenient — a stored row the strict model can't parse comes back
+  as raw JSON, and the client refuses to open just that blueprint
+  (DECISIONS.md #51) — but an unopenable row is still a lost design, so
+  additive-only remains the rule (see DECISIONS.md #28 for the
+  flat-vs-nested reasoning). Adding a field is free; restructuring one is
+  not.
 - The designer mirrors the game's tree rules client-side for grey-outs, but
   `app/schemas.py` stays the authority — every rule lives in both, and the
   server's 422 is what actually protects the document.

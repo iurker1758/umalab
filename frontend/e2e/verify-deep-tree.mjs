@@ -3794,6 +3794,17 @@ try {
       !(await getJson("/api/spark-lists")).some((l) => l.name === sessName));
     await page.unroute("**/api/**");
   });
+  // A probe that never reaches the edge proves nothing about the session —
+  // with the network down, Retry must leave the overlay standing rather than
+  // drop the user into an app where every request fails.
+  await breaking(async () => {
+    await page.route("**/api/**", (r) => r.abort());
+    await page.locator(".session-dialog button", { hasText: "Retry" }).click();
+    await page.waitForTimeout(1000);
+    check("a network-down Retry leaves the overlay latched",
+      (await page.locator(".session-backdrop").count()) === 1);
+    await page.unroute("**/api/**");
+  });
   await page.locator(".session-dialog button", { hasText: "Retry" }).click();
   check("Retry after the route lifts clears the overlay",
     await until(async () => (await page.locator(".session-backdrop").count()) === 0));

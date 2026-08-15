@@ -267,8 +267,10 @@ export type SparkListPatch = Partial<Pick<SparkList, "name">>;
 // The expired-Access-session signal (issue #113). Deliberately NOT an
 // ApiError: no status branch may ever match it — DesignerPage's 404 arm
 // re-creates blueprints, and every catch-all already treats a plain Error
-// as a transient blip, which keeps failed writes queued for the retry that
-// succeeds after re-login. The message is user-facing: it lands in the
+// as a transient blip, which keeps the DESIGNER's failed writes queued for
+// the retry that succeeds after re-login; one-shot actions (imports, tags,
+// list toggles) fail like any blip and are redone by hand (DECISIONS.md
+// #55). The message is user-facing: it lands in the
 // designer's Not Saved tooltip and the failure toasts as-is.
 export class SessionExpired extends Error {
   constructor() {

@@ -2418,10 +2418,13 @@ marked in each.
   can match it (the designer's 404 arm re-creates rows) and every
   catch-all treats it as the transient blip it is. App latches a
   non-dismissable Session Expired overlay and gates the toast behind
-  it; Sign In opens `/api/imports/latest` in a new tab, where the edge
-  runs the login; the original tab probes the same endpoint on
-  returning focus (or Retry) and stands down on any outcome that got
-  past the edge. Nothing reloads: the write queue's own retry flushes
+  it — render-only: the message state survives and reappears on
+  recovery under the toast's normal last-writer lifecycle. Sign In
+  opens `/api/imports/latest` in a new tab, where the edge runs the
+  login; the original tab probes the same endpoint on returning focus
+  (or Retry) and stands down only on proof the probe got past the
+  edge — a success or an ApiError with a real status; a rejected
+  fetch reached nothing and leaves the overlay up. Nothing reloads: the write queue's own retry flushes
   the held edits. The service worker's `navigateFallbackDenylist`
   (`/api/`, `/cdn-cgi/`) ships in the same change — without it the SW
   serves the cached shell for those navigations, so the sign-in tab

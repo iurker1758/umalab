@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
-import { SessionExpired, api, onSessionExpired, type ImportInfo, type Veteran } from "./api";
+import { ApiError, api, onSessionExpired, type ImportInfo, type Veteran } from "./api";
 import { emptyDesign, type Design } from "./blueprint";
 import { loadFilters, reconcileFilters, saveFilters, type Filters } from "./filters";
 import { DesignerPage } from "./pages/DesignerPage";
@@ -62,11 +62,12 @@ export default function App() {
   useEffect(() => onSessionExpired(() => setSessionExpired(true)), []);
 
   // The cheapest read in the API, and not refresh(): its catch would churn
-  // the toast and the roster-onboarding gate on every failed probe. Any
-  // outcome other than SessionExpired means the request got past the edge —
-  // the session is back, and whatever else failed belongs to the normal
-  // surfaces. The toast clears before the gate reopens so a stale suppressed
-  // message can't flash.
+  // the toast and the roster-onboarding gate on every failed probe. The
+  // overlay stands down only on proof the request got PAST the edge — a
+  // success, or an ApiError carrying a real HTTP status. A rejected fetch
+  // (network down) reached nothing and proves nothing: standing down on it
+  // would drop the user into an app where every request fails. Whatever the
+  // toast held stays held — refresh()'s own lifecycle governs it from here.
   const probeSession = useCallback(() => {
     if (probing.current) return;
     probing.current = true;
@@ -74,14 +75,13 @@ export default function App() {
     void (async () => {
       const recovered = () => {
         setSessionExpired(false);
-        setError(null);
         void refresh();
       };
       try {
         await api.latestImport();
         recovered();
       } catch (e) {
-        if (!(e instanceof SessionExpired)) recovered();
+        if (e instanceof ApiError) recovered();
       } finally {
         probing.current = false;
         setChecking(false);
@@ -206,10 +206,7 @@ export default function App() {
         <div className="session-backdrop">
           <div className="session-dialog" role="dialog" aria-modal="true" aria-labelledby="session-title">
             <h2 id="session-title">Session Expired</h2>
-            <p>
-              Your login session has expired. Sign in again in a new tab — this page will pick
-              up where it left off.
-            </p>
+            <p>Your login session has expired. Sign in again in a new tab, then come back here.</p>
             <p>After signing in you'll see a plain data page; close that tab and come back.</p>
             <div className="session-actions">
               <button onClick={() => window.open("/api/imports/latest", "_blank")}>Sign In</button>

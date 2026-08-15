@@ -34,7 +34,8 @@ several:
   (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
   (one-shot create + optimistic toggles), 52 (own deletes stay quiet)
 - **Multi-user & auth:** 32
-- **Deployment:** 53 (same-origin /api proxy)
+- **Deployment:** 53 (same-origin /api proxy), 54 (CI-gated backend
+  deploys)
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
 
@@ -2360,3 +2361,43 @@ marked in each.
   the function then deletes; or the extra edge hop showing up in real
   latency measurements, which would reopen serve-from-tunnel with the
   PWA's asset cache as the mitigation.
+
+## 54. Backend deploys: a CI-gated job on the server's own runner
+
+- **Requirements:** merges touching the backend must reach the mini PC
+  without a manual SSH (the Pages half already auto-deploys itself); a
+  red suite must stop a deploy — main has no branch protection, so CI
+  is advisory everywhere else and this is the one gate with teeth; the
+  repo must hold no server credentials; a deploy must be triggerable
+  by hand.
+- **Choice:** a `deploy-backend` job at the end of ci.yml on the mini
+  PC's own self-hosted runner, behind `needs: [backend, e2e]` — the
+  jobs that exercise the backend — and an `if` restricting it to main.
+  The job only invokes `~/.local/bin/umalab-deploy.sh` on the box
+  (pull, install, migrate, restart) and tails its log; deploy logic
+  and credentials stay server-side and the script stays runnable by
+  hand. Every green main run invokes the script, whether or not
+  `backend/` changed — the split is deliberate: the workflow triggers
+  unconditionally, and the script is what makes re-runs cheap, exiting
+  when there is nothing to pull and skipping install/migrate/restart
+  when the pulled range touches nothing under `backend/`. So a
+  frontend-only merge or a `workflow_dispatch` of an already-deployed
+  main is a no-op, not a restart. Migrations auto-apply on deploy (the
+  additive-only invariant plus the nightly `pg_dump` carry that risk).
+- **Alternatives rejected:** a separate workflow with
+  `on.push.paths: backend/**` — skips non-backend pushes natively but
+  cannot `needs`-gate on the suite, and chaining via `workflow_run`
+  loses the same-commit tie; hand-rolled change detection inside the
+  job (`git diff HEAD^ | grep backend/`) — silently skips needed
+  deploys (a multi-commit push is inspected only at its tip; `grep -q`
+  closing the pipe early kills `git diff` under pipefail) and turns
+  any manual dispatch into a forced deploy; a webhook receiver on the
+  box — a new inbound
+  surface that fights the Access wall; a poll-and-pull timer —
+  deploys red commits and buries failures in journalctl.
+- **What would change my mind:** needing a dispatch that forces a
+  restart of an already-deployed main — the script then grows a
+  `--force` flag the dispatch path passes, never workflow-side change
+  detection; or the compose infra repo (HabitPool #12) taking over
+  deployment at app two, which retires this job along with the
+  git-pull mechanism it triggers.

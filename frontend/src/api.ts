@@ -264,6 +264,50 @@ export interface SparkList {
 // JSON, which is exactly the "absent" the route wants.
 export type SparkListPatch = Partial<Pick<SparkList, "name">>;
 
+// The expired-Access-session signal (issue #113). Deliberately NOT an
+// ApiError: no status branch may ever match it — DesignerPage's 404 arm
+// re-creates blueprints, and every catch-all already treats a plain Error
+// as a transient blip, which keeps the DESIGNER's failed writes queued for
+// the retry that succeeds after re-login; one-shot actions (imports, tags,
+// list toggles) fail like any blip and are redone by hand (DECISIONS.md
+// #55). The message is user-facing: it lands in the
+// designer's Not Saved tooltip and the failure toasts as-is.
+export class SessionExpired extends Error {
+  constructor() {
+    super("session expired — sign in to keep working");
+    this.name = "SessionExpired";
+  }
+}
+
+const sessionListeners = new Set<() => void>();
+
+// App subscribes to surface the Session Expired overlay. Returns the
+// unsubscribe, so StrictMode's subscribe/cleanup/subscribe stays balanced.
+export function onSessionExpired(listener: () => void): () => void {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+
+// Every /api fetch goes through here. `redirect: "manual"` because an
+// expired Cloudflare Access session answers with a login redirect fetch()
+// can't follow (cross-origin, CORS-opaque) — manual mode turns it into an
+// opaqueredirect the client can recognize (measured on the live app:
+// type "opaqueredirect", status 0, for GET, JSON POST and multipart alike).
+// The flip side is an invariant: no /api route may ever answer with a
+// redirect, or it flashes the session overlay — backend routes are
+// exact-match and these paths never produce the trailing-slash 307.
+// A rejected fetch (network down, abort) passes through untouched.
+async function request(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, { ...init, redirect: "manual" });
+  if (res.type === "opaqueredirect") {
+    for (const listener of sessionListeners) listener();
+    throw new SessionExpired();
+  }
+  return res;
+}
+
 // Carries the status so a caller can tell "this row is gone" (404) from
 // "the backend is down" — the designer's autosave recovers from the first
 // by re-creating the row and only retries on the second.
@@ -312,15 +356,15 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  veterans: () => fetch("/api/veterans").then((r) => json<Veteran[]>(r)),
-  latestImport: () => fetch("/api/imports/latest").then((r) => json<ImportInfo | null>(r)),
+  veterans: () => request("/api/veterans").then((r) => json<Veteran[]>(r)),
+  latestImport: () => request("/api/imports/latest").then((r) => json<ImportInfo | null>(r)),
   importDump: (file: File) => {
     const body = new FormData();
     body.append("file", file);
-    return fetch("/api/imports", { method: "POST", body }).then((r) => json<ImportInfo>(r));
+    return request("/api/imports", { method: "POST", body }).then((r) => json<ImportInfo>(r));
   },
   addTag: (trainedCharaId: number, tag: string) =>
-    fetch(`/api/veterans/${trainedCharaId}/tags`, {
+    request(`/api/veterans/${trainedCharaId}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag }),
@@ -328,60 +372,60 @@ export const api = {
   // tag null = clear the selection's marks. All-or-nothing on the backend
   // (DECISIONS.md #20): a stale selection 404s instead of half-applying.
   bulkTag: (trainedCharaIds: number[], tag: string | null) =>
-    fetch("/api/veterans/tags/bulk", {
+    request("/api/veterans/tags/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ trained_chara_ids: trainedCharaIds, tag }),
     }).then((r) => json<{ updated: number; tag: string | null }>(r)),
   removeTag: (trainedCharaId: number, tag: string) =>
-    fetch(`/api/veterans/${trainedCharaId}/tags/${encodeURIComponent(tag)}`, {
+    request(`/api/veterans/${trainedCharaId}/tags/${encodeURIComponent(tag)}`, {
       method: "DELETE",
     }).then((r) => {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     }),
-  catalog: () => fetch("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
-  factors: () => fetch("/api/factors").then((r) => json<FactorRef[]>(r)),
+  catalog: () => request("/api/catalog").then((r) => json<CatalogEntry[]>(r)),
+  factors: () => request("/api/factors").then((r) => json<FactorRef[]>(r)),
   // Takes a signal so the designer's debounced effect can abort a stale
   // request instead of racing it against the newer one.
   scoreAffinity: (body: AffinityRequest, signal?: AbortSignal) =>
-    fetch("/api/affinity", {
+    request("/api/affinity", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal,
     }).then((r) => json<AffinityResult>(r)),
-  blueprints: () => fetch("/api/blueprints").then((r) => json<Blueprint[]>(r)),
+  blueprints: () => request("/api/blueprints").then((r) => json<Blueprint[]>(r)),
   createBlueprint: (body: BlueprintIn) =>
-    fetch("/api/blueprints", {
+    request("/api/blueprints", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => json<Blueprint>(r)),
   updateBlueprint: (id: number, body: BlueprintIn) =>
-    fetch(`/api/blueprints/${id}`, {
+    request(`/api/blueprints/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => json<Blueprint>(r)),
   deleteBlueprint: (id: number) =>
-    fetch(`/api/blueprints/${id}`, { method: "DELETE" }).then((r) => {
+    request(`/api/blueprints/${id}`, { method: "DELETE" }).then((r) => {
       // Already gone is the outcome the caller wanted.
       if (!r.ok && r.status !== 404) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
     }),
-  sparkLists: () => fetch("/api/spark-lists").then((r) => json<SparkList[]>(r)),
+  sparkLists: () => request("/api/spark-lists").then((r) => json<SparkList[]>(r)),
   // 409 if the name is taken — surfaced rather than swallowed, because the
   // picker's `New List` has a field the user can correct. `sparks` seeds the
   // membership in the same transaction (issue #69): a refused create leaves
   // no half-made list behind.
   createSparkList: (name: string, sparks: SparkRef[] = []) =>
-    fetch("/api/spark-lists", {
+    request("/api/spark-lists", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, sparks }),
     }).then((r) => json<SparkList>(r)),
   // Rename. Membership never travels through this — see the verbs below.
   updateSparkList: (id: number, body: SparkListPatch) =>
-    fetch(`/api/spark-lists/${id}`, {
+    request(`/api/spark-lists/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -392,15 +436,15 @@ export const api = {
   // means the LIST is gone and does throw, unlike deleteSparkList's: the
   // caller needs it to drop the dead list in place.
   addListSpark: (id: number, kind: ListSparkKind, key: number) =>
-    fetch(`/api/spark-lists/${id}/sparks/${kind}/${key}`, {
+    request(`/api/spark-lists/${id}/sparks/${kind}/${key}`, {
       method: "PUT",
     }).then((r) => json<SparkList>(r)),
   removeListSpark: (id: number, kind: ListSparkKind, key: number) =>
-    fetch(`/api/spark-lists/${id}/sparks/${kind}/${key}`, {
+    request(`/api/spark-lists/${id}/sparks/${kind}/${key}`, {
       method: "DELETE",
     }).then((r) => json<SparkList>(r)),
   deleteSparkList: (id: number) =>
-    fetch(`/api/spark-lists/${id}`, { method: "DELETE" }).then((r) => {
+    request(`/api/spark-lists/${id}`, { method: "DELETE" }).then((r) => {
       // Already gone is the outcome the caller wanted.
       if (!r.ok && r.status !== 404) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
     }),

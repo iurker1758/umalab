@@ -35,7 +35,7 @@ several:
   (one-shot create + optimistic toggles), 52 (own deletes stay quiet)
 - **Multi-user & auth:** 32
 - **Deployment:** 53 (same-origin /api proxy), 54 (CI-gated backend
-  deploys)
+  deploys), 55 (expired-session overlay)
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
 
@@ -2401,3 +2401,47 @@ marked in each.
   detection; or the compose infra repo (HabitPool #12) taking over
   deployment at app two, which retires this job along with the
   git-pull mechanism it triggers.
+
+## 55. An expired Access session latches an overlay; re-auth happens in a new tab
+
+- **Requirements:** issue #113 — when the Access session lapses, the
+  edge answers every `/api` fetch with a login redirect `fetch()`
+  can't follow, and every surface showed a generic failure; the
+  designer's write queue may hold unsaved edits at exactly that
+  moment, so recovery must not discard the page; the handler had to be
+  written against measured behavior, not assumed (measured live:
+  `redirect: "manual"` yields `type "opaqueredirect"`, status 0, for
+  GET, JSON POST and multipart alike).
+- **Choice:** every `/api` call goes through one `request()` wrapper
+  (`redirect: "manual"`); an opaqueredirect throws `SessionExpired` —
+  a plain `Error`, deliberately not an `ApiError`, so no status branch
+  can match it (the designer's 404 arm re-creates rows) and every
+  catch-all treats it as the transient blip it is. App latches a
+  non-dismissable Session Expired overlay and gates the toast behind
+  it — render-only: the message state survives and reappears on
+  recovery under the toast's normal last-writer lifecycle. Sign In
+  opens `/api/imports/latest` in a new tab, where the edge runs the
+  login; the original tab probes the same endpoint on returning focus
+  (or Retry) and stands down only on proof the probe got past the
+  edge — a success or an ApiError with a real status; a rejected
+  fetch reached nothing and leaves the overlay up. Nothing reloads: the write queue's own retry flushes
+  the held edits. The service worker's `navigateFallbackDenylist`
+  (`/api/`, `/cdn-cgi/`) ships in the same change — without it the SW
+  serves the cached shell for those navigations, so the sign-in tab
+  never reaches the edge and the Access callback never sets the
+  cookie: re-login was impossible without clearing site data.
+  Standing invariant: no `/api` route may ever answer with a redirect,
+  or it flashes this overlay.
+- **Alternatives rejected:** auto-reload — discards the queued edits,
+  and the SW-served shell means a reload doesn't even reach the login;
+  ask-then-reload — same loss for no gain, since the Access cookie is
+  origin-wide and a background tab heals in place; converting the
+  redirect to a 401 in the Pages Function — Access intercepts at the
+  edge ahead of the function, which never sees the request.
+- **What would change my mind:** Access answering fetches with
+  something other than a redirect (a 401 mode) — the wrapper then
+  matches that instead and `redirect: "manual"` can go; measurable
+  loss from the accepted v1 gaps — stale affinity/catalog panels until
+  the next interaction, a designer-retry straggler re-latching right
+  after re-auth — which would buy a session epoch that re-runs those
+  effects on recovery.

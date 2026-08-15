@@ -5,11 +5,14 @@ browse your veterans with decoded sparks across the full 6-slot lineage.
 Monorepo: `backend/` (FastAPI + async SQLAlchemy + Postgres) and `frontend/`
 (Vite + React + TypeScript PWA). Why-docs live in `DECISIONS.md`.
 
-Deployment target: app #2 on the HabitPool platform plan (that repo's
-DECISIONS.md #9–10, #12) — frontend on Cloudflare, backend + Postgres on a
-Raspberry Pi behind Cloudflare Tunnel, Cloudflare Access in front of both.
-Local hosting in the interim — don't add cloud-specific config until that
-work starts.
+Deployed (2026-08-15) as app #2 on the HabitPool platform plan (that repo's
+DECISIONS.md #9–10, #12; the "Raspberry Pi" there is in practice a mini PC):
+frontend on Cloudflare Pages, backend + Postgres on a home mini PC behind
+Cloudflare Tunnel, Cloudflare Access as the login. The deployed SPA reaches
+the API through a same-origin Pages Function proxy (DECISIONS.md #53); the
+hostnames and the `API_ORIGIN` env var live only in the Cloudflare dashboard,
+never in the repo. Local dev is unchanged — empty `ACCESS_AUD` runs as the
+dev identity, and Vite's proxy covers `/api`.
 
 Current milestone: **multi-user** (issue #50, DECISIONS.md #32) — Cloudflare
 Access is the login, a verified `Cf-Access-Jwt-Assertion` JWT is the identity,

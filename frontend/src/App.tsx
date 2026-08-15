@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
-import { api, type ImportInfo, type Veteran } from "./api";
+import { SessionExpired, api, onSessionExpired, type ImportInfo, type Veteran } from "./api";
 import { emptyDesign, type Design } from "./blueprint";
 import { loadFilters, reconcileFilters, saveFilters, type Filters } from "./filters";
 import { DesignerPage } from "./pages/DesignerPage";
@@ -35,6 +35,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
+  // Latched by any /api request answered with the Access login redirect
+  // (issue #113). Re-throws while the overlay is up just re-latch it; the
+  // only way down is a probe that gets past the edge.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const probing = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -52,6 +58,51 @@ export default function App() {
       setFetchFailed(true);
     }
   }, []);
+
+  useEffect(() => onSessionExpired(() => setSessionExpired(true)), []);
+
+  // The cheapest read in the API, and not refresh(): its catch would churn
+  // the toast and the roster-onboarding gate on every failed probe. Any
+  // outcome other than SessionExpired means the request got past the edge —
+  // the session is back, and whatever else failed belongs to the normal
+  // surfaces. The toast clears before the gate reopens so a stale suppressed
+  // message can't flash.
+  const probeSession = useCallback(() => {
+    if (probing.current) return;
+    probing.current = true;
+    setChecking(true);
+    void (async () => {
+      const recovered = () => {
+        setSessionExpired(false);
+        setError(null);
+        void refresh();
+      };
+      try {
+        await api.latestImport();
+        recovered();
+      } catch (e) {
+        if (!(e instanceof SessionExpired)) recovered();
+      } finally {
+        probing.current = false;
+        setChecking(false);
+      }
+    })();
+  }, [refresh]);
+
+  // Coming back from the sign-in tab is the natural moment the session is
+  // whole again, so returning focus doubles as the Retry.
+  useEffect(() => {
+    if (!sessionExpired) return;
+    const onReturn = () => {
+      if (document.visibilityState === "visible") probeSession();
+    };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, [sessionExpired, probeSession]);
 
   // Persisted as an effect so every write path — panel edits AND the
   // refresh-time reconciliation — lands in storage.
@@ -136,11 +187,38 @@ export default function App() {
       </header>
 
       {/* Fixed toast so it stays readable over the modal/picker backdrops —
-          a mark-update failure used to vanish behind them. Click dismisses. */}
-      {error && (
+          a mark-update failure used to vanish behind them. Click dismisses.
+          Gated while the session overlay is up: every failure then is the
+          same expired session, and the overlay is the one report. */}
+      {error && !sessionExpired && (
         <p className="error" role="alert" title="Dismiss" onClick={() => setError(null)}>
           {error}
         </p>
+      )}
+
+      {/* No dismissal — closing it would drop the user into an app where
+          every request fails. The Sign In target is a relative /api path:
+          nothing deployment-specific in the repo, and top-level navigations
+          to /api reach the edge (and so the Access login) only because of
+          the navigateFallbackDenylist in vite.config.ts — keep them in
+          sync. */}
+      {sessionExpired && (
+        <div className="session-backdrop">
+          <div className="session-dialog" role="dialog" aria-modal="true" aria-labelledby="session-title">
+            <h2 id="session-title">Session Expired</h2>
+            <p>
+              Your login session has expired. Sign in again in a new tab — this page will pick
+              up where it left off.
+            </p>
+            <p>After signing in you'll see a plain data page; close that tab and come back.</p>
+            <div className="session-actions">
+              <button onClick={() => window.open("/api/imports/latest", "_blank")}>Sign In</button>
+              <button className="session-retry" onClick={probeSession} disabled={checking}>
+                {checking ? "Checking…" : "Retry"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Routes>

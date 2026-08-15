@@ -5,6 +5,7 @@ name: Deploy backend
 # trigger, so CI has no credentials to the server and the script stays
 # usable by hand.
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths: ['backend/**']

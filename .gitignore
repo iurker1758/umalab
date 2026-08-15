@@ -23,3 +23,5 @@ dev.cmd
 uma_api_key.txt
 # game art (Cygames') — fetched locally by scripts, never committed
 frontend/public/icons/
+# wrangler pages dev state
+.wrangler/

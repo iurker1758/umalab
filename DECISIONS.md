@@ -2342,7 +2342,10 @@ marked in each.
   tunnel hostname carries no Access application of its own; an
   unsigned request to it is refused by the backend like any other.
   Backend redirects pass through unfollowed (`redirect: "manual"`) so
-  the browser is the one that follows them.
+  the browser is the one that follows them, with a `Location` pointing
+  at the API origin rewritten back to the app's — measured: Starlette's
+  trailing-slash 307 otherwise sends the browser to the tunnel
+  hostname, straight out of the same-origin design.
 - **Alternatives rejected:** a separate `api.` hostname with CORS —
   the second hostname's Access cookie is only obtainable through a
   login redirect `fetch()` cannot follow, so first contact and every

@@ -20,6 +20,21 @@ export async function onRequest({
   const url = new URL(request.url)
   url.protocol = origin.protocol
   url.host = origin.host
-  // The browser, not the proxy, follows any backend redirect.
-  return fetch(new Request(url, request), { redirect: 'manual' })
+  // The browser, not the proxy, follows any backend redirect — but Starlette
+  // builds absolute Locations from the rewritten URL (measured: the
+  // trailing-slash 307), which would send the browser to the tunnel hostname
+  // and out of the same-origin design. Point those back through this origin.
+  const response = await fetch(new Request(url, request), { redirect: 'manual' })
+  const location = response.headers.get('Location')
+  if (location?.startsWith(origin.origin)) {
+    const headers = new Headers(response.headers)
+    const appOrigin = new URL(request.url).origin
+    headers.set('Location', appOrigin + location.slice(origin.origin.length))
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
+  }
+  return response
 }

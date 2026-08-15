@@ -3772,6 +3772,39 @@ try {
     )) &&
     (lastDialog ?? "").includes(`Delete "${mgmtB}"`));
 
+  // ---------- expired Access session: overlay, latch, recovery (issue #113) ----------
+  // A route-fulfilled 302 is what the edge's login redirect looks like to the
+  // app's redirect:"manual" fetch, so the overlay appearing is itself the
+  // proof Chromium surfaces it as an opaqueredirect. Sign In is never clicked
+  // here — the new tab's navigation would hit this same stub.
+  const sessName = `${E2E_LIST_PREFIX} expired ${Date.now()}`;
+  listsOwned.add(sessName);
+  await breaking(async () => {
+    await page.route("**/api/**", (r) =>
+      r.fulfill({ status: 302, headers: { Location: "https://team.example.invalid/login" } })
+    );
+    await page.locator('[aria-label="New List Name"]').fill(sessName);
+    await page.locator(".list-new button", { hasText: "Add" }).click();
+    check("the login redirect latches the Session Expired overlay",
+      (await until(async () => (await page.locator(".session-backdrop").count()) === 1)) &&
+      (await page.locator(".session-dialog h2").textContent()) === "Session Expired");
+    check("the overlay is the one report — the error toast stays gated",
+      (await page.locator(".error").count()) === 0);
+    check("the intercepted write never reached the server",
+      !(await getJson("/api/spark-lists")).some((l) => l.name === sessName));
+    await page.unroute("**/api/**");
+  });
+  await page.locator(".session-dialog button", { hasText: "Retry" }).click();
+  check("Retry after the route lifts clears the overlay",
+    await until(async () => (await page.locator(".session-backdrop").count()) === 0));
+  // Alive again: the same create that the stub swallowed lands for real now.
+  await page.locator('[aria-label="New List Name"]').fill(sessName);
+  await page.locator(".list-new button", { hasText: "Add" }).click();
+  check("the page works again — a fresh write lands",
+    await until(async () =>
+      (await getJson("/api/spark-lists")).some((l) => l.name === sessName)
+    ));
+
   const realErrors = errors.filter((e) => !/favicon/i.test(e));
   check("no JS errors or failed requests", realErrors.length === 0, realErrors.join(" | "));
   console.log(`  (${expected.length} failures inside the deliberate-break windows, ignored)`);

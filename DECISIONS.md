@@ -2385,11 +2385,11 @@ marked in each.
   `on.push.paths: backend/**` — skips non-backend pushes natively but
   cannot `needs`-gate on the suite, and chaining via `workflow_run`
   loses the same-commit tie; hand-rolled change detection inside the
-  job (`git diff HEAD^ | grep backend/`) — shipped briefly and
-  reverted, one review round found it silently skips needed deploys
-  (multi-commit pushes see only the tip; `grep -q` closing the pipe
-  early kills `git diff` under pipefail) and force-deploys on any
-  manual dispatch; a webhook receiver on the box — a new inbound
+  job (`git diff HEAD^ | grep backend/`) — silently skips needed
+  deploys (a multi-commit push is inspected only at its tip; `grep -q`
+  closing the pipe early kills `git diff` under pipefail) and turns
+  any manual dispatch into a forced deploy; a webhook receiver on the
+  box — a new inbound
   surface that fights the Access wall; a poll-and-pull timer —
   deploys red commits and buries failures in journalctl.
 - **What would change my mind:** restarts on frontend-only merges

@@ -197,7 +197,7 @@ jobs:
     # so `needs` ties the deploy to the same commit's backend-exercising jobs
     # — main has no branch protection, so this gate is the only place a red
     # suite stops anything. Every green main run deploys, backend change or
-    # not; workflow change detection was tried and reverted (DECISIONS.md #54).
+    # not — don't re-add workflow change detection (DECISIONS.md #54).
     needs: [backend, e2e]
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, deploy]

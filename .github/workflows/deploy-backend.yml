@@ -21,4 +21,4 @@ jobs:
         run: /home/iurker/.local/bin/umalab-deploy.sh
       - name: Show deploy log
         if: always()
-        run: tail -n 30 /home/iurker/umalab-deploy.log
+        run: tail -n 30 /home/iurker/logs/umalab-deploy.log

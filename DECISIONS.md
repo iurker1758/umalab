@@ -34,6 +34,7 @@ several:
   (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
   (one-shot create + optimistic toggles), 52 (own deletes stay quiet)
 - **Multi-user & auth:** 32
+- **Deployment:** 53 (same-origin /api proxy)
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
 
@@ -2323,3 +2324,36 @@ marked in each.
   recycled id — prune on the next lists fetch instead); or delete
   moving off the `busy` path, which would widen the race beyond one
   toast and reopen the wait-it-out shape.
+
+## 53. Production /api routing: same-origin edge proxy
+
+- **Requirements:** issue #112 — Vite's dev proxy dies at `vite build`,
+  so the deployed SPA (static on Cloudflare Pages, HabitPool #9) needs
+  a route to the backend behind the tunnel; Access stays the login and
+  the backend stays the verify-or-refuse JWT authority (#32); the
+  client already calls `/api` by relative path and shouldn't change;
+  expired-session detection (issue #113) must stay tractable.
+- **Choice:** one user-facing hostname. Pages serves the build, and a
+  Pages Function at `/api/*` (`frontend/functions/api/[[path]].ts`)
+  rewrites the request URL's origin to `API_ORIGIN` — an env var on
+  the Pages project, never committed — and forwards the request
+  otherwise untouched, so the edge-attached `Cf-Access-Jwt-Assertion`
+  rides along and the backend verifies signature + AUD as always. The
+  tunnel hostname carries no Access application of its own; an
+  unsigned request to it is refused by the backend like any other.
+  Backend redirects pass through unfollowed (`redirect: "manual"`) so
+  the browser is the one that follows them.
+- **Alternatives rejected:** a separate `api.` hostname with CORS —
+  the second hostname's Access cookie is only obtainable through a
+  login redirect `fetch()` cannot follow, so first contact and every
+  session expiry need a bootstrap dance and issue #113 gets harder,
+  not easier; serving the frontend through the tunnel from the server
+  — HabitPool #9 rejected coupling the app shell's availability to
+  home internet; hardcoding the tunnel hostname in the function — ties
+  the repo to one deployment and breaks `wrangler pages dev` against a
+  local backend.
+- **What would change my mind:** Cloudflare ever routing a path of a
+  Pages custom domain straight to a tunnel with no Worker in between —
+  the function then deletes; or the extra edge hop showing up in real
+  latency measurements, which would reopen serve-from-tunnel with the
+  PWA's asset cache as the mitigation.

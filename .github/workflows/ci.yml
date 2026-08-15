@@ -191,12 +191,13 @@ jobs:
           if-no-files-found: warn
 
   deploy-backend:
-    # Runs on the production mini PC's own runner. The deploy logic lives in
-    # ~/.local/bin/umalab-deploy.sh on that machine — this job is only the
-    # trigger, so CI holds no server credentials and the script stays usable
-    # by hand. A job here rather than its own workflow so `needs` ties the
-    # deploy to this same commit's green run — main has no branch protection,
-    # so this gate is the only place a red suite actually stops anything.
+    # Only the trigger: the deploy logic lives in ~/.local/bin/umalab-deploy.sh
+    # on the mini PC's own runner, so CI holds no server credentials and the
+    # script stays usable by hand. A job in this workflow rather than its own
+    # so `needs` ties the deploy to the same commit's backend-exercising jobs
+    # — main has no branch protection, so this gate is the only place a red
+    # suite stops anything. Every green main run deploys, backend change or
+    # not; workflow change detection was tried and reverted (DECISIONS.md #54).
     needs: [backend, e2e]
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, deploy]
@@ -205,26 +206,10 @@ jobs:
       group: deploy-backend
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Decide whether the backend changed
-        id: changed
-        # HEAD^ is the previous main only because merges are squash-only
-        # (CONTRIBUTING.md); a multi-commit direct push would under-detect.
-        # A manual dispatch always deploys.
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
-            || git diff --name-only HEAD^ HEAD | grep -q '^backend/'; then
-            echo "deploy=yes" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=no" >> "$GITHUB_OUTPUT"
-          fi
       - name: Run deploy script
-        if: steps.changed.outputs.deploy == 'yes'
         run: "$HOME/.local/bin/umalab-deploy.sh"
       - name: Show deploy log
-        if: always() && steps.changed.outputs.deploy == 'yes'
+        if: always()
         run: |
           if [ -f "$HOME/logs/umalab-deploy.log" ]; then
             tail -n 30 "$HOME/logs/umalab-deploy.log"

@@ -38,9 +38,12 @@ export async function onRequest({
   if (location) {
     let target: URL | undefined
     try {
-      target = new URL(location)
+      // Resolved against the request the way the browser would, so a
+      // protocol-relative Location (//host/path) is matched too; a plain
+      // relative one resolves to the app host and stays untouched.
+      target = new URL(location, request.url)
     } catch {
-      // A relative Location is already origin-safe.
+      // Unresolvable garbage passes through untouched.
     }
     if (target && target.host === origin.host) {
       const headers = new Headers(response.headers)

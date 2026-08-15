@@ -1,0 +1,24 @@
+name: Deploy backend
+
+# Runs on the production mini PC's own runner. The deploy logic lives in
+# ~/.local/bin/umalab-deploy.sh on that machine — this job is only the
+# trigger, so CI has no credentials to the server and the script stays
+# usable by hand.
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**']
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, deploy]
+    steps:
+      - name: Run deploy script
+        run: /home/iurker/.local/bin/umalab-deploy.sh
+      - name: Show deploy log
+        if: always()
+        run: tail -n 30 /home/iurker/umalab-deploy.log

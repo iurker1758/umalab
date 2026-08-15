@@ -2376,11 +2376,14 @@ marked in each.
   The job only invokes `~/.local/bin/umalab-deploy.sh` on the box
   (pull, install, migrate, restart) and tails its log; deploy logic
   and credentials stay server-side and the script stays runnable by
-  hand. Every green main run deploys, whether or not `backend/`
-  changed — an idempotent re-deploy costs a seconds-long restart, and
-  a `workflow_dispatch` of main means exactly "deploy now" through
-  the same gate. Migrations auto-apply on deploy (the additive-only
-  invariant plus the nightly `pg_dump` carry that risk).
+  hand. Every green main run invokes the script, whether or not
+  `backend/` changed — the split is deliberate: the workflow triggers
+  unconditionally, and the script is what makes re-runs cheap, exiting
+  when there is nothing to pull and skipping install/migrate/restart
+  when the pulled range touches nothing under `backend/`. So a
+  frontend-only merge or a `workflow_dispatch` of an already-deployed
+  main is a no-op, not a restart. Migrations auto-apply on deploy (the
+  additive-only invariant plus the nightly `pg_dump` carry that risk).
 - **Alternatives rejected:** a separate workflow with
   `on.push.paths: backend/**` — skips non-backend pushes natively but
   cannot `needs`-gate on the suite, and chaining via `workflow_run`
@@ -2392,9 +2395,9 @@ marked in each.
   box — a new inbound
   surface that fights the Access wall; a poll-and-pull timer —
   deploys red commits and buries failures in journalctl.
-- **What would change my mind:** restarts on frontend-only merges
-  becoming noticeable in use — the skip then belongs in the
-  server-side script (compare `backend/` against the last deployed
-  tree), never back in workflow change detection; or the compose
-  infra repo (HabitPool #12) taking over deployment at app two, which
-  retires this job along with the git-pull mechanism it triggers.
+- **What would change my mind:** needing a dispatch that forces a
+  restart of an already-deployed main — the script then grows a
+  `--force` flag the dispatch path passes, never workflow-side change
+  detection; or the compose infra repo (HabitPool #12) taking over
+  deployment at app two, which retires this job along with the
+  git-pull mechanism it triggers.

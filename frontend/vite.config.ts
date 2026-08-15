@@ -7,6 +7,15 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      workbox: {
+        // Never serve the app shell for these navigations. /api/* must reach
+        // the edge so a top-level visit can trigger the Cloudflare Access
+        // login (the session-expired overlay's Sign In tab), and
+        // /cdn-cgi/access/* is the login callback itself — intercepted, the
+        // auth cookie is never set and re-login is impossible without
+        // clearing site data. Workbox tests these against pathname + search.
+        navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//],
+      },
       manifest: {
         name: "UmaLab",
         short_name: "UmaLab",

@@ -869,7 +869,7 @@ several:
   suite must stay safe against a real local database; a headless-only
   failure must be diagnosable without reproducing it locally.
 - **Choice:** move `verify-deep-tree.mjs` into tracked `frontend/e2e/`
-  (`npm run e2e`) with an `e2e` CI job on a `postgres:16` service,
+  (`npm run e2e`) with an `e2e` CI job on a `postgres:18` service,
   required from day one — a `continue-on-error` job gets ignored
   within two PRs. Kept a plain `.mjs`, not `@playwright/test`: the
   suite is one stateful narrative (one `try` spans ~500 lines, the

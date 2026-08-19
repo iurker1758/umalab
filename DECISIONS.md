@@ -11,8 +11,8 @@ replacement, never a deletion.
 Topical index — entries in build order, so one surface's story spans
 several:
 
-- **Platform & repo:** 1 (HabitPool scaffold), 24 (private while it
-  carries game-derived data)
+- **Platform & repo:** 1 (HabitPool scaffold), 24 (superseded), 57
+  (public with game-derived data: the ecosystem norm)
 - **Import pipeline:** 2 (extractor dump), 3 (full-replace), 4 (decode
   at import), 5 (hybrid schema), 7 (whole-roster API)
 - **Reference data & assets:** 6 (bundled, committed), 8 (factor
@@ -34,8 +34,8 @@ several:
   (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
   (one-shot create + optimistic toggles), 52 (own deletes stay quiet)
 - **Multi-user & auth:** 32
-- **Deployment:** 53 (same-origin /api proxy), 54 (CI-gated backend
-  deploys), 55 (expired-session overlay)
+- **Deployment:** 53 (same-origin /api proxy), 54 (superseded), 55
+  (expired-session overlay), 56 (poll-and-pull backend deploys)
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
 
@@ -742,23 +742,16 @@ several:
 
 ## 24. Repo private while it carries game-derived data
 
-- **Requirements:** the committed reference data (relations, races,
-  aptitudes, factor/skill names) is extracted from the game client and
-  redistributing it is a plain-reading breach of Cygames' EULA
-  (Art. 5(3) "may not copy … distribute … the Content", Art. 11(2)(14)
-  on disassembly) — a contract exposure, not a copyright one; the
-  deployment milestone only requires the *frontend* to be public.
-- **Choice:** repo visibility flipped to private (2026-07-30). The data
-  stays committed — the offline/deterministic invariant (#6) and CI are
-  untouched; the change removes the public-redistribution posture while
-  the fan-tool ecosystem norm (uma.moe, GameTora, hakuraku all publish
-  the same data openly) remains merely tolerated, not permitted.
-- **Rejected:** keeping the repo public — no upside today; per-machine
-  regeneration of all game data (icons model) — breaks CI and the
-  committed-data tests for a risk the private flip already covers.
-- **Would change my mind:** wanting to open-source the tool — revisit
-  by splitting data out or accepting the ecosystem-norm posture;
-  Cygames publishing fan-tool guidelines that bless static data use.
+**Superseded by #57: the repo went public (2026-08-19), accepting the
+ecosystem-norm posture this entry declined.** The full text is in git
+history.
+
+- **What it was:** visibility flipped to private (2026-07-30) because
+  the committed reference data (relations, races, aptitudes,
+  factor/skill names) is extracted from the game client and
+  redistributing it is a plain-reading breach of Cygames' EULA — a
+  contract exposure, not a copyright one. The data stayed committed;
+  only the public-redistribution posture changed.
 
 ## 25. Blueprint document v2: 31-node tree, anonymous deep sparks
 
@@ -2364,43 +2357,21 @@ marked in each.
 
 ## 54. Backend deploys: a CI-gated job on the server's own runner
 
-- **Requirements:** merges touching the backend must reach the mini PC
-  without a manual SSH (the Pages half already auto-deploys itself); a
-  red suite must stop a deploy — main has no branch protection, so CI
-  is advisory everywhere else and this is the one gate with teeth; the
-  repo must hold no server credentials; a deploy must be triggerable
-  by hand.
-- **Choice:** a `deploy-backend` job at the end of ci.yml on the mini
-  PC's own self-hosted runner, behind `needs: [backend, e2e]` — the
-  jobs that exercise the backend — and an `if` restricting it to main.
-  The job only invokes `~/.local/bin/umalab-deploy.sh` on the box
-  (pull, install, migrate, restart) and tails its log; deploy logic
-  and credentials stay server-side and the script stays runnable by
-  hand. Every green main run invokes the script, whether or not
-  `backend/` changed — the split is deliberate: the workflow triggers
-  unconditionally, and the script is what makes re-runs cheap, exiting
-  when there is nothing to pull and skipping install/migrate/restart
-  when the pulled range touches nothing under `backend/`. So a
-  frontend-only merge or a `workflow_dispatch` of an already-deployed
-  main is a no-op, not a restart. Migrations auto-apply on deploy (the
-  additive-only invariant plus the nightly `pg_dump` carry that risk).
-- **Alternatives rejected:** a separate workflow with
-  `on.push.paths: backend/**` — skips non-backend pushes natively but
-  cannot `needs`-gate on the suite, and chaining via `workflow_run`
-  loses the same-commit tie; hand-rolled change detection inside the
-  job (`git diff HEAD^ | grep backend/`) — silently skips needed
-  deploys (a multi-commit push is inspected only at its tip; `grep -q`
-  closing the pipe early kills `git diff` under pipefail) and turns
-  any manual dispatch into a forced deploy; a webhook receiver on the
-  box — a new inbound
-  surface that fights the Access wall; a poll-and-pull timer —
-  deploys red commits and buries failures in journalctl.
-- **What would change my mind:** needing a dispatch that forces a
-  restart of an already-deployed main — the script then grows a
-  `--force` flag the dispatch path passes, never workflow-side change
-  detection; or the compose infra repo (HabitPool #12) taking over
-  deployment at app two, which retires this job along with the
-  git-pull mechanism it triggers.
+**Superseded by #56, which retired the runner when the repo went
+public.** Kept as a stub because the script-side rules set here still
+stand. The full text is in git history.
+
+- **What it was:** a `deploy-backend` job at the end of ci.yml on the
+  mini PC's own self-hosted runner, behind `needs: [backend, e2e]` and
+  an `if` restricting it to main, invoking the server-side deploy
+  script. Rules that outlived the job: the trigger fires on every
+  green main run and the *script* is what makes re-runs cheap —
+  exiting when there is nothing to pull, skipping
+  install/migrate/restart when the pulled range touches nothing under
+  `backend/` — never trigger-side change detection; a forced restart
+  of an already-deployed main is a script `--force` flag, nothing
+  else; migrations auto-apply on deploy (the additive-only invariant
+  plus the nightly `pg_dump` carry that risk).
 
 ## 55. An expired Access session latches an overlay; re-auth happens in a new tab
 
@@ -2445,3 +2416,70 @@ marked in each.
   the next interaction, a designer-retry straggler re-latching right
   after re-auth — which would buy a session epoch that re-runs those
   effects on recovery.
+
+## 56. Backend deploys: a CI-gated poll from the server
+
+- **Requirements:** making the repo public forbids the self-hosted
+  runner — a fork PR runs the fork's copy of the workflow, so anyone
+  could retarget a job at the runner and execute code on the box that
+  holds the only copy of user data; GitHub's own guidance is
+  self-hosted runners on private repos only. Everything #54 required
+  still holds: no manual SSH, a red suite stops a deploy (main has no
+  branch protection, so this stays the one gate with teeth), no server
+  credentials in the repo, triggerable by hand.
+- **Choice:** the server polls instead of GitHub pushing. A cron entry
+  every 5 minutes runs a poll script (server-side, next to the deploy
+  script it wraps) that fetches, exits when local HEAD is already
+  origin/main's tip, and otherwise asks the check-runs API whether
+  that tip's `backend` and `e2e` runs — the exact jobs the retired
+  `needs:` gated on — concluded `success`; only then does it invoke
+  the unchanged deploy script. This is the poll-and-pull timer #54
+  rejected, adopted with both of its objections fixed: it cannot
+  deploy a red commit, because the gate is the tip commit's own check
+  runs rather than the passage of time, and it logs to the same deploy
+  log the runner job used to tail, not journalctl — a not-green tip is
+  logged once per SHA, not every tick. Genuinely lost: a failed deploy
+  no longer shows as a red job in the GitHub UI, only in the deploy
+  log, and green-to-live latency gains up to one poll interval.
+- **Alternatives rejected:** keeping the runner plus Actions'
+  "require approval for all outside collaborators" — approval protects
+  the hosted jobs, but one careless "Approve and run" on a
+  workflow-editing PR is code execution on the box (the setting is
+  worth enabling anyway for the hosted CI); a webhook receiver on the
+  box — #54's objection stands, a new inbound surface fighting the
+  Access wall, and it still needs the same green-CI check the poll
+  does; a hosted deploy job reaching in over SSH or the tailnet —
+  live server credentials in the secrets of a public repo, the exact
+  thing #54 existed to avoid.
+- **What would change my mind:** the repo going private again — the
+  runner model returns on its own merits; the compose infra repo
+  (HabitPool #12) taking over deployment; needing sub-minute deploy
+  latency, which would buy the webhook after all.
+
+## 57. Repo public, game-derived data committed: the ecosystem norm
+
+- **Requirements:** the repo is wanted public (2026-08-19; #56 retired
+  the self-hosted runner this requires); the facts of #24 are
+  unchanged — the committed `app/data/` reference data is extracted
+  from the game client, and redistributing it is a plain-reading
+  breach of Cygames' EULA, a contract exposure rather than a copyright
+  one.
+- **Choice:** go public with the data committed — the posture uma.moe,
+  GameTora and hakuraku already hold openly: tolerated, not permitted.
+  Accepted knowingly: the exposure is at worst a takedown demand
+  against a fan tool in an ecosystem where the same data is published
+  far more prominently, and the data sits in git history regardless,
+  so a later removal would not undo the redistribution without a
+  history rewrite.
+- **Alternatives rejected:** splitting `app/data/` out and
+  regenerating per machine (the icons model) — breaks the
+  offline/deterministic invariant (#6), CI and the committed-data
+  tests, and history still carries every old copy; staying private —
+  forecloses the reason for opening the repo while #24's full text
+  already covers that posture.
+- **What would change my mind:** an actual complaint from Cygames —
+  the response is taking the repo private again (which also brings the
+  runner model of #54 back into play), then deciding whether a
+  data-split or history rewrite is worth it; Cygames publishing
+  fan-tool guidelines, which would settle the posture one way or the
+  other.

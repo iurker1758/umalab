@@ -190,27 +190,8 @@ jobs:
           path: ${{ runner.temp }}/e2e-artifacts
           if-no-files-found: warn
 
-  deploy-backend:
-    # Only the trigger: the deploy logic lives in ~/.local/bin/umalab-deploy.sh
-    # on the mini PC's own runner, so CI holds no server credentials and the
-    # script stays usable by hand. A job in this workflow rather than its own
-    # so `needs` ties the deploy to the same commit's backend-exercising jobs
-    # — main has no branch protection, so this gate is the only place a red
-    # suite stops anything. Every green main run deploys, backend change or
-    # not — don't re-add workflow change detection (DECISIONS.md #54).
-    needs: [backend, e2e]
-    if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, deploy]
-    timeout-minutes: 15
-    concurrency:
-      group: deploy-backend
-      cancel-in-progress: false
-    steps:
-      - name: Run deploy script
-        run: "$HOME/.local/bin/umalab-deploy.sh"
-      - name: Show deploy log
-        if: always()
-        run: |
-          if [ -f "$HOME/logs/umalab-deploy.log" ]; then
-            tail -n 30 "$HOME/logs/umalab-deploy.log"
-          fi
+# There is deliberately no deploy job: the repo is public, so a self-hosted
+# runner would hand fork PRs a path onto the server. The server polls main
+# and deploys on its own, gated on this workflow's `backend` and `e2e` jobs
+# being green on the tip commit (DECISIONS.md #56) — renaming those jobs
+# means updating that gate.

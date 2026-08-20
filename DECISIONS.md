@@ -33,9 +33,11 @@ several:
 - **Spark lists & favourites:** 33 (superseded), 37 (spark_lists), 43
   (the Lists filter), 44 (the Lists page), 48 (membership as rows), 49
   (one-shot create + optimistic toggles), 52 (own deletes stay quiet)
-- **Multi-user & auth:** 32
+- **Multi-user & auth:** 32 (owner scoping; its Access login superseded
+  by 58), 58 (Discord login)
 - **Deployment:** 53 (same-origin /api proxy), 54 (superseded), 55
-  (expired-session overlay), 56 (poll-and-pull backend deploys)
+  (expired-session overlay; its signal amended by 58), 56 (poll-and-pull
+  backend deploys)
 - **Testing & CI:** 27 (e2e), 30's amendment (vitest), 38 (guard
   proofs)
 
@@ -1186,6 +1188,10 @@ history.
   affordance was crowding, not discoverability.
 
 ## 32. Multi-user: Access identity and owner-scoped rows
+
+**The login half is superseded by #58** — Discord OAuth and a session
+cookie replaced the Access JWT. The owner-scoping half, the isolation
+tests and the per-owner uniqueness rules stand as written.
 
 - **Requirements:** issue #50 — the trigger #16 named in advance.
   Several people use the app, each seeing only their own roster,
@@ -2375,6 +2381,10 @@ stand. The full text is in git history.
 
 ## 55. An expired Access session latches an overlay; re-auth happens in a new tab
 
+**Amended by #58:** the signal is now a 401 from the backend, not the
+edge's opaqueredirect, and the Sign In tab opens `/api/auth/login`. The
+overlay, the probe and the no-reload recovery stand as written.
+
 - **Requirements:** issue #113 — when the Access session lapses, the
   edge answers every `/api` fetch with a login redirect `fetch()`
   can't follow, and every surface showed a generic failure; the
@@ -2483,3 +2493,62 @@ stand. The full text is in git history.
   data-split or history rewrite is worth it; Cygames publishing
   fan-tool guidelines, which would settle the posture one way or the
   other.
+
+## 58. Discord is the login: OAuth, a guild role as the invite list, server-side sessions
+
+- **Requirements:** access decided by a role in a Discord server rather
+  than an email allow-list kept in a Cloudflare dashboard — the people
+  who should get in are exactly the ones who hold the role, and
+  granting it is how an invite happens; the `owner_id` model of #32
+  unchanged; the Access-era roster follows its owner across the
+  switch; local `uvicorn --reload`, pytest and the Playwright suite
+  keep working with no login in front of them; the multipart import
+  stays immune to a cross-site form post, which #32 got for free from
+  header-only auth and a cookie does not.
+- **Choice:** the backend runs the OAuth dance itself. `/api/auth/login`
+  sends the browser to Discord with scopes `identify email
+  guilds.members.read`; the callback exchanges the code, reads the
+  account and its member object in `DISCORD_GUILD_ID`, and admits it
+  only if the roles intersect `DISCORD_ROLE_IDS` — every refusal lands
+  on `/signin?error=<code>` from a closed set, nothing Discord says is
+  echoed. A `state` nonce travels in the URL and in a short-lived
+  cookie and must match, against login CSRF. Sessions are rows:
+  `sessions(token_hash, user_id, expires_at)`, the cookie holds the
+  random token and the table only its SHA-256; `HttpOnly`,
+  `SameSite=Lax`, `Secure` when `PUBLIC_ORIGIN` is https (the request
+  itself arrives as http behind the tunnel), absolute 7-day expiry
+  with no sliding — the role is checked at login, so the TTL is also
+  how long a removed role keeps working. Lax withholds the cookie from
+  any cross-site POST, and `require_same_origin` refuses an unsafe
+  request whose `Origin` is not `PUBLIC_ORIGIN` — two defenses because
+  one rests on browser behavior and the other on a header scripts may
+  omit. `DISCORD_CLIENT_ID` is the one switch, as `ACCESS_AUD` was:
+  set means every request carries a live session or is 401; empty
+  means `DEV_USER_EMAIL`; no third state. `users` gains `discord_id`
+  (the key from here) and `name`; `email` turns nullable and is kept
+  so a first Discord login adopts the row a verified matching address
+  created under Access — an unverified address adopts nothing. The
+  client's `request()` wrapper now reads a 401 as the #55 signal in
+  place of the opaqueredirect; `/api/auth/me` bypasses it, since a
+  startup 401 means "not signed in" and renders the Sign In screen,
+  not the overlay. Access is removed from both hostnames; the tunnel
+  hostname is reachable but carries no cookie for its own origin.
+- **Alternatives rejected:** keeping Access with Discord as an OIDC
+  provider through a community Worker that maps roles to claims — the
+  least code, but a third-party shim between the login and the app,
+  and Access's seat cap is a limit a Discord role is not; a bot token
+  reading `/guilds/{id}/members/{uid}` — works without the member scope
+  but needs a bot in the server and a second secret; a stateless
+  signed cookie — no logout-everywhere and no revocation without a key
+  rotation; re-checking the role on every request or on a timer
+  through a stored refresh token — live revocation for a call to
+  Discord per request or a background job; neither is worth it while
+  the TTL bounds the exposure; membership without a role — a server is
+  a wider circle than the app is for, and a required role keeps the
+  invite explicit.
+- **What would change my mind:** role removal needing to bite within
+  minutes — then sessions store the refresh token and re-verify on a
+  cadence; a second app wanting the same login, which moves the OAuth
+  and session code into a shared package; Discord shipping OIDC, at
+  which point Access or any generic verifier could take the login
+  back.

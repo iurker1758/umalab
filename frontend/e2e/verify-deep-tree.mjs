@@ -1597,7 +1597,7 @@ try {
       .getAttribute("aria-label"))?.endsWith("in none") === true);
 
   // ---------- favorites and their lists ----------
-  // Server state behind Access, unlike everything else this tab writes — so
+  // Server state behind the login, unlike everything else this tab writes — so
   // it is read back from the API, and the list is tracked for cleanup at
   // creation rather than diffed at the end.
   //
@@ -3772,20 +3772,19 @@ try {
     )) &&
     (lastDialog ?? "").includes(`Delete "${mgmtB}"`));
 
-  // ---------- expired Access session: overlay, latch, recovery (issue #113) ----------
-  // A route-fulfilled 302 is what the edge's login redirect looks like to the
-  // app's redirect:"manual" fetch, so the overlay appearing is itself the
-  // proof Chromium surfaces it as an opaqueredirect. Sign In is never clicked
-  // here — the new tab's navigation would hit this same stub.
+  // ---------- expired session: overlay, latch, recovery (issue #113) ----------
+  // A route-fulfilled 401 is what the backend answers a dead session cookie
+  // with (DECISIONS.md #58). Sign In is never clicked here — the new tab's
+  // navigation would hit this same stub.
   const sessName = `${E2E_LIST_PREFIX} expired ${Date.now()}`;
   listsOwned.add(sessName);
   await breaking(async () => {
     await page.route("**/api/**", (r) =>
-      r.fulfill({ status: 302, headers: { Location: "https://team.example.invalid/login" } })
+      r.fulfill({ status: 401, contentType: "application/json", body: '{"detail":"not signed in"}' })
     );
     await page.locator('[aria-label="New List Name"]').fill(sessName);
     await page.locator(".list-new button", { hasText: "Add" }).click();
-    check("the login redirect latches the Session Expired overlay",
+    check("a 401 latches the Session Expired overlay",
       (await until(async () => (await page.locator(".session-backdrop").count()) === 1)) &&
       (await page.locator(".session-dialog h2").textContent()) === "Session Expired");
     check("the overlay is the one report — the error toast stays gated",
@@ -3794,7 +3793,7 @@ try {
       !(await getJson("/api/spark-lists")).some((l) => l.name === sessName));
     await page.unroute("**/api/**");
   });
-  // A probe that never reaches the edge proves nothing about the session —
+  // A probe that never reaches the backend proves nothing about the session —
   // with the network down, Retry must leave the overlay standing rather than
   // drop the user into an app where every request fails.
   await breaking(async () => {

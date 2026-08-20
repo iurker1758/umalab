@@ -3,8 +3,9 @@
 Invariants (see DECISIONS.md #3, #5, #32):
 
 - Every row belongs to a user. `owner_id` is non-nullable on all four owned
-  tables, and every query filters on it — the identity comes from a verified
-  Cloudflare Access JWT (app/auth.py), never from anything the client sends.
+  tables, and every query filters on it — the identity comes from a session
+  the Discord login minted (app/auth.py, DECISIONS.md #58), never from
+  anything else the client sends.
 - Imports are full-replace snapshots OF ONE USER'S ROSTER: every upload
   deletes that owner's veterans and inserts the new set in one transaction;
   `imports` rows are history metadata.
@@ -34,22 +35,44 @@ from .database import Base
 
 
 class User(Base):
-    """One row per person Cloudflare Access lets in (DECISIONS.md #32).
+    """One row per person the login lets in (DECISIONS.md #32, #58).
 
-    Keyed by the email in the verified JWT claims — the Access policy is the
-    invite list, so a row is created the first time someone who already got
-    past Access shows up. That is not open signup: the gate is at the edge.
-    No password, no session, no profile; this table exists to give the other
-    four something to point at.
+    Keyed by `discord_id` since #58; `email` is what the Access era keyed on
+    and what the dev identity still does, kept so a first Discord login can
+    adopt the row an Access login created (matched on a verified address).
+    Open signup is still not what first-sight creation is: everyone reaching
+    that line already passed the role check, which is the invite list. No
+    password, no profile beyond a display name; this table exists to give
+    the other four something to point at.
 
     320 = the maximum length of an email address (64 local + @ + 255 domain).
+    Discord snowflakes are decimal strings of at most 20 digits.
     """
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(320), unique=True)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True)
+    discord_id: Mapped[str | None] = mapped_column(String(20), unique=True)
+    name: Mapped[str] = mapped_column(String(100), server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Session(Base):
+    """A browser login (DECISIONS.md #58). The cookie carries a random token;
+    only its SHA-256 is stored, so a read of this table mints nothing.
+    Absolute expiry, no sliding: the role check runs at login, and a
+    sliding window would let a login outlive the role indefinitely.
+    """
+
+    __tablename__ = "sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    expires_at: Mapped[datetime]
 
 
 # Every owned table takes the same column. Declared once so a fifth table

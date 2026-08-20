@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
-import { ApiError, api, onSessionExpired, type ImportInfo, type Veteran } from "./api";
+import { ApiError, api, onSessionExpired, type ImportInfo, type Me, type Veteran } from "./api";
 import { emptyDesign, type Design } from "./blueprint";
 import { loadFilters, reconcileFilters, saveFilters, type Filters } from "./filters";
 import { DesignerPage } from "./pages/DesignerPage";
 import { ListsPage } from "./pages/ListsPage";
 import { RosterPage } from "./pages/RosterPage";
+import { SignInPage } from "./pages/SignInPage";
 
 export default function App() {
+  // undefined until /api/auth/me answers; null is nobody signed in, which
+  // renders the Sign In screen in place of the whole app. Nothing else is
+  // fetched before this resolves, so a startup 401 can never read as an
+  // expired session.
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [veterans, setVeterans] = useState<Veteran[]>([]);
   const [latest, setLatest] = useState<ImportInfo | null>(null);
   // Distinguishes "fetch hasn't succeeded yet" from a legitimately empty
@@ -35,9 +41,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [iconIndex, setIconIndex] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
-  // Latched by any /api request answered with the Access login redirect
-  // (issue #113). Re-throws while the overlay is up just re-latch it; the
-  // only way down is a probe that gets past the edge.
+  // Latched by any /api request answered 401 once signed in (issue #113).
+  // Re-throws while the overlay is up just re-latch it; the only way down
+  // is a probe the backend answers with something other than a 401.
   const [sessionExpired, setSessionExpired] = useState(false);
   const [checking, setChecking] = useState(false);
   const probing = useRef(false);
@@ -63,11 +69,12 @@ export default function App() {
 
   // The cheapest read in the API, and not refresh(): its catch would churn
   // the toast and the roster-onboarding gate on every failed probe. The
-  // overlay stands down only on proof the request got PAST the edge — a
-  // success, or an ApiError carrying a real HTTP status. A rejected fetch
-  // (network down) reached nothing and proves nothing: standing down on it
-  // would drop the user into an app where every request fails. Whatever the
-  // toast held stays held — refresh()'s own lifecycle governs it from here.
+  // overlay stands down only on proof the session is whole — a success, or
+  // an ApiError carrying a real HTTP status; a fresh 401 throws
+  // SessionExpired and leaves it up. A rejected fetch (network down)
+  // reached nothing and proves nothing: standing down on it would drop the
+  // user into an app where every request fails. Whatever the toast held
+  // stays held — refresh()'s own lifecycle governs it from here.
   const probeSession = useCallback(() => {
     if (probing.current) return;
     probing.current = true;
@@ -110,11 +117,42 @@ export default function App() {
     saveFilters(filters);
   }, [filters]);
 
+  // Re-runnable: a backend that is down at startup must not strand the
+  // tab on the bare shell — the failure screen's Retry calls this again.
+  const checkMe = useCallback(async () => {
+    try {
+      const who = await api.me();
+      setMe(who);
+      setError(null);
+    } catch {
+      setError("Can't reach the backend — is uvicorn running?");
+    }
+  }, []);
+
   useEffect(() => {
-    // initial data load; the setState happens after the fetch resolves
+    // the setState happens after the fetch resolves
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
-  }, [refresh]);
+    void checkMe();
+  }, [checkMe]);
+
+  useEffect(() => {
+    // initial data load, once someone is signed in; the setState happens
+    // after the fetch resolves
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (me) void refresh();
+  }, [me, refresh]);
+
+  const signOut = async () => {
+    try {
+      await api.logout();
+    } catch (e) {
+      setError(`Sign out failed: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    // No state reset beyond this: the Sign In screen replaces the whole
+    // app, and signing back in is a full navigation through Discord.
+    setMe(null);
+  };
 
   useEffect(() => {
     // The icon index is a gitignored build product of scripts/fetch_icons.py
@@ -155,6 +193,38 @@ export default function App() {
     }
   };
 
+  if (me === undefined) {
+    return (
+      <div className="app">
+        <header>
+          <h1>UmaLab</h1>
+        </header>
+        {error && (
+          <div className="signin">
+            <p className="signin-reason" role="alert">
+              {error}
+            </p>
+            <button onClick={() => void checkMe()}>Retry</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (me === null) {
+    return (
+      <div className="app">
+        <header>
+          <h1>UmaLab</h1>
+        </header>
+        <Routes>
+          <Route path="/signin" element={<SignInPage />} />
+          <Route path="*" element={<Navigate to="/signin" replace />} />
+        </Routes>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <header>
@@ -183,6 +253,12 @@ export default function App() {
               {new Date(latest.imported_at).toLocaleString()}
             </span>
           )}
+          <span className="who">
+            {me.name}
+            <button className="signout" onClick={() => void signOut()}>
+              Sign Out
+            </button>
+          </span>
         </div>
       </header>
 
@@ -199,17 +275,17 @@ export default function App() {
       {/* No dismissal — closing it would drop the user into an app where
           every request fails. The Sign In target is a relative /api path:
           nothing deployment-specific in the repo, and top-level navigations
-          to /api reach the edge (and so the Access login) only because of
-          the navigateFallbackDenylist in vite.config.ts — keep them in
+          to /api reach the backend (and so the Discord login) only because
+          of the navigateFallbackDenylist in vite.config.ts — keep them in
           sync. */}
       {sessionExpired && (
         <div className="session-backdrop">
           <div className="session-dialog" role="dialog" aria-modal="true" aria-labelledby="session-title">
             <h2 id="session-title">Session Expired</h2>
             <p>Your login session has expired. Sign in again in a new tab, then come back here.</p>
-            <p>After signing in you'll see a plain data page; close that tab and come back.</p>
+            <p>After signing in, close that tab and come back.</p>
             <div className="session-actions">
-              <button onClick={() => window.open("/api/imports/latest", "_blank")}>Sign In</button>
+              <button onClick={() => window.open("/api/auth/login", "_blank")}>Sign In</button>
               <button className="session-retry" onClick={probeSession} disabled={checking}>
                 {checking ? "Checking…" : "Retry"}
               </button>
@@ -249,6 +325,8 @@ export default function App() {
           }
         />
         <Route path="/lists" element={<ListsPage onError={setError} />} />
+        {/* Signed in already — a stale sign-in tab or a bookmarked refusal. */}
+        <Route path="/signin" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

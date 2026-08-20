@@ -8,17 +8,21 @@ Monorepo: `backend/` (FastAPI + async SQLAlchemy + Postgres) and `frontend/`
 Deployed (2026-08-15) as app #2 on the HabitPool platform plan (that repo's
 DECISIONS.md #9–10, #12; the "Raspberry Pi" there is in practice a mini PC):
 frontend on Cloudflare Pages, backend + Postgres on a home mini PC behind
-Cloudflare Tunnel, Cloudflare Access as the login. The deployed SPA reaches
+Cloudflare Tunnel, Discord OAuth as the login (DECISIONS.md #58). The
+deployed SPA reaches
 the API through a same-origin Pages Function proxy (DECISIONS.md #53); the
 hostnames and the `API_ORIGIN` env var live only in the Cloudflare dashboard,
-never in the repo. Local dev is unchanged — empty `ACCESS_AUD` runs as the
-dev identity, and Vite's proxy covers `/api`.
+never in the repo; the Discord application's id/secret, the guild and role
+ids and `PUBLIC_ORIGIN` live in the server's `backend/.env`. Local dev is
+unchanged — empty `DISCORD_CLIENT_ID` runs as the dev identity, and Vite's
+proxy covers `/api`.
 
-Current milestone: **multi-user** (issue #50, DECISIONS.md #32) — Cloudflare
-Access is the login, a verified `Cf-Access-Jwt-Assertion` JWT is the identity,
-and every roster/blueprint/mark row carries an `owner_id`. Shipped: the
-`users` table, owner scoping across both routers, and the backfill migration.
-That closes #50. The design-pass queue (#41 → #45+#29 → #28 → #27) has since
+Current milestone: **multi-user** (issue #50, DECISIONS.md #32, #58) — a
+Discord login gated on a guild role is the identity (a server-side session
+cookie; `users.discord_id`), and every roster/blueprint/mark row carries an
+`owner_id`. Shipped: the `users` table, owner scoping across both routers,
+the backfill migration, and the Discord login that replaced Cloudflare
+Access. That closes #50. The design-pass queue (#41 → #45+#29 → #28 → #27) has since
 delivered #28 — spark entry is a popout browser with your favorites on top,
 replacing the inline search and reversing #30's "an add-one affordance, not a
 browser" in writing (DECISIONS.md #35), corrected in #36 — a green spark's

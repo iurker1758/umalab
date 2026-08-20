@@ -9,12 +9,12 @@ export default defineConfig({
       registerType: "autoUpdate",
       workbox: {
         // Never serve the app shell for these navigations. /api/* must reach
-        // the edge so a top-level visit can trigger the Cloudflare Access
-        // login (the session-expired overlay's Sign In tab), and
-        // /cdn-cgi/access/* is the login callback itself — intercepted, the
-        // auth cookie is never set and re-login is impossible without
+        // the backend so a top-level visit to /api/auth/login starts the
+        // Discord login (the Sign In screen and the session-expired overlay's
+        // Sign In tab) and /api/auth/callback can set the session cookie —
+        // intercepted, it never is and signing in is impossible without
         // clearing site data. Workbox tests these against pathname + search.
-        navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//],
+        navigateFallbackDenylist: [/^\/api\//],
       },
       manifest: {
         name: "UmaLab",

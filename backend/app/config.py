@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Configured rather than read from the request, because behind the Pages
     # proxy and the tunnel the Host header names the tunnel, not the app.
     public_origin: str = ""
-    session_ttl_days: int = 30
+    session_ttl_days: int = 7
     # Who the app is when no client is configured: local `uvicorn --reload`,
     # pytest, and the Playwright suite, none of which have a login in front
     # of them. Also the owner the first migration assigns every existing row

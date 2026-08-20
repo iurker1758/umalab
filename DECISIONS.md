@@ -2516,7 +2516,7 @@ overlay, the probe and the no-reload recovery stand as written.
   `sessions(token_hash, user_id, expires_at)`, the cookie holds the
   random token and the table only its SHA-256; `HttpOnly`,
   `SameSite=Lax`, `Secure` when `PUBLIC_ORIGIN` is https (the request
-  itself arrives as http behind the tunnel), absolute 30-day expiry
+  itself arrives as http behind the tunnel), absolute 7-day expiry
   with no sliding — the role is checked at login, so the TTL is also
   how long a removed role keeps working. Lax withholds the cookie from
   any cross-site POST, and `require_same_origin` refuses an unsafe

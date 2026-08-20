@@ -2485,7 +2485,10 @@ overlay, the probe and the no-reload recovery stand as written.
   against a fan tool in an ecosystem where the same data is published
   far more prominently, and the data sits in git history regardless,
   so a later removal would not undo the redistribution without a
-  history rewrite.
+  history rewrite. Going public also activated the `protect-main`
+  ruleset (required `backend`/`frontend`/`docs` checks, squash-only,
+  linear history) that a private Free-plan repo could not enforce;
+  `e2e` stays advisory so a flaky browser run never blocks a merge.
 - **Alternatives rejected:** splitting `app/data/` out and
   regenerating per machine (the icons model) — breaks the
   offline/deterministic invariant (#6), CI and the committed-data

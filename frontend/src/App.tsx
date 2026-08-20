@@ -130,6 +130,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // the setState happens after the fetch resolves
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void checkMe();
   }, [checkMe]);
 

@@ -117,20 +117,21 @@ export default function App() {
     saveFilters(filters);
   }, [filters]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const who = await api.me();
-        if (!cancelled) setMe(who);
-      } catch {
-        if (!cancelled) setError("Can't reach the backend — is uvicorn running?");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  // Re-runnable: a backend that is down at startup must not strand the
+  // tab on the bare shell — the failure screen's Retry calls this again.
+  const checkMe = useCallback(async () => {
+    try {
+      const who = await api.me();
+      setMe(who);
+      setError(null);
+    } catch {
+      setError("Can't reach the backend — is uvicorn running?");
+    }
   }, []);
+
+  useEffect(() => {
+    void checkMe();
+  }, [checkMe]);
 
   useEffect(() => {
     // initial data load, once someone is signed in; the setState happens
@@ -197,9 +198,12 @@ export default function App() {
           <h1>UmaLab</h1>
         </header>
         {error && (
-          <p className="error" role="alert" title="Dismiss" onClick={() => setError(null)}>
-            {error}
-          </p>
+          <div className="signin">
+            <p className="signin-reason" role="alert">
+              {error}
+            </p>
+            <button onClick={() => void checkMe()}>Retry</button>
+          </div>
         )}
       </div>
     );

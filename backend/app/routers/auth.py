@@ -33,6 +33,7 @@ from ..auth import (
     current_user,
     end_session,
     new_token,
+    require_same_origin,
     set_session_cookie,
     start_session,
 )
@@ -202,7 +203,10 @@ async def logout(
     config: Settings = Depends(get_settings),
 ) -> Response:
     # Not behind `current_user`: an already-expired session must still be
-    # able to clear its cookie, and an unauthenticated logout is harmless.
+    # able to clear its cookie. The Origin check still applies — the
+    # Set-Cookie that clears the session is honored whatever SameSite
+    # withheld on the way in, so a cross-site POST could sign anyone out.
+    require_same_origin(request, config)
     await end_session(session, request.cookies.get(SESSION_COOKIE))
     response.status_code = 204
     clear_session_cookie(response, config)

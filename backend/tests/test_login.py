@@ -258,6 +258,15 @@ async def test_a_forged_cookie_is_refused(client: httpx.AsyncClient):
     assert (await client.get("/api/auth/me")).status_code == 401
 
 
+async def test_a_cross_site_logout_is_refused(client: httpx.AsyncClient):
+    """Lax withholds the cookie on the way in, but the clearing Set-Cookie on
+    the way out would still land; the Origin check is what stops it."""
+    await sign_in(client)
+    response = await client.post("/api/auth/logout", headers={"Origin": "https://evil.example"})
+    assert response.status_code == 403
+    assert (await client.get("/api/auth/me")).status_code == 200
+
+
 async def test_a_cross_site_write_is_refused_even_with_the_cookie(client: httpx.AsyncClient):
     """The multipart import needs no preflight, so a hidden form on another
     site can post it; the Origin check is what turns that away when the

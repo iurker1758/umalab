@@ -3,8 +3,9 @@
 Invariants (see DECISIONS.md #3, #5, #32):
 
 - Every row belongs to a user. `owner_id` is non-nullable on all four owned
-  tables, and every query filters on it — the identity comes from a verified
-  Cloudflare Access JWT (app/auth.py), never from anything the client sends.
+  tables, and every query filters on it — the identity comes from a session
+  the Discord login minted (app/auth.py, DECISIONS.md #58), never from
+  anything else the client sends.
 - Imports are full-replace snapshots OF ONE USER'S ROSTER: every upload
   deletes that owner's veterans and inserts the new set in one transaction;
   `imports` rows are history metadata.

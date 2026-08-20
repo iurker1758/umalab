@@ -1227,7 +1227,12 @@ tests and the per-owner uniqueness rules stand as written.
   into `Settings` and never into the process environment, so the env
   read silently stranded the roster on an owner nobody can log in as.
   `/api/catalog`, `/api/factors` and `/api/affinity` stay
-  identity-free (#17); a structural test asserts every other route
+  identity-free (#17) — deliberately so, and that means they answer
+  unauthenticated requests at the API hostname in every mode (issue
+  #116, measured 2026-08-15): they serve committed game-derived data
+  the public repo already carries (#57), so the carve-out is accepted
+  and the config comments say "identity-bearing", not "every"; a
+  structural test asserts every other route
   declares the dependency, because a route that forgets it reads
   across all users and nothing else would notice.
   `tests/test_isolation.py` is a real exception to pure-module testing

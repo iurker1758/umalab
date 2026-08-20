@@ -15,8 +15,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost/umalab"
 
     # ---------- Discord identity (DECISIONS.md #58) ----------
-    # `discord_client_id` is the switch: set it and every request must carry a
-    # session cookie minted by a Discord login that passed the role check;
+    # `discord_client_id` is the switch: set it and every identity-bearing
+    # route (everything but the reference data — /api/catalog, /api/factors,
+    # /api/affinity, which serve committed public data and touch no user row;
+    # issue #116) must carry a session cookie minted by a Discord login that
+    # passed the role check;
     # leave it empty and the app runs as `dev_user_email`. There is
     # deliberately no third state — a deployment that names a client can never
     # fall back to the dev identity, whatever else is misconfigured.

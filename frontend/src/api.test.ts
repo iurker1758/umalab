@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, SessionExpired, api, detailOr, onSessionExpired } from "./api";
 
-// undici's Response can't fabricate an opaqueredirect (a 3xx status throws in
-// the constructor, and Response.redirect() reports type "default"), so the
-// stubs are plain literals — request() reads only what these carry.
-const opaqueredirect = { type: "opaqueredirect", status: 0, ok: false } as Response;
+// Plain literals rather than real Responses — request() reads only what
+// these carry.
 const jsonRes = (status: number, body: unknown) =>
   ({
     type: "basic",
@@ -19,8 +17,8 @@ afterEach(() => {
 });
 
 describe("expired-session detection", () => {
-  it("throws SessionExpired on an opaqueredirect and notifies the subscriber", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(opaqueredirect));
+  it("throws SessionExpired on a 401 and notifies the subscriber", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes(401, { detail: "not signed in" })));
     const listener = vi.fn();
     const unsubscribe = onSessionExpired(listener);
     try {
@@ -35,14 +33,21 @@ describe("expired-session detection", () => {
     expect(new SessionExpired()).not.toBeInstanceOf(ApiError);
   });
 
-  it("requests with redirect manual, so the login 302 is visible at all", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonRes(200, null));
-    vi.stubGlobal("fetch", fetchMock);
-    await api.latestImport();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/imports/latest",
-      expect.objectContaining({ redirect: "manual" })
-    );
+  it("me() reads a 401 as nobody signed in, without raising the expiry signal", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes(401, { detail: "not signed in" })));
+    const listener = vi.fn();
+    const unsubscribe = onSessionExpired(listener);
+    try {
+      await expect(api.me()).resolves.toBeNull();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("me() returns the signed-in user", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes(200, { id: 1, name: "Jason" })));
+    await expect(api.me()).resolves.toEqual({ id: 1, name: "Jason" });
   });
 
   it("leaves real statuses alone — a 404 still throws ApiError(404)", async () => {
@@ -66,7 +71,7 @@ describe("expired-session detection", () => {
   });
 
   it("stops notifying after unsubscribe", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(opaqueredirect));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes(401, { detail: "not signed in" })));
     const listener = vi.fn();
     onSessionExpired(listener)();
     await expect(api.latestImport()).rejects.toBeInstanceOf(SessionExpired);

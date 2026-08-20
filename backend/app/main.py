@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import designer, roster, sparks
+from .routers import auth, designer, roster, sparks
 
 app = FastAPI(title="UmaLab")
 
@@ -19,6 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(roster.router)
 app.include_router(designer.router)
 app.include_router(sparks.router)

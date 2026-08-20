@@ -12,11 +12,9 @@ dependencies = [
     "pydantic-settings>=2.3",
     "alembic>=1.13",
     "python-multipart>=0.0.9",  # multipart parsing for the data.json upload endpoint
-    # Cloudflare Access identity (DECISIONS.md #33): [crypto] pulls the RSA
-    # backend PyJWT needs to verify Access's RS256 signatures, and httpx
-    # fetches the team's JWKS. Runtime deps, not dev — the verifier IS the
+    # Discord login (DECISIONS.md #58): httpx runs the OAuth exchange and the
+    # guild-member lookup. A runtime dep, not dev — the role check IS the
     # security boundary.
-    "pyjwt[crypto]>=2.9",
     "httpx>=0.27",
 ]
 

@@ -1,220 +1,134 @@
-"""Who is asking (DECISIONS.md #32).
+"""Who is asking (DECISIONS.md #32, #58).
 
-Cloudflare Access sits in front of both tiers and does the logging in; this
-module's only job is to turn its assertion into a `users` row. The JWT is the
-security boundary — the bare `Cf-Access-Authenticated-User-Email` header is
-never read, because anything that can reach the origin can set it.
+Discord is the login: `routers/auth.py` runs the OAuth dance, checks the
+member's roles in the configured guild and mints a session; this module
+turns that session's cookie back into a `users` row on every request.
 
-Two modes, and `access_aud` is the switch:
+Two modes, and `discord_client_id` is the switch:
 
-- **audience configured** — every request must carry a JWT that verifies
-  against the team's published keys, the configured audience and the team
-  issuer. Anything else is a 403. There is no fall back to the dev identity
-  from here; that is the whole point of making one setting decide.
-- **no audience** — the app runs as `dev_user_email`. Local `uvicorn
-  --reload`, pytest and the Playwright suite have no Access in front of them
+- **client configured** — every request must carry a session cookie whose
+  hash is in `sessions` and not yet expired. Anything else is a 401. There
+  is no fall back to the dev identity from here; that is the whole point of
+  making one setting decide.
+- **no client** — the app runs as `dev_user_email`. Local `uvicorn
+  --reload`, pytest and the Playwright suite have no login in front of them
   and would otherwise be unable to make a single request.
+
+The cookie is an ambient credential: the browser attaches it to a cross-site
+form post, and `POST /api/imports` is multipart — a CORS-simple request that
+needs no preflight — so a hidden auto-submitting form on any other page
+could run the victim's full-replace import and destroy their roster. Two
+independent things stop that: the cookie is `SameSite=Lax`, so a cross-site
+POST never carries it, and `require_same_origin` refuses any unsafe request
+whose `Origin` names a site other than `public_origin`. Either alone would
+do; both, because the first depends on browser behavior and the second on a
+header a non-browser client may omit.
 """
 from __future__ import annotations
 
-import asyncio
-import time
-from typing import Any
+import hashlib
+import secrets
+from datetime import UTC, datetime, timedelta
 
-import httpx
-import jwt
-from fastapi import Depends, HTTPException, Request
-from sqlalchemy import select
+from fastapi import Depends, HTTPException, Request, Response
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, settings
 from .database import get_session
-from .models import User
+from .models import Session, User
 
-# Access publishes RS256 only. Pinned rather than read from the token's own
-# header, which is the classic algorithm-confusion hole.
-ALGORITHMS = ["RS256"]
+SESSION_COOKIE = "umalab_session"
 
-JWT_HEADER = "Cf-Access-Jwt-Assertion"
-
-# Access also sets a CF_Authorization cookie on the browser, and reading it as
-# a fallback is DELIBERATELY not done. A cookie is an ambient credential: the
-# browser attaches it to a cross-site form post, and `POST /api/imports` is
-# multipart — a CORS-simple request that needs no preflight — so a hidden
-# auto-submitting form on any other page would run the victim's full-replace
-# import and destroy their roster. The header cannot be set cross-site, which
-# makes header-only auth immune without a CSRF token. Access injects it on
-# every proxied request, so nothing legitimate is lost.
-
-# Keys are cached for this long, and a token naming a key we don't have
-# triggers at most one refetch ATTEMPT per this many seconds. Both bounds
-# exist for the same reason: an attacker who can send arbitrary `kid` values
-# must not be able to turn that into unbounded outbound requests.
-JWKS_TTL_SECONDS = 15 * 60
-JWKS_MIN_REFETCH_SECONDS = 60
+# Under SameSite=Lax only these travel cross-site with the cookie attached.
+# Listed anyway, because the Origin check is the defense that does not
+# depend on the cookie flag.
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
-def team_urls(team_domain: str) -> tuple[str, str]:
-    """(issuer, jwks_url) for a team domain, with or without a scheme."""
-    host = team_domain.removeprefix("https://").removeprefix("http://").strip("/")
-    issuer = f"https://{host}"
-    return issuer, f"{issuer}/cdn-cgi/access/certs"
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
-class _JwksCache:
-    """Fetched keys, with the two bounds above. One instance per process."""
+def new_token() -> str:
+    return secrets.token_urlsafe(32)
 
-    def __init__(self) -> None:
-        self._keys: dict[str, jwt.PyJWK] = {}
-        # Last SUCCESSFUL fetch, which is what "these keys are stale" means.
-        self._fetched_at: float | None = None
-        # Last ATTEMPT, successful or not. Separate on purpose: throttling on
-        # the success time would mean a failing endpoint is never throttled at
-        # all — every request would retry, serialized behind the lock, and a
-        # cert-endpoint outage would read as the whole app hanging.
-        self._attempted_at: float | None = None
-        self._lock = asyncio.Lock()
 
-    async def key_for(self, kid: str, jwks_url: str) -> jwt.PyJWK:
-        key = self._keys.get(kid)
-        if key is not None and not self._stale():
-            return key
-        async with self._lock:
-            # Another waiter may have refreshed while we queued.
-            key = self._keys.get(kid)
-            if key is not None and not self._stale():
-                return key
-            if self._may_refetch():
-                await self._fetch(jwks_url)
-            key = self._keys.get(kid)
-        if key is None:
-            raise HTTPException(403, "Access token names an unknown signing key")
-        return key
+def utcnow() -> datetime:
+    """Naive UTC, matching the timezone-less DateTime columns."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
-    def _stale(self) -> bool:
-        return (
-            self._fetched_at is None
-            or time.monotonic() - self._fetched_at > JWKS_TTL_SECONDS
+
+def cookie_secure(config: Settings) -> bool:
+    """`Secure` follows the public origin's scheme, not the request's: behind
+    the TLS-terminating tunnel every request arrives as plain http."""
+    return config.public_origin.startswith("https://")
+
+
+def set_session_cookie(response: Response, token: str, config: Settings) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=config.session_ttl_days * 24 * 3600,
+        httponly=True,
+        secure=cookie_secure(config),
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response, config: Settings) -> None:
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        secure=cookie_secure(config),
+        samesite="lax",
+    )
+
+
+def require_same_origin(request: Request, config: Settings) -> None:
+    """403 for an unsafe request whose Origin is another site. A missing
+    Origin passes: browsers send it on every non-GET request, so its absence
+    means a non-browser client, and those are not what CSRF is about."""
+    if request.method in SAFE_METHODS:
+        return
+    origin = request.headers.get("origin")
+    if origin is None:
+        return
+    if origin.rstrip("/") != config.public_origin.rstrip("/"):
+        raise HTTPException(403, "cross-origin request refused")
+
+
+def dev_email(config: Settings) -> str:
+    email = config.dev_user_email.strip().lower()
+    if not email:
+        # An empty setting would otherwise create and use a user whose
+        # email is "" — a second, orphaned owner that reads as "my data
+        # disappeared" with nothing in the logs. Refuse instead.
+        raise HTTPException(
+            500, "DEV_USER_EMAIL is empty and no DISCORD_CLIENT_ID is configured"
         )
-
-    def _may_refetch(self) -> bool:
-        return (
-            self._attempted_at is None
-            or time.monotonic() - self._attempted_at > JWKS_MIN_REFETCH_SECONDS
-        )
-
-    async def _fetch(self, jwks_url: str) -> None:
-        # Stamped before the request, so a failure — including a timeout —
-        # still starts the throttle window.
-        self._attempted_at = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(jwks_url)
-                response.raise_for_status()
-                key_set = jwt.PyJWKSet.from_dict(response.json())
-        except (httpx.HTTPError, ValueError, jwt.PyJWTError) as e:
-            # Keep whatever we already had: a key that verified a minute ago
-            # still verifies, and a blip in Cloudflare's cert endpoint should
-            # not log the whole app out. With nothing cached there is no
-            # verifying anything, and that is an outage, not a bad token —
-            # 503 so it doesn't read as "your login expired".
-            if not self._keys:
-                raise HTTPException(503, "cannot reach Cloudflare Access keys") from e
-            return
-        self._keys = {k.key_id: k for k in key_set.keys if k.key_id is not None}
-        self._fetched_at = time.monotonic()
+    return email
 
 
-_jwks = _JwksCache()
-
-
-def token_from(request: Request) -> str | None:
-    """The header only — see JWT_HEADER above for why the cookie is ignored."""
-    return request.headers.get(JWT_HEADER)
-
-
-def email_from_claims(claims: dict[str, Any]) -> str:
-    """The user's email, normalized, or a 403 naming what was wrong.
-
-    Service tokens are the case worth being explicit about: they verify
-    perfectly and carry `common_name` instead of `email`, so a machine
-    credential would otherwise land as a user with a blank address, and every
-    such credential would share one row.
-    """
-    email = claims.get("email")
-    if not isinstance(email, str) or not email.strip():
-        if claims.get("common_name"):
-            raise HTTPException(403, "service tokens have no user identity")
-        raise HTTPException(403, "Access token carries no email claim")
-    return email.strip().lower()
-
-
-async def verified_email(request: Request, config: Settings) -> str:
-    """The caller's email, from a verified token — or the dev identity when no
-    audience is configured. The only way an unverified request gets an
-    identity is if `access_aud` is empty, which a deployment must not do.
-    """
-    if not config.access_aud:
-        dev_email = config.dev_user_email.strip().lower()
-        if not dev_email:
-            # An empty setting would otherwise create and use a user whose
-            # email is "" — a second, orphaned owner that reads as "my data
-            # disappeared" with nothing in the logs. Refuse instead.
-            raise HTTPException(
-                500, "DEV_USER_EMAIL is empty and no ACCESS_AUD is configured"
-            )
-        return dev_email
-    if not config.access_team_domain:
-        # Misconfiguration, not a client error: an audience with nowhere to
-        # fetch keys from can never verify anything, and silently refusing
-        # every request would read as an Access policy problem.
-        raise HTTPException(500, "ACCESS_AUD is set but ACCESS_TEAM_DOMAIN is not")
-
-    token = token_from(request)
-    if not token:
-        raise HTTPException(403, "no Cloudflare Access token on this request")
-    issuer, jwks_url = team_urls(config.access_team_domain)
-    try:
-        kid = jwt.get_unverified_header(token).get("kid")
-    except jwt.PyJWTError as e:
-        raise HTTPException(403, "malformed Access token") from e
-    if not isinstance(kid, str):
-        raise HTTPException(403, "Access token has no key id")
-
-    key = await _jwks.key_for(kid, jwks_url)
-    try:
-        claims: dict[str, Any] = jwt.decode(
-            token,
-            key=key.key,
-            algorithms=ALGORITHMS,
-            audience=config.access_aud,
-            issuer=issuer,
-        )
-    except jwt.PyJWTError as e:
-        # Deliberately not echoing the library's reason to the client: expired
-        # vs wrong-audience vs bad-signature is useful to an attacker probing
-        # the audience tag and useless to a browser, which just needs to be
-        # sent back through Access.
-        raise HTTPException(403, "Access token failed verification") from e
-    return email_from_claims(claims)
-
-
-async def user_for_email(session: AsyncSession, email: str) -> User:
-    """The row for this email, created on first sight.
-
-    First-sight creation is not signup: everyone reaching this line already
-    passed the Access policy, which is the invite list. The retry covers the
-    race where two of a browser's parallel requests both find nothing.
-    """
+async def dev_user(session: AsyncSession, config: Settings) -> User:
+    """The dev identity's row, created on first sight."""
+    email = dev_email(config)
     user = await session.scalar(select(User).where(User.email == email))
     if user is not None:
+        if not user.name:
+            # A row the Access era created, before names existed.
+            user.name = "dev"
+            await session.commit()
         return user
-    user = User(email=email)
+    user = User(email=email, name="dev")
     session.add(user)
     try:
         await session.commit()
     except IntegrityError:
+        # Two of a browser's parallel first requests both found nothing.
         await session.rollback()
         existing = await session.scalar(select(User).where(User.email == email))
         if existing is None:
@@ -224,12 +138,71 @@ async def user_for_email(session: AsyncSession, email: str) -> User:
     return user
 
 
+async def session_user(session: AsyncSession, token: str | None) -> User | None:
+    """The user a cookie token stands for, or None for no/unknown/expired."""
+    if not token:
+        return None
+    row = await session.scalar(select(Session).where(Session.token_hash == hash_token(token)))
+    if row is None:
+        return None
+    if row.expires_at <= utcnow():
+        # Lazy reaping: an expired row goes when next presented, and
+        # `start_session` sweeps the rest. No background job.
+        await session.execute(delete(Session).where(Session.token_hash == row.token_hash))
+        await session.commit()
+        return None
+    return await session.get(User, row.user_id)
+
+
+async def start_session(session: AsyncSession, user: User, config: Settings) -> str:
+    """Mint a session for `user`, returning the cookie token (never stored)."""
+    now = utcnow()
+    await session.execute(delete(Session).where(Session.expires_at <= now))
+    token = new_token()
+    session.add(
+        Session(
+            token_hash=hash_token(token),
+            user_id=user.id,
+            expires_at=now + timedelta(days=config.session_ttl_days),
+        )
+    )
+    await session.commit()
+    return token
+
+
+async def end_session(session: AsyncSession, token: str | None) -> None:
+    if not token:
+        return
+    await session.execute(delete(Session).where(Session.token_hash == hash_token(token)))
+    await session.commit()
+
+
+async def authenticated_user(request: Request, session: AsyncSession, config: Settings) -> User:
+    """The caller's row — or the dev identity when no client is configured.
+    The only way an unauthenticated request gets an identity is if
+    `discord_client_id` is empty, which a deployment must not do.
+    """
+    if not config.discord_client_id:
+        return await dev_user(session, config)
+    if not config.public_origin:
+        # Misconfiguration, not a client error: without the public origin
+        # nothing can log in, and refusing silently would read as "my
+        # session keeps expiring".
+        raise HTTPException(500, "DISCORD_CLIENT_ID is set but PUBLIC_ORIGIN is not")
+    require_same_origin(request, config)
+    user = await session_user(session, request.cookies.get(SESSION_COOKIE))
+    if user is None:
+        raise HTTPException(401, "not signed in")
+    return user
+
+
 async def current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> User:
     """The dependency every owned route takes. Reads module `settings` rather
     than taking them as a parameter so route signatures stay about the route;
-    `verified_email` keeps the config argument so tests can drive both modes.
+    `authenticated_user` keeps the config argument so tests can drive both
+    modes.
     """
-    return await user_for_email(session, await verified_email(request, settings))
+    return await authenticated_user(request, session, settings)

@@ -264,14 +264,14 @@ export interface SparkList {
 // JSON, which is exactly the "absent" the route wants.
 export type SparkListPatch = Partial<Pick<SparkList, "name">>;
 
-// The expired-Access-session signal (issue #113). Deliberately NOT an
-// ApiError: no status branch may ever match it — DesignerPage's 404 arm
-// re-creates blueprints, and every catch-all already treats a plain Error
-// as a transient blip, which keeps the DESIGNER's failed writes queued for
-// the retry that succeeds after re-login; one-shot actions (imports, tags,
-// list toggles) fail like any blip and are redone by hand (DECISIONS.md
-// #55). The message is user-facing: it lands in the
-// designer's Not Saved tooltip and the failure toasts as-is.
+// The expired-session signal (issue #113, DECISIONS.md #55/#58).
+// Deliberately NOT an ApiError: no status branch may ever match it —
+// DesignerPage's 404 arm re-creates blueprints, and every catch-all already
+// treats a plain Error as a transient blip, which keeps the DESIGNER's
+// failed writes queued for the retry that succeeds after re-login; one-shot
+// actions (imports, tags, list toggles) fail like any blip and are redone
+// by hand. The message is user-facing: it lands in the designer's Not
+// Saved tooltip and the failure toasts as-is.
 export class SessionExpired extends Error {
   constructor() {
     super("session expired — sign in to keep working");
@@ -290,22 +290,23 @@ export function onSessionExpired(listener: () => void): () => void {
   };
 }
 
-// Every /api fetch goes through here. `redirect: "manual"` because an
-// expired Cloudflare Access session answers with a login redirect fetch()
-// can't follow (cross-origin, CORS-opaque) — manual mode turns it into an
-// opaqueredirect the client can recognize (measured on the live app:
-// type "opaqueredirect", status 0, for GET, JSON POST and multipart alike).
-// The flip side is an invariant: no /api route may ever answer with a
-// redirect, or it flashes the session overlay — backend routes are
-// exact-match and these paths never produce the trailing-slash 307.
-// A rejected fetch (network down, abort) passes through untouched.
+// Every /api fetch goes through here. The backend answers a missing or
+// expired session cookie with a 401 on every route alike; that is the one
+// status no route uses for anything else, so it is the signal. A rejected
+// fetch (network down, abort) passes through untouched. `auth.me` bypasses
+// this on purpose: at startup a 401 means "not signed in", not "expired".
 async function request(input: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, { ...init, redirect: "manual" });
-  if (res.type === "opaqueredirect") {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
     for (const listener of sessionListeners) listener();
     throw new SessionExpired();
   }
   return res;
+}
+
+export interface Me {
+  id: number;
+  name: string;
 }
 
 // Carries the status so a caller can tell "this row is gone" (404) from
@@ -356,6 +357,16 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  // Null is "nobody is signed in" — the only 401 that is not an expiry.
+  me: async (): Promise<Me | null> => {
+    const res = await fetch("/api/auth/me");
+    if (res.status === 401) return null;
+    return json<Me>(res);
+  },
+  logout: () =>
+    request("/api/auth/logout", { method: "POST" }).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, `${r.status} ${r.statusText}`);
+    }),
   veterans: () => request("/api/veterans").then((r) => json<Veteran[]>(r)),
   latestImport: () => request("/api/imports/latest").then((r) => json<ImportInfo | null>(r)),
   importDump: (file: File) => {

@@ -6,8 +6,11 @@ turns that session's cookie back into a `users` row on every request.
 
 Two modes, and `discord_client_id` is the switch:
 
-- **client configured** — every request must carry a session cookie whose
-  hash is in `sessions` and not yet expired. Anything else is a 401. There
+- **client configured** — every identity-bearing route must carry a session
+  cookie whose hash is in `sessions` and not yet expired. Anything else is a
+  401. The reference routes (`/api/catalog`, `/api/factors`, `/api/affinity`)
+  never take the dependency — committed public data, no user rows, issue
+  #116 — so they answer without one, in either mode. There
   is no fall back to the dev identity from here; that is the whole point of
   making one setting decide.
 - **no client** — the app runs as `dev_user_email`. Local `uvicorn
